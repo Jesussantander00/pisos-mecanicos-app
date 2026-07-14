@@ -6,7 +6,7 @@ import {
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
-  Building2, ShieldCheck, MessageCircle, Download, Send, Mail
+  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp
 } from "lucide-react";
 import { sGet, sSet } from "./lib/storage";
 
@@ -1522,6 +1522,172 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
 }
 
 /* ============================================================
+   VISTA: ANÁLISIS DE FALLAS (solo administradores)
+   Seguimiento de cuánto tiempo y con qué frecuencia cada equipo
+   ha estado fuera de servicio, con gráficas por fecha.
+   ============================================================ */
+function hoursBetween(a, b) {
+  return Math.max(0, (new Date(b).getTime() - new Date(a).getTime()) / 3600000);
+}
+function fmtHours(h) {
+  if (h < 1) return `${Math.round(h * 60)} min`;
+  if (h < 48) return `${h.toFixed(1)} h`;
+  return `${(h / 24).toFixed(1)} días`;
+}
+function computeEquipmentStats(issueHistory, activeIssues, sinceDate) {
+  const map = {};
+  const ensure = (key, base) => {
+    if (!map[key]) {
+      map[key] = {
+        equipmentId: key, code: base.code, name: base.name, floorName: base.floorName,
+        incidents: [], totalHours: 0, currentlyDown: false, downSince: null,
+      };
+    }
+  };
+  issueHistory.forEach(h => {
+    if (sinceDate && new Date(h.openedAt) < sinceDate) return;
+    ensure(h.equipmentId, h);
+    const hrs = hoursBetween(h.openedAt, h.resolvedAt);
+    map[h.equipmentId].totalHours += hrs;
+    map[h.equipmentId].incidents.push({ from: h.openedAt, to: h.resolvedAt, hours: hrs, solution: h.solution, resolvedBy: h.resolvedBy, ongoing: false });
+  });
+  Object.values(activeIssues).forEach(a => {
+    if (sinceDate && new Date(a.openedAt) < sinceDate) return;
+    ensure(a.equipmentId, a);
+    const hrs = hoursBetween(a.openedAt, nowIso());
+    map[a.equipmentId].totalHours += hrs;
+    map[a.equipmentId].currentlyDown = true;
+    map[a.equipmentId].downSince = a.openedAt;
+    map[a.equipmentId].incidents.push({ from: a.openedAt, to: null, hours: hrs, solution: null, resolvedBy: null, ongoing: true });
+  });
+  Object.values(map).forEach(eq => eq.incidents.sort((a, b) => new Date(b.from) - new Date(a.from)));
+  return Object.values(map).sort((a, b) => b.totalHours - a.totalHours);
+}
+
+function EquipmentAnalyticsView({ issueHistory, activeIssues }) {
+  const [range, setRange] = useState("all"); // 30 | 90 | 365 | all
+  const [expanded, setExpanded] = useState(null);
+
+  const sinceDate = useMemo(() => {
+    if (range === "all") return null;
+    const d = new Date();
+    d.setDate(d.getDate() - Number(range));
+    return d;
+  }, [range]);
+
+  const stats = useMemo(() => computeEquipmentStats(issueHistory, activeIssues, sinceDate), [issueHistory, activeIssues, sinceDate]);
+
+  const byDowntime = stats.slice(0, 10).map(e => ({ label: `${e.name} (${e.floorName})`, hours: Math.round(e.totalHours * 10) / 10 }));
+  const byFrequency = [...stats].sort((a, b) => b.incidents.length - a.incidents.length).slice(0, 10)
+    .map(e => ({ label: `${e.name} (${e.floorName})`, incidentes: e.incidents.length }));
+
+  const totalCurrentlyDown = stats.filter(e => e.currentlyDown).length;
+  const totalIncidents = stats.reduce((a, e) => a + e.incidents.length, 0);
+  const longestActive = stats.filter(e => e.currentlyDown).sort((a, b) => b.totalHours - a.totalHours)[0];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Análisis de fallas</h2>
+        <select value={range} onChange={e => setRange(e.target.value)}
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+          <option value="30">Últimos 30 días</option>
+          <option value="90">Últimos 90 días</option>
+          <option value="365">Último año</option>
+          <option value="all">Todo el historial</option>
+        </select>
+      </div>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Cuánto tiempo y con qué frecuencia ha estado cada equipo fuera de servicio, para darle seguimiento a los que fallan seguido.
+      </p>
+
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Fuera de servicio ahora</div>
+          <div className="text-2xl font-semibold mt-1" style={{ color: totalCurrentlyDown ? C.red : C.ink }}>{totalCurrentlyDown}</div>
+        </div>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Incidentes en el período</div>
+          <div className="text-2xl font-semibold mt-1" style={{ color: C.ink }}>{totalIncidents}</div>
+        </div>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Falla activa más larga</div>
+          <div className="text-sm font-semibold mt-1" style={{ color: C.ink }}>
+            {longestActive ? `${longestActive.name} · ${fmtHours(longestActive.totalHours)}` : "Ninguna"}
+          </div>
+        </div>
+      </div>
+
+      {stats.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>No hay incidentes registrados en este período.</p>
+      ) : (
+        <>
+          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Tiempo total fuera de servicio (horas)</div>
+            <ResponsiveContainer width="100%" height={Math.max(180, byDowntime.length * 34)}>
+              <BarChart data={byDowntime} layout="vertical" margin={{ left: 8, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => [`${v} h`, "Tiempo fuera de servicio"]} />
+                <Bar dataKey="hours" fill={C.red} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos que más veces han fallado</div>
+            <ResponsiveContainer width="100%" height={Math.max(180, byFrequency.length * 34)}>
+              <BarChart data={byFrequency} layout="vertical" margin={{ left: 8, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => [v, "Incidentes"]} />
+                <Bar dataKey="incidentes" fill={C.amber} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Detalle por equipo</div>
+            {stats.map(eq => (
+              <div key={eq.equipmentId} className="border-b last:border-0 py-2" style={{ borderColor: C.line }}>
+                <button onClick={() => setExpanded(expanded === eq.equipmentId ? null : eq.equipmentId)}
+                  className="w-full flex items-center justify-between text-left">
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: C.ink }}>
+                      {eq.name} <span style={{ color: C.gray, fontWeight: 400 }}>· {eq.floorName}</span>
+                      {eq.currentlyDown && <span className="ml-2 inline-block"><Pill tone="red">Fuera de servicio</Pill></span>}
+                    </div>
+                    <div className="text-xs" style={{ color: C.gray }}>
+                      {eq.incidents.length} incidente{eq.incidents.length !== 1 ? "s" : ""} · {fmtHours(eq.totalHours)} acumuladas
+                    </div>
+                  </div>
+                  {expanded === eq.equipmentId ? <ChevronDown size={16} style={{ color: C.gray }} /> : <ChevronRight size={16} style={{ color: C.gray }} />}
+                </button>
+                {expanded === eq.equipmentId && (
+                  <div className="mt-2 pl-1">
+                    {eq.incidents.map((inc, i) => (
+                      <div key={i} className="text-xs py-1.5 border-b last:border-0" style={{ borderColor: C.line }}>
+                        <div style={{ color: C.ink }}>
+                          Desde {fmtDT(inc.from)} — {inc.ongoing ? <b style={{ color: C.red }}>sigue fuera de servicio</b> : `hasta ${fmtDT(inc.to)}`}
+                          <span style={{ color: C.gray }}> · {fmtHours(inc.hours)}</span>
+                        </div>
+                        {inc.solution && <div style={{ color: C.gray }}>Solución: {inc.solution} (por {inc.resolvedBy})</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    VISTA: PANEL DE ADMINISTRADOR
    ============================================================ */
 function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onDeleteAccount, onResetPassword, currentUsername }) {
@@ -1890,6 +2056,7 @@ export default function App() {
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets },
+    ...(isAdmin ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck }] : []),
   ];
 
@@ -1983,6 +2150,9 @@ export default function App() {
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} />}
+          {view === "analytics" && isAdmin && (
+            <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues} />
+          )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}

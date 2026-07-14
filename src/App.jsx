@@ -1609,6 +1609,7 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
    ============================================================ */
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [accounts, setAccounts] = useState({}); // { username: { passwordHash, isAdmin, createdAt } }
   const [currentUser, setCurrentUser] = useState(null); // username string
   const [authError, setAuthError] = useState("");
@@ -1632,8 +1633,10 @@ export default function App() {
   const [autoSendResult, setAutoSendResult] = useState(null);
   const tourBufferRef = useRef({}); // acumula lo guardado piso por piso durante el recorrido en curso
 
-  useEffect(() => {
-    (async () => {
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
       const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
@@ -1653,32 +1656,53 @@ export default function App() {
       setTourHistory(thist || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
-    })();
+    } catch (e) {
+      console.error("Error cargando datos iniciales:", e);
+      setLoadError("No se pudo conectar con el servidor. Revisa tu conexión a internet e intenta de nuevo.");
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const register = async (username, password) => {
     setAuthError(""); setAuthBusy(true);
     const key = username.toLowerCase();
     if (accounts[key]) { setAuthError("Ese usuario ya existe. Elige otro o inicia sesión."); setAuthBusy(false); return; }
-    const passwordHash = await hashPassword(password);
-    const isAdmin = Object.keys(accounts).length === 0; // el primer usuario creado es admin
-    const next = { ...accounts, [key]: { displayName: username, passwordHash, isAdmin, createdAt: nowIso() } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
-    await sSet("session", { username: key }, false);
-    setCurrentUser(key);
+    try {
+      const passwordHash = await hashPassword(password);
+      const isAdmin = Object.keys(accounts).length === 0; // el primer usuario creado es admin
+      const next = { ...accounts, [key]: { displayName: username, passwordHash, isAdmin, createdAt: nowIso() } };
+      await sSet("accounts", next, true);
+      await sSet("session", { username: key }, false);
+      setAccounts(next);
+      setCurrentUser(key);
+    } catch (e) {
+      console.error("Error creando cuenta:", e);
+      setAuthError("No se pudo conectar con el servidor para crear la cuenta. Revisa tu conexión e intenta de nuevo.");
+    }
     setAuthBusy(false);
   };
 
   const login = async (username, password) => {
     setAuthError(""); setAuthBusy(true);
     const key = username.toLowerCase();
-    const acc = accounts[key];
-    if (!acc) { setAuthError("Usuario no encontrado. ¿Necesitas crear una cuenta?"); setAuthBusy(false); return; }
-    const passwordHash = await hashPassword(password);
-    if (passwordHash !== acc.passwordHash) { setAuthError("Contraseña incorrecta."); setAuthBusy(false); return; }
-    await sSet("session", { username: key }, false);
-    setCurrentUser(key);
+    try {
+      // Se vuelve a pedir la lista de cuentas fresca antes de decidir "usuario no encontrado",
+      // por si el estado en memoria quedó desactualizado (otro dispositivo creó la cuenta después
+      // de que esta pestaña cargó, o esta pestaña lleva mucho tiempo abierta).
+      const freshAccounts = (await sGet("accounts", true)) || {};
+      if (Object.keys(freshAccounts).length !== Object.keys(accounts).length) setAccounts(freshAccounts);
+      const acc = freshAccounts[key];
+      if (!acc) { setAuthError("Usuario no encontrado. ¿Necesitas crear una cuenta?"); setAuthBusy(false); return; }
+      const passwordHash = await hashPassword(password);
+      if (passwordHash !== acc.passwordHash) { setAuthError("Contraseña incorrecta."); setAuthBusy(false); return; }
+      await sSet("session", { username: key }, false);
+      setCurrentUser(key);
+    } catch (e) {
+      console.error("Error iniciando sesión:", e);
+      setAuthError("No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.");
+    }
     setAuthBusy(false);
   };
 
@@ -1838,6 +1862,15 @@ export default function App() {
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg, color: C.inkSoft }}>Cargando…</div>;
+  if (loadError) return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
+      <div className="max-w-sm text-center">
+        <AlertTriangle size={32} style={{ color: C.red, margin: "0 auto 12px" }} />
+        <p className="text-sm mb-4" style={{ color: C.ink }}>{loadError}</p>
+        <Button onClick={loadAll}>Reintentar</Button>
+      </div>
+    </div>
+  );
   if (!currentUser) return <AuthScreen accounts={accounts} onLogin={login} onRegister={register} error={authError} busy={authBusy} />;
 
   const account = accounts[currentUser] || {};

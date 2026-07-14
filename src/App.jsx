@@ -1564,9 +1564,92 @@ function computeEquipmentStats(issueHistory, activeIssues, sinceDate) {
   return Object.values(map).sort((a, b) => b.totalHours - a.totalHours);
 }
 
-function EquipmentAnalyticsView({ issueHistory, activeIssues }) {
+/** PDF del reporte de Análisis de fallas: resumen + detalle de incidentes por equipo. */
+async function generateAnalyticsPdf(stats, rangeLabel, summary) {
+  const jsPDFCtor = await loadJsPDF();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const pageW = 210, pageH = 297, marginX = 14;
+  let y = 18;
+  const lineH = 4.6;
+
+  const ensureSpace = (need = lineH) => { if (y + need > pageH - 14) { doc.addPage(); y = 18; } };
+  const heading = (text, size = 12) => {
+    ensureSpace(9);
+    doc.setFont(undefined, "bold"); doc.setFontSize(size);
+    doc.text(text, marginX, y);
+    y += size >= 13 ? 7 : 6;
+    doc.setFont(undefined, "normal"); doc.setFontSize(9);
+  };
+  const line = (text) => {
+    const wrapped = doc.splitTextToSize(text, pageW - marginX * 2);
+    wrapped.forEach(w => { ensureSpace(); doc.text(w, marginX, y); y += lineH; });
+  };
+
+  doc.setFontSize(16); doc.setFont(undefined, "bold");
+  doc.text("Análisis de Fallas — Pisos Mecánicos", marginX, y); y += 8;
+  doc.setFont(undefined, "normal"); doc.setFontSize(9);
+  doc.text(`Período: ${rangeLabel} · Generado: ${fmtDT(nowIso())}`, marginX, y); y += 6;
+  doc.text(`Fuera de servicio ahora: ${summary.totalCurrentlyDown} · Incidentes en el período: ${summary.totalIncidents}`, marginX, y); y += 9;
+  doc.setFontSize(9);
+
+  heading("Resumen por equipo (ordenado por tiempo fuera de servicio)", 12);
+  stats.forEach(eq => {
+    line(`${eq.name} — ${eq.floorName}: ${eq.incidents.length} incidente${eq.incidents.length !== 1 ? "s" : ""}, ${fmtHours(eq.totalHours)} acumuladas${eq.currentlyDown ? "  [FUERA DE SERVICIO AHORA]" : ""}`);
+  });
+  y += 3;
+
+  heading("Detalle de incidentes por equipo", 12);
+  stats.forEach(eq => {
+    heading(`${eq.name} (${eq.floorName})`, 10);
+    eq.incidents.forEach(inc => {
+      line(`Desde ${fmtDT(inc.from)} — ${inc.ongoing ? "sigue fuera de servicio" : `hasta ${fmtDT(inc.to)}`} · ${fmtHours(inc.hours)}`);
+      if (inc.solution) line(`   Solución: ${inc.solution} (por ${inc.resolvedBy})`);
+    });
+    y += 2;
+  });
+
+  return doc;
+}
+
+async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary) {
+  try {
+    const doc = await generateAnalyticsPdf(stats, rangeLabel, summary);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const textLines = [
+      "ANÁLISIS DE FALLAS — PISOS MECÁNICOS",
+      `Período: ${rangeLabel}`,
+      `Fuera de servicio ahora: ${summary.totalCurrentlyDown} · Incidentes en el período: ${summary.totalIncidents}`,
+      "",
+      "Ver el detalle completo por equipo en el PDF adjunto.",
+    ];
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Análisis de fallas - Pisos Mecánicos (${todayStr()})`,
+        text: textLines.join("\n"),
+        pdfBase64,
+        filename: `analisis-fallas-${todayStr().replace(/\//g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLogSent, currentUser }) {
   const [range, setRange] = useState("all"); // 30 | 90 | 365 | all
   const [expanded, setExpanded] = useState(null);
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [sendMsg, setSendMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
   const sinceDate = useMemo(() => {
     if (range === "all") return null;
@@ -1584,6 +1667,29 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues }) {
   const totalCurrentlyDown = stats.filter(e => e.currentlyDown).length;
   const totalIncidents = stats.reduce((a, e) => a + e.incidents.length, 0);
   const longestActive = stats.filter(e => e.currentlyDown).sort((a, b) => b.totalHours - a.totalHours)[0];
+
+  const rangeLabel = { "30": "Últimos 30 días", "90": "Últimos 90 días", "365": "Último año", all: "Todo el historial" }[range];
+  const summary = { totalCurrentlyDown, totalIncidents };
+
+  const doDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const doc = await generateAnalyticsPdf(stats, rangeLabel, summary);
+      doc.save(`analisis-fallas-${todayStr().replace(/\//g, "-")}.pdf`);
+    } catch {
+      setSendMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión a internet)." });
+    }
+    setDownloading(false);
+  };
+
+  const doSendEmail = async () => {
+    if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setSendMsg(null);
+    const res = await sendAnalyticsEmailAuto(emailTo.trim(), stats, rangeLabel, summary);
+    setSendMsg({ ok: res.ok, text: res.message });
+    onLogSent?.({ to: emailTo.trim(), method: "Análisis de fallas (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setSending(false);
+  };
 
   return (
     <div>
@@ -1616,6 +1722,22 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues }) {
             {longestActive ? `${longestActive.name} · ${fmtHours(longestActive.totalHours)}` : "Ninguna"}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF de este reporte ({rangeLabel})</div>
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadPdf}>
+            {downloading ? "Generando…" : "Descargar PDF"}
+          </Button>
+        </div>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Correo — envío automático con el PDF adjunto</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          <Button icon={Mail} disabled={sending} onClick={doSendEmail}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+        </div>
+        {sendMsg && <div className="text-xs mt-2" style={{ color: sendMsg.ok ? C.green : C.red }}>{sendMsg.text}</div>}
       </div>
 
       {stats.length === 0 ? (
@@ -2151,7 +2273,8 @@ export default function App() {
           )}
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} />}
           {view === "analytics" && isAdmin && (
-            <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues} />
+            <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
+              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

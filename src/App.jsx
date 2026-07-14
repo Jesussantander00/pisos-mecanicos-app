@@ -6,7 +6,7 @@ import {
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
-  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp
+  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap
 } from "lucide-react";
 import { sGet, sSet } from "./lib/storage";
 
@@ -355,6 +355,112 @@ FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorI
 const ALL_ITEMS = FLOORS.flatMap(f => f.items);
 const TANK_ITEMS = ALL_ITEMS.filter(it => it.tank);
 
+/* ============================================================
+   DATOS: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
+   (según "Temperatura_Cuartos_Frios_Actualizada.xlsx", Sheet1)
+   ============================================================ */
+// Objeto "piso" sintético para poder reutilizar el mismo sistema de
+// fuera-de-servicio (activeIssues/issueHistory) que ya usan los pisos mecánicos.
+const COLD_ROOMS_FLOOR = { id: "cuartos-frios", name: "Cuartos Fríos" };
+
+const COLD_ROOMS = [
+  { c: "CC1", n: "BT Pescados — Piso 3A", setpoint: "-16 °C a -18 °C" },
+  { c: "CE2", n: "MT Frutas — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CE3", n: "MT Verduras — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CC4", n: "BT Carnes — Piso 3A", setpoint: "-16 °C a -18 °C" },
+  { c: "CE5", n: "MT Carnes — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CC6", n: "BT Aves — Piso 3A", setpoint: "-16 °C a -18 °C" },
+  { c: "CE7", n: "MT Aves — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CE8", n: "MT Refrigerada — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CE9", n: "MT Huevos — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CE10", n: "MT Pasteles — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CC11", n: "BT Pasteles — Piso 3A", setpoint: "-16 °C a -18 °C" },
+  { c: "CC12", n: "BT General — Piso 3A", setpoint: "-16 °C a -18 °C" },
+  { c: "CE13", n: "MT General — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CE14", n: "MT Bebidas — Piso 3A", setpoint: "1 °C a 4 °C" },
+  { c: "CC15", n: "MT Refrigerada — Piso 3", setpoint: "1 °C a 4 °C" },
+  { c: "CE16", n: "MT Banquetes — Piso 10", setpoint: "1 °C a 4 °C" },
+  { c: "CE17", n: "MT Preparación — Piso 10", setpoint: "1 °C a 4 °C" },
+  { c: "CE18", n: "MT General — Piso 10", setpoint: "1 °C a 4 °C" },
+  { c: "CE19", n: "MT Bebidas — Piso 10", setpoint: "1 °C a 4 °C" },
+  { c: "CE20", n: "MT Refrigerada — Piso 11", setpoint: "1 °C a 4 °C" },
+  { c: "CE21", n: "MT Flores — Piso 0", setpoint: "13 °C a 19 °C" },
+  { c: "CE22", n: "MT Basuras — Piso 0", setpoint: "1 °C a 4 °C" },
+  { c: "CE23", n: "MT Ritual — Piso 12", setpoint: "1 °C a 4 °C" },
+].map(x => ({ ...x, id: `cf-${x.c}`, k: "numeric", u: "°C" }));
+
+const ICE_STATUS_OPTS = ["ON", "OFF", "Fuera de servicio"];
+
+const ICE_MACHINES_AB = [
+  { c: "3A", n: "Frappé — Panadería" },
+  { c: "", n: "Cubo — Panadería" },
+  { c: "10", n: "Cubo — Eventos" },
+  { c: "11", n: "Frappé — Cocina Kokau" },
+  { c: "", n: "Cubo — Cocina Kokau" },
+  { c: "", n: "Cubo — Bar Signature" },
+  { c: "12", n: "Cubo — Amacagua" },
+  { c: "", n: "Cubo — Ritual 12" },
+  { c: "", n: "Cubo — Pool Bar" },
+  { c: "14", n: "Cubo — Chiringuito" },
+].map((x, i) => ({ ...x, id: `im-ab-${i + 1}`, k: "status" }));
+
+const ICE_MACHINES_LINOS = [17, 18, 20, 22, 24, 26, 28, 29, 30, 31, 34, 36, 38]
+  .map((piso, i) => ({ id: `im-li-${i + 1}`, c: String(piso), n: "Máquina de Hielo Cubos", k: "status" }));
+
+const ALL_COLD_ROOM_ITEMS = [...COLD_ROOMS, ...ICE_MACHINES_AB, ...ICE_MACHINES_LINOS];
+
+/* ============================================================
+   DATOS: LECTURAS DE MEDIDORES
+   (según "consumo_de_servicios_publicos_hyatt_2026.xlsx": hojas
+   SP [mes], Resc [mes] y Agua torres [mes] — mismos medidores cada mes)
+   ============================================================ */
+const METER_GROUPS = [
+  {
+    id: "sp", title: "Servicios Públicos Generales",
+    meters: [
+      { c: "m01", n: "Energía Piso 16 — Medidor Principal (NIC 7784481)", subs: ["ALTA", "BAJA"], u: "kWh" },
+      { c: "m02", n: "Energía Piso 16 — Medidor Respaldo (NIC 7784482)", subs: ["ALTA", "BAJA"], u: "kWh" },
+      { c: "m03", n: "Agua Hotel — Póliza 256023 (Medidor 596202)", subs: null, u: "m³" },
+      { c: "m04", n: "Gas Hotel (Medidor 4404155)", subs: null, u: "m³" },
+      { c: "m05", n: "Gas Residencias (Medidor 16730521218 / 4673538)", subs: null, u: "m³" },
+      { c: "m06", n: "Energía Piso 33 — Hyatt 150KVA Electricaribe (NIC 7942254)", subs: ["Activa Pi", "Activa FP", "Reactiva"], u: "kWh" },
+      { c: "m07", n: "Energía Piso 43 (C P C)", subs: ["ALTA", "BAJA"], u: "kWh" },
+      { c: "m08", n: "Lectura Medidor Piso Cero", subs: null, u: "" },
+      { c: "m09", n: "Agua Piso 43 Residencias", subs: null, u: "m³" },
+      { c: "m10", n: "Energía Piso 43 — Ascensor 21", subs: null, u: "kWh" },
+      { c: "m11", n: "Energía Piso 43 — Ascensor 22", subs: null, u: "kWh" },
+      { c: "m12", n: "Energía Piso 43 — Ascensor 23", subs: null, u: "kWh" },
+      { c: "m13", n: "QMC — Telefónica 132220070 (Piso 44)", subs: null, u: "" },
+      { c: "m14", n: "QMC — Telefónica AS1440 (Piso 44)", subs: null, u: "" },
+      { c: "m15", n: "QMC — Claro 24728084 (Piso 44)", subs: null, u: "" },
+      { c: "m16", n: "QMC — Claro 24728083 (Piso 9)", subs: null, u: "" },
+      { c: "m17", n: "QMC — Telefónica 888190 (Piso 9)", subs: null, u: "" },
+    ],
+  },
+  {
+    id: "resc", title: "Zonas Comunes / Residencias",
+    meters: [
+      { c: "r01", n: "Medidor Distrito Frío — Chiller 33", subs: null, u: "" },
+      { c: "r02", n: "Energía Habitaciones y Agua Caliente 34 (180-181)", subs: ["Activa", "Activa Pico"], u: "kWh" },
+      { c: "r03", n: "Medidor Zonas Comunes Piso 34-35-36", subs: null, u: "" },
+      { c: "r04", n: "Medidor Zonas Comunes Piso 37-38", subs: null, u: "" },
+      { c: "r05", n: "Medidor Sistema Hidrosanitario Piso 43", subs: null, u: "" },
+      { c: "r06", n: "Medidor Torres de Enfriamiento Piso 43", subs: null, u: "" },
+      { c: "r07", n: "Energía Piso 33 — Residencias (NIC 7942250)", subs: ["Activa AT", "Activa FA", "Reactiva"], u: "kWh" },
+    ],
+  },
+  {
+    id: "torres", title: "Agua Torres de Enfriamiento",
+    meters: [
+      { c: "t01", n: "Agua Torres", subs: null, u: "m³" },
+      { c: "t02", n: "Agua Torres Residencias", subs: null, u: "m³" },
+      { c: "t03", n: "Agua Torres Enfriamiento HN", subs: null, u: "m³" },
+    ],
+  },
+];
+METER_GROUPS.forEach(g => g.meters.forEach(m => { m.id = `mt-${g.id}-${m.c}`; }));
+const ALL_METERS = METER_GROUPS.flatMap(g => g.meters);
+
 const SHIFTS = ["06:00 – 14:00", "14:00 – 22:00", "22:00 – 06:00"];
 
 /* ============================================================
@@ -525,10 +631,11 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
 /* ============================================================
    COMPONENTE DE ITEM DE EQUIPO (dentro de una ronda)
    ============================================================ */
-function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous }) {
+function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous, statusOptions, hint }) {
   const [resolving, setResolving] = useState(false);
   const [solution, setSolution] = useState("");
   const damaged = !!entry?.damaged;
+  const opts = statusOptions || STATUS_OPTS;
 
   const update = (patch) => onChange(item.id, { ...entry, ...patch });
 
@@ -540,6 +647,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous 
           <div>
             <div className="text-sm font-medium" style={{ color: C.ink }}>{item.n}</div>
             {item.tank && <Pill tone="blue">Tanque agua potable</Pill>}
+            {hint && <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>Rango objetivo: <b>{hint}</b></div>}
             {previous && (
               <div className="text-xs mt-0.5" style={{ color: C.blue }}>
                 Turno anterior ({previous.shift}, {fmtDT(previous.updatedAt)} · {previous.updatedBy}):{" "}
@@ -556,7 +664,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous 
             <select value={entry?.status || ""} onChange={e => update({ status: e.target.value })}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, color: C.ink }}>
               <option value="">Estado…</option>
-              {STATUS_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+              {opts.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
           {(item.k === "numeric" || item.k === "statusNumeric") && (
@@ -604,7 +712,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous 
             className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
           <Button size="sm" variant="primary" icon={CheckCircle2}
             disabled={!solution.trim()}
-            onClick={() => { onResolve(item, solution.trim()); setResolving(false); setSolution(""); update({ damaged: false }); }}>
+            onClick={() => { onResolve(activeIssue, solution.trim()); setResolving(false); setSolution(""); update({ damaged: false }); }}>
             Confirmar
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setResolving(false)}>Cancelar</Button>
@@ -704,6 +812,203 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
           ✓ Ronda guardada correctamente {!isLast && "· pasando al siguiente piso…"}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
+   ============================================================ */
+function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound }) {
+  const [entries, setEntries] = useState({});
+  const [notes, setNotes] = useState("");
+  const [supervisor, setSupervisor] = useState("");
+  const [ingeniero, setIngeniero] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const seeded = {};
+    ALL_COLD_ROOM_ITEMS.forEach(item => {
+      const lv = latestColdValues[item.id];
+      if (lv) {
+        seeded[item.id] = { status: lv.status, value: lv.value, observation: lv.observation, damaged: !!activeIssues[item.id] };
+      } else if (activeIssues[item.id]) {
+        seeded[item.id] = { damaged: true, observation: activeIssues[item.id].observation };
+      }
+    });
+    setEntries(seeded);
+  }, []);
+
+  const onChange = useCallback((id, val) => { setEntries(prev => ({ ...prev, [id]: val })); setSaved(false); }, []);
+
+  const filledCount = Object.values(entries).filter(e => e && (e.status || (e.value !== undefined && e.value !== "") || e.observation || e.damaged)).length;
+  const damagedCount = Object.values(entries).filter(e => e?.damaged).length;
+
+  const handleSave = () => {
+    onSaveColdRound(entries, notes, supervisor, ingeniero);
+    setSaved(true);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Cuartos Fríos y Máquinas de Hielo</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>{ALL_COLD_ROOM_ITEMS.length} puntos de control · Turno {shift} · {todayStr()}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {damagedCount > 0 && <Pill tone="red">{damagedCount} fuera de rango / servicio</Pill>}
+          <Pill tone="gray">{filledCount}/{ALL_COLD_ROOM_ITEMS.length} registrados</Pill>
+        </div>
+      </div>
+
+      <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
+        Los campos ya vienen con lo último registrado — revisa, corrige lo que cambió y guarda. Marca "Dañado / Fuera de servicio"
+        si un cuarto está fuera de su rango de temperatura o una máquina de hielo no funciona.
+      </div>
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>Cuartos fríos ({COLD_ROOMS.length})</div>
+      {COLD_ROOMS.map(item => (
+        <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+          activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} hint={item.setpoint}
+          onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+      ))}
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>Máquinas de hielo A&B ({ICE_MACHINES_AB.length})</div>
+      {ICE_MACHINES_AB.map(item => (
+        <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+          activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} statusOptions={ICE_STATUS_OPTS}
+          onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+      ))}
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>Máquinas de hielo — Linos / Habitaciones ({ICE_MACHINES_LINOS.length})</div>
+      {ICE_MACHINES_LINOS.map(item => (
+        <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+          activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} statusOptions={ICE_STATUS_OPTS}
+          onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+      ))}
+
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          placeholder="Observaciones generales de la ronda…"
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-3" style={{ borderColor: C.line }} />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-xs mb-1" style={{ color: C.gray }}>Supervisor (opcional)</div>
+            <input value={supervisor} onChange={e => setSupervisor(e.target.value)} placeholder="Nombre del supervisor"
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+          </div>
+          <div>
+            <div className="text-xs mb-1" style={{ color: C.gray }}>Ingeniero (opcional)</div>
+            <input value={ingeniero} onChange={e => setIngeniero(e.target.value)} placeholder="Nombre del ingeniero"
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+        <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
+        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
+      </div>
+      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA: LECTURAS DE MEDIDORES
+   ============================================================ */
+function MeterRow({ meter, entry, onChange, previous }) {
+  const subs = meter.subs || ["value"];
+  const update = (sub, v) => onChange(meter.id, { ...entry, [sub]: v });
+
+  return (
+    <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-medium mb-2" style={{ color: C.ink }}>{meter.n}</div>
+      <div className="flex flex-wrap gap-4">
+        {subs.map(sub => {
+          const val = entry?.[sub];
+          const prevVal = previous?.[sub];
+          const hasBoth = val !== undefined && val !== "" && prevVal !== undefined && prevVal !== "" && !isNaN(Number(val)) && !isNaN(Number(prevVal));
+          const consumo = hasBoth ? Number(val) - Number(prevVal) : null;
+          return (
+            <div key={sub} className="flex flex-col">
+              <label className="text-xs mb-1" style={{ color: C.gray }}>
+                {meter.subs ? sub : "Lectura"}{meter.u ? ` (${meter.u})` : ""}
+              </label>
+              <input type="number" step="any" value={val ?? ""} onChange={e => update(sub, e.target.value)}
+                placeholder="valor" className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              {consumo !== null ? (
+                <span className="text-xs mt-1" style={{ color: consumo < 0 ? C.red : C.green }}>
+                  Consumo: {consumo.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{meter.u ? ` ${meter.u}` : ""}
+                </span>
+              ) : prevVal !== undefined && prevVal !== "" ? (
+                <span className="text-xs mt-1" style={{ color: C.gray }}>Anterior: {prevVal}</span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound }) {
+  const [entries, setEntries] = useState({});
+  const [notes, setNotes] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const onChange = useCallback((id, val) => { setEntries(prev => ({ ...prev, [id]: val })); setSaved(false); }, []);
+
+  const filledCount = ALL_METERS.filter(m => {
+    const e = entries[m.id]; if (!e) return false;
+    const subs = m.subs || ["value"];
+    return subs.some(s => e[s] !== undefined && e[s] !== "");
+  }).length;
+
+  const handleSave = () => {
+    onSaveMetersRound(entries, notes);
+    setSaved(true);
+    setEntries({});
+    setNotes("");
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Lecturas de Medidores</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>{ALL_METERS.length} medidores · Turno {shift} · {todayStr()}</p>
+        </div>
+        <Pill tone="gray">{filledCount}/{ALL_METERS.length} registrados</Pill>
+      </div>
+
+      <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
+        Escribe la lectura actual de cada medidor. El consumo (diferencia contra la última lectura guardada) se calcula solo, igual que en el Excel.
+      </div>
+
+      {METER_GROUPS.map(group => (
+        <div key={group.id}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>{group.title}</div>
+          {group.meters.map(m => (
+            <MeterRow key={m.id} meter={m} entry={entries[m.id]} onChange={onChange} previous={latestMeterValues[m.id]} />
+          ))}
+        </div>
+      ))}
+
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          placeholder="Observaciones sobre las lecturas de hoy…"
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+      </div>
+
+      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+        <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
+        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar lecturas</Button>
+      </div>
+      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Lecturas guardadas correctamente</div>}
     </div>
   );
 }
@@ -2028,6 +2333,11 @@ export default function App() {
   const [roundsIndex, setRoundsIndex] = useState([]);
   const [latestValues, setLatestValues] = useState({});
   const [tankHistory, setTankHistory] = useState({});
+  const [latestColdValues, setLatestColdValues] = useState({});
+  const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
+  const [latestMeterValues, setLatestMeterValues] = useState({});
+  const [meterHistory, setMeterHistory] = useState({});
+  const [meterRoundsIndex, setMeterRoundsIndex] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
@@ -2039,11 +2349,13 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
         sGet("report-whatsapp", true), sGet("last-tour", true), sGet("tour-history", true),
+        sGet("latest-cold-values", true), sGet("cold-rounds-index", true),
+        sGet("latest-meter-values", true), sGet("meter-history", true), sGet("meter-rounds-index", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -2056,6 +2368,11 @@ export default function App() {
       setSentReports(sr || []);
       setLastTour(lt || null);
       setTourHistory(thist || []);
+      setLatestColdValues(lcv || {});
+      setColdRoundsIndex(cri || []);
+      setLatestMeterValues(lmv || {});
+      setMeterHistory(mh || {});
+      setMeterRoundsIndex(mri || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -2263,6 +2580,90 @@ export default function App() {
     }
   };
 
+  const saveColdRound = async (entries, notes, supervisor, ingeniero) => {
+    const ts = nowIso();
+    const id = `cf-${Date.now()}`;
+    const cleanEntries = {};
+    let itemCount = 0, damagedCount = 0;
+    const newLatest = { ...latestColdValues };
+    const newActive = { ...activeIssues };
+
+    for (const item of ALL_COLD_ROOM_ITEMS) {
+      const e = entries[item.id];
+      const hasContent = e && (e.status || (e.value !== undefined && e.value !== "") || e.observation || e.damaged);
+      if (!hasContent) continue;
+      itemCount++;
+      cleanEntries[item.id] = { ...e, code: item.c, name: item.n };
+      newLatest[item.id] = { ...e, code: item.c, name: item.n, updatedAt: ts, updatedBy: displayName, shift };
+
+      if (e.damaged) {
+        damagedCount++;
+        if (!newActive[item.id]) {
+          newActive[item.id] = {
+            equipmentId: item.id, code: item.c, name: item.n, floorName: COLD_ROOMS_FLOOR.name, floorId: COLD_ROOMS_FLOOR.id,
+            openedAt: ts, openedBy: displayName, shift, observation: e.observation || "(sin observación)",
+          };
+        } else {
+          newActive[item.id] = { ...newActive[item.id], observation: e.observation || newActive[item.id].observation };
+        }
+      }
+    }
+
+    const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, itemCount, damagedCount, notes, supervisor, ingeniero };
+    const newIndex = [idxRec, ...coldRoundsIndex].slice(0, 500);
+
+    setLatestColdValues(newLatest); setActiveIssues(newActive); setColdRoundsIndex(newIndex);
+    await Promise.all([
+      sSet(`cold-round-${id}`, cleanEntries, true),
+      sSet("cold-rounds-index", newIndex, true),
+      sSet("latest-cold-values", newLatest, true),
+      sSet("active-issues", newActive, true),
+    ]);
+  };
+
+  const saveMetersRound = async (entries, notes) => {
+    const ts = nowIso();
+    const id = `mt-${Date.now()}`;
+    const cleanEntries = {};
+    const newLatest = { ...latestMeterValues };
+    const newHistory = { ...meterHistory };
+    let itemCount = 0;
+
+    for (const meter of ALL_METERS) {
+      const e = entries[meter.id];
+      const subs = meter.subs || ["value"];
+      const hasContent = e && subs.some(s => e[s] !== undefined && e[s] !== "");
+      if (!hasContent) continue;
+      itemCount++;
+
+      const prev = newLatest[meter.id] || {};
+      const consumos = {};
+      subs.forEach(s => {
+        if (e[s] !== undefined && e[s] !== "" && prev[s] !== undefined && prev[s] !== "") {
+          consumos[s] = Number(e[s]) - Number(prev[s]);
+        }
+      });
+
+      cleanEntries[meter.id] = { ...e, consumos };
+      newLatest[meter.id] = { ...prev, ...e, updatedAt: ts, updatedBy: displayName, shift };
+
+      const hist = (newHistory[meter.id] || []).concat([{ ...e, consumos, at: ts, by: displayName }]).slice(-60);
+      newHistory[meter.id] = hist;
+    }
+
+    const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, itemCount, notes };
+    const newIndex = [idxRec, ...meterRoundsIndex].slice(0, 500);
+
+    setLatestMeterValues(newLatest); setMeterHistory(newHistory); setMeterRoundsIndex(newIndex);
+    await Promise.all([
+      sSet(`meter-round-${id}`, cleanEntries, true),
+      sSet("meter-rounds-index", newIndex, true),
+      sSet("latest-meter-values", newLatest, true),
+      sSet("meter-history", newHistory, true),
+    ]);
+  };
+
+
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg, color: C.inkSoft }}>Cargando…</div>;
   if (loadError) return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
@@ -2288,6 +2689,8 @@ export default function App() {
 
   const NAV = [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
+    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake },
+    { id: "meters", label: "Lecturas de Medidores", icon: Zap },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -2373,6 +2776,14 @@ export default function App() {
               latestValues={latestValues} floorIndex={FLOORS.findIndex(f => f.id === floorId)} floorCount={FLOORS.length}
               onGoFloor={(idx) => setFloorId(FLOORS[idx].id)}
               onResolveIssue={resolveIssue} onSaveRound={saveRound} />
+          )}
+          {view === "coldrooms" && (
+            <ColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
+              latestColdValues={latestColdValues} onResolveIssue={resolveIssue} onSaveColdRound={saveColdRound} />
+          )}
+          {view === "meters" && (
+            <MetersView currentUser={displayName} shift={shift}
+              latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} />
           )}
           {view === "handoff" && (
             <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

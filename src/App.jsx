@@ -442,6 +442,7 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const hasAccounts = Object.keys(accounts).length > 0;
 
   const submit = () => {
@@ -474,12 +475,21 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
 
           <div className="space-y-2.5">
             <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuario"
+              autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username"
               className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line }} />
-            <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Contraseña"
-              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line }}
-              onKeyDown={e => { if (e.key === "Enter" && mode === "login") submit(); }} />
+            <div className="relative">
+              <input value={password} onChange={e => setPassword(e.target.value)} type={showPw ? "text" : "password"} placeholder="Contraseña"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: C.line }}
+                onKeyDown={e => { if (e.key === "Enter" && mode === "login") submit(); }} />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium px-1.5 py-1" style={{ color: C.gray }}>
+                {showPw ? "Ocultar" : "Mostrar"}
+              </button>
+            </div>
             {mode === "register" && (
-              <input value={password2} onChange={e => setPassword2(e.target.value)} type="password" placeholder="Confirmar contraseña"
+              <input value={password2} onChange={e => setPassword2(e.target.value)} type={showPw ? "text" : "password"} placeholder="Confirmar contraseña"
+                autoComplete="new-password"
                 className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line }}
                 onKeyDown={e => { if (e.key === "Enter") submit(); }} />
             )}
@@ -495,10 +505,17 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
             <Button icon={mode === "login" ? User : PlusCircle} disabled={busy} onClick={submit} size="md">
               {mode === "login" ? "Entrar" : "Crear cuenta"}
             </Button>
+            {mode === "login" && (
+              <p className="text-xs text-center" style={{ color: C.gray }}>
+                ¿Olvidaste tu contraseña? Pídele a un administrador que te la restablezca desde el Panel de administrador.
+              </p>
+            )}
           </div>
         </div>
         <p className="text-center text-xs mt-4" style={{ color: "#657c92" }}>
           Acceso básico por usuario y contraseña para identificar cada recorrido. No sustituye un sistema de seguridad corporativo.
+          Una vez inicias sesión en este navegador, queda recordada aquí — no hace falta volver a entrar cada vez que abres la página,
+          salvo que borres los datos de navegación o uses una pestaña de incógnito.
         </p>
       </div>
     </div>
@@ -1507,13 +1524,24 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
 /* ============================================================
    VISTA: PANEL DE ADMINISTRADOR
    ============================================================ */
-function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onDeleteAccount, currentUsername }) {
+function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onDeleteAccount, onResetPassword, currentUsername }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
   const [waSaved, setWaSaved] = useState(false);
+  const [resettingUser, setResettingUser] = useState(null);
+  const [newPw, setNewPw] = useState("");
+  const [resetMsg, setResetMsg] = useState("");
   const list = Object.entries(accounts).sort((a, b) => (a[1].createdAt || "").localeCompare(b[1].createdAt || ""));
   const adminCount = list.filter(([, a]) => a.isAdmin).length;
+
+  const doReset = async (uname) => {
+    if (!newPw || newPw.length < 4) { setResetMsg("La contraseña debe tener al menos 4 caracteres."); return; }
+    await onResetPassword(uname, newPw);
+    setResetMsg(`✓ Contraseña de "${uname}" actualizada. Avísale la nueva contraseña.`);
+    setNewPw("");
+    setTimeout(() => { setResettingUser(null); setResetMsg(""); }, 2500);
+  };
 
   return (
     <div>
@@ -1543,18 +1571,32 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
       <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Usuarios ({list.length})</div>
         {list.map(([uname, acc]) => (
-          <div key={uname} className="flex items-center justify-between py-2 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: C.line }}>
-            <div>
-              <div className="text-sm font-medium" style={{ color: C.ink }}>{uname} {uname === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}</div>
-              <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.createdAt)}</div>
+          <div key={uname} className="py-2 border-b last:border-0" style={{ borderColor: C.line }}>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <div className="text-sm font-medium" style={{ color: C.ink }}>{uname} {uname === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}</div>
+                <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.createdAt)}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                {acc.isAdmin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
+                <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uname ? null : uname); setNewPw(""); setResetMsg(""); }}>
+                  Restablecer contraseña
+                </Button>
+                <Button size="sm" variant="ghost" disabled={acc.isAdmin && adminCount === 1} onClick={() => onToggleAdmin(uname)}>
+                  {acc.isAdmin ? "Quitar admin" : "Hacer admin"}
+                </Button>
+                <Button size="sm" variant="red" disabled={uname === currentUsername} onClick={() => onDeleteAccount(uname)}>Eliminar</Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {acc.isAdmin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
-              <Button size="sm" variant="ghost" disabled={acc.isAdmin && adminCount === 1} onClick={() => onToggleAdmin(uname)}>
-                {acc.isAdmin ? "Quitar admin" : "Hacer admin"}
-              </Button>
-              <Button size="sm" variant="red" disabled={uname === currentUsername} onClick={() => onDeleteAccount(uname)}>Eliminar</Button>
-            </div>
+            {resettingUser === uname && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <input value={newPw} onChange={e => setNewPw(e.target.value)} type="text" placeholder="Nueva contraseña (mínimo 4 caracteres)"
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, minWidth: 220 }}
+                  onKeyDown={e => { if (e.key === "Enter") doReset(uname); }} />
+                <Button size="sm" onClick={() => doReset(uname)}>Guardar nueva contraseña</Button>
+                {resetMsg && <span className="text-xs" style={{ color: resetMsg.startsWith("✓") ? C.green : C.red }}>{resetMsg}</span>}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1660,6 +1702,13 @@ export default function App() {
 
   const toggleAdmin = async (username) => {
     const next = { ...accounts, [username]: { ...accounts[username], isAdmin: !accounts[username].isAdmin } };
+    setAccounts(next);
+    await sSet("accounts", next, true);
+  };
+
+  const resetPassword = async (username, newPassword) => {
+    const passwordHash = await hashPassword(newPassword);
+    const next = { ...accounts, [username]: { ...accounts[username], passwordHash } };
     setAccounts(next);
     await sSet("accounts", next, true);
   };
@@ -1904,7 +1953,7 @@ export default function App() {
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onDeleteAccount={deleteAccount} currentUsername={currentUser} />
+              onToggleAdmin={toggleAdmin} onDeleteAccount={deleteAccount} onResetPassword={resetPassword} currentUsername={currentUser} />
           )}
         </main>
       </div>

@@ -1097,63 +1097,184 @@ function loadJsPDF() {
   });
 }
 
-/**
- * Genera el informe completo en PDF real: resumen de fuera de servicio + incidentes resueltos
- * + el detalle de TODOS los pisos y TODOS los equipos con su última lectura registrada
- * (o "Sin datos registrados" si nunca se ha llenado ese equipo).
- */
-async function generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex) {
+function loadAutoTable() {
+  return new Promise((resolve, reject) => {
+    if (window.jspdf?.jsPDF?.API?.autoTable) { resolve(); return; }
+    const existing = document.getElementById("jspdf-autotable-cdn-script");
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("No se pudo cargar el generador de tablas del PDF.")));
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "jspdf-autotable-cdn-script";
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("No se pudo cargar el generador de tablas del PDF."));
+    document.body.appendChild(script);
+  });
+}
+
+/** Carga jsPDF + autoTable juntos; usar esto en vez de loadJsPDF a solas para reportes con tablas. */
+async function loadPdfLibs() {
   const jsPDFCtor = await loadJsPDF();
-  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
-  const pageW = 210, pageH = 297, marginX = 14;
-  let y = 18;
-  const lineH = 4.6;
+  await loadAutoTable();
+  return jsPDFCtor;
+}
 
-  const ensureSpace = (need = lineH) => { if (y + need > pageH - 14) { doc.addPage(); y = 18; } };
-  const heading = (text, size = 12) => {
-    ensureSpace(9);
-    doc.setFont(undefined, "bold"); doc.setFontSize(size);
-    doc.text(text, marginX, y);
-    y += size >= 13 ? 7 : 6;
-    doc.setFont(undefined, "normal"); doc.setFontSize(9);
-  };
-  const line = (text) => {
-    const wrapped = doc.splitTextToSize(text, pageW - marginX * 2);
-    wrapped.forEach(w => { ensureSpace(); doc.text(w, marginX, y); y += lineH; });
-  };
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
 
-  doc.setFontSize(16); doc.setFont(undefined, "bold");
-  doc.text("Informe de Equipos — Pisos Mecánicos", marginX, y); y += 8;
+/** Paleta del PDF, tomada de la misma paleta de colores que usa la app (C), en formato RGB para jsPDF. */
+const PDF_C = {
+  steelDark: hexToRgb(C.steelDark),
+  amber: hexToRgb(C.amber),
+  amberSoft: hexToRgb(C.amberSoft),
+  ink: hexToRgb(C.ink),
+  inkSoft: hexToRgb(C.inkSoft),
+  gray: hexToRgb(C.gray),
+  line: hexToRgb(C.line),
+  red: hexToRgb(C.red),
+  green: hexToRgb(C.green),
+  white: [255, 255, 255],
+  rowStripe: [246, 248, 250],
+};
+
+/** Encabezado con banda de color, título y datos del reporte. Se dibuja solo en la primera página. Devuelve la Y donde puede empezar el contenido. */
+function pdfLetterhead(doc, title, metaLines) {
+  const pageW = doc.internal.pageSize.getWidth();
+  doc.setFillColor(...PDF_C.steelDark);
+  doc.rect(0, 0, pageW, 27, "F");
+  doc.setFillColor(...PDF_C.amber);
+  doc.rect(0, 27, pageW, 1.6, "F");
+  doc.setTextColor(...PDF_C.white);
+  doc.setFont(undefined, "bold"); doc.setFontSize(16);
+  doc.text(title, 14, 12.5);
+  doc.setFont(undefined, "normal"); doc.setFontSize(8.5);
+  doc.text("Pisos Mecánicos · Revisión Diaria de Equipos", 14, 18.5);
+  doc.setFontSize(7.8);
+  doc.text(metaLines.join("   ·   "), 14, 23.8);
+  doc.setTextColor(...PDF_C.ink);
   doc.setFont(undefined, "normal"); doc.setFontSize(9);
-  doc.text(`Generado: ${fmtDT(nowIso())}`, marginX, y); y += 9;
+  return 36;
+}
+
+/** Pie de página con línea divisoria, fecha de generación y "Página X de Y", aplicado a TODAS las páginas al final. */
+function pdfFooterAll(doc) {
+  const pages = doc.internal.getNumberOfPages();
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...PDF_C.line);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageH - 13, pageW - 14, pageH - 13);
+    doc.setFontSize(7.3);
+    doc.setTextColor(...PDF_C.gray);
+    doc.text(`Generado ${fmtDT(nowIso())} · Pisos Mecánicos`, 14, pageH - 8.5);
+    doc.text(`Página ${i} de ${pages}`, pageW - 14, pageH - 8.5, { align: "right" });
+    doc.setTextColor(...PDF_C.ink);
+  }
+}
+
+/** Título de sección con una barrita de color a la izquierda, estilo "ficha". Devuelve la Y siguiente. */
+function pdfSectionTitle(doc, y, text, opts = {}) {
+  doc.setFillColor(...(opts.color || PDF_C.amber));
+  doc.rect(14, y - 4.2, 2, 6, "F");
+  doc.setFont(undefined, "bold"); doc.setFontSize(11.5);
+  doc.setTextColor(...PDF_C.ink);
+  doc.text(text, 18.5, y);
+  doc.setFont(undefined, "normal"); doc.setFontSize(9);
+  return y + 7;
+}
+
+/** Fila de tarjetas de resumen (estilo "stat cards"), 2 a 4 tarjetas en una fila. Devuelve la Y siguiente. */
+function pdfStatBoxes(doc, y, boxes) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const marginX = 14, gap = 4, boxH = 17;
+  const boxW = (pageW - marginX * 2 - gap * (boxes.length - 1)) / boxes.length;
+  boxes.forEach((b, i) => {
+    const x = marginX + i * (boxW + gap);
+    doc.setFillColor(...PDF_C.rowStripe);
+    doc.setDrawColor(...PDF_C.line);
+    doc.setLineWidth(0.2);
+    doc.roundedRect(x, y, boxW, boxH, 1.6, 1.6, "FD");
+    doc.setFont(undefined, "normal"); doc.setFontSize(6.8);
+    doc.setTextColor(...PDF_C.gray);
+    doc.text(String(b.label).toUpperCase(), x + 3, y + 5.5);
+    doc.setFont(undefined, "bold"); doc.setFontSize(11);
+    doc.setTextColor(...(b.color || PDF_C.ink));
+    const valLines = doc.splitTextToSize(String(b.value), boxW - 6);
+    doc.text(valLines[0], x + 3, y + 12.2);
+    doc.setFont(undefined, "normal");
+  });
+  doc.setTextColor(...PDF_C.ink);
+  return y + boxH + 9;
+}
+
+/** Tabla estándar del reporte (usa autoTable). Devuelve la Y donde terminó, lista para lo siguiente. */
+function pdfTable(doc, y, head, body, opts = {}) {
+  doc.autoTable({
+    startY: y,
+    head: [head],
+    body,
+    theme: "striped",
+    margin: { left: 14, right: 14, bottom: 18 },
+    styles: { fontSize: 8, cellPadding: 2.4, valign: "top", textColor: PDF_C.ink, lineColor: PDF_C.line, lineWidth: 0.1 },
+    headStyles: { fillColor: opts.headColor || PDF_C.steelDark, textColor: PDF_C.white, fontStyle: "bold", fontSize: 8 },
+    alternateRowStyles: { fillColor: PDF_C.rowStripe },
+    columnStyles: opts.columnStyles || {},
+  });
+  return doc.lastAutoTable.finalY + 8;
+}
+async function generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const pageH = doc.internal.pageSize.getHeight();
+
+  let y = pdfLetterhead(doc, "Informe de Equipos", [`Generado ${fmtDT(nowIso())}`]);
 
   const active = Object.values(activeIssues);
-  heading(`EQUIPOS FUERA DE SERVICIO ACTUALMENTE (${active.length})`, 13);
-  if (active.length === 0) line("Ninguno. Todo en orden.");
-  active.forEach(iss => {
-    line(`[${iss.floorName}] #${iss.code} ${iss.name} — reportado por ${iss.openedBy} el ${fmtDT(iss.openedAt)} (${elapsed(iss.openedAt)})`);
-    line(`   Obs: ${iss.observation}`);
-  });
-  y += 3;
+  y = pdfStatBoxes(doc, y, [
+    { label: "Fuera de servicio", value: String(active.length), color: active.length ? PDF_C.red : PDF_C.green },
+    { label: "Incidentes resueltos (historial)", value: String(issueHistory.length) },
+    { label: "Rondas registradas", value: String(roundsIndex.length) },
+  ]);
 
-  heading("ÚLTIMOS INCIDENTES RESUELTOS", 13);
-  if (issueHistory.length === 0) line("Sin registros.");
-  issueHistory.slice(0, 25).forEach(h => {
-    line(`[${h.floorName}] #${h.code} ${h.name} — dañado ${fmtDT(h.openedAt)}, resuelto ${fmtDT(h.resolvedAt)} por ${h.resolvedBy} (${h.duration})`);
-    line(`   Solución: ${h.solution}`);
-  });
+  y = pdfSectionTitle(doc, y, `Equipos fuera de servicio actualmente (${active.length})`, { color: PDF_C.red });
+  if (active.length === 0) {
+    doc.setFontSize(9); doc.text("Ninguno. Todo en orden.", 14, y); y += 8;
+  } else {
+    y = pdfTable(doc, y,
+      ["Piso", "#", "Equipo", "Reportado por", "Desde", "Fuera de servicio", "Observación"],
+      active.map(iss => [iss.floorName, String(iss.code), iss.name, iss.openedBy, fmtDT(iss.openedAt), elapsed(iss.openedAt), iss.observation || "—"]),
+      { headColor: PDF_C.red, columnStyles: { 1: { cellWidth: 8 }, 4: { cellWidth: 24 }, 5: { cellWidth: 20 } } });
+  }
+
+  if (y > pageH - 40) { doc.addPage(); y = 18; }
+  y = pdfSectionTitle(doc, y, "Últimos incidentes resueltos");
+  if (issueHistory.length === 0) {
+    doc.setFontSize(9); doc.text("Sin registros.", 14, y); y += 8;
+  } else {
+    y = pdfTable(doc, y,
+      ["Piso", "#", "Equipo", "Dañado", "Resuelto", "Duración", "Por", "Solución"],
+      issueHistory.slice(0, 25).map(h => [h.floorName, String(h.code), h.name, fmtDT(h.openedAt), fmtDT(h.resolvedAt), h.duration, h.resolvedBy, h.solution || "—"]),
+      { columnStyles: { 1: { cellWidth: 8 }, 5: { cellWidth: 18 } } });
+  }
 
   doc.addPage(); y = 18;
-  doc.setFont(undefined, "bold"); doc.setFontSize(14);
-  doc.text("Detalle completo por piso y equipo", marginX, y); y += 6;
-  doc.setFont(undefined, "normal"); doc.setFontSize(8.5);
-  doc.text("Muestra la última lectura registrada en cualquier ronda para cada equipo, aunque no se haya llenado en la ronda más reciente.", marginX, y);
-  y += 8;
-  doc.setFontSize(9);
+  y = pdfSectionTitle(doc, y, "Detalle completo por piso y equipo");
+  doc.setFontSize(8); doc.setTextColor(...PDF_C.gray);
+  doc.text("Muestra la última lectura registrada en cualquier ronda para cada equipo, aunque no se haya llenado en la más reciente.", 14, y);
+  doc.setTextColor(...PDF_C.ink); doc.setFontSize(9);
+  y += 7;
 
   FLOORS.forEach(floor => {
-    heading(floor.name, 12);
-    floor.items.forEach(item => {
+    if (y > pageH - 45) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, floor.name);
+    const rows = floor.items.map(item => {
       const lv = latestValues[item.id];
       const dmg = activeIssues[item.id];
       let valueStr = "Sin datos registrados";
@@ -1166,16 +1287,18 @@ async function generateFullReportPdf(latestValues, activeIssues, issueHistory, r
         if (lv.operador) parts.push(`Operador ${lv.operador}`);
         if (parts.length) valueStr = parts.join(" · ");
       }
-      line(`#${item.c} ${item.n}: ${valueStr}${dmg ? "  [FUERA DE SERVICIO]" : ""}`);
-      const obs = lv?.observation || dmg?.observation;
-      if (obs) line(`   Obs: ${obs}`);
-      if (lv?.updatedAt) line(`   Actualizado: ${fmtDT(lv.updatedAt)} · ${lv.updatedBy} · turno ${lv.shift}`);
+      const obs = lv?.observation || dmg?.observation || "—";
+      const updated = lv?.updatedAt ? `${fmtDT(lv.updatedAt)} · ${lv.updatedBy}` : "—";
+      return [String(item.c), item.n, valueStr + (dmg ? "  [FUERA DE SERVICIO]" : ""), obs, updated];
     });
-    y += 2;
+    y = pdfTable(doc, y, ["#", "Equipo", "Última lectura", "Observación", "Actualizado"], rows,
+      { columnStyles: { 0: { cellWidth: 8 } } });
   });
 
+  pdfFooterAll(doc);
   return doc;
 }
+
 
 /**
  * Construye el texto de "Entrega de turno": el detalle de TODOS los pisos recorridos
@@ -1217,45 +1340,40 @@ function pdfDocToBase64(doc) {
 
 /** PDF de UNA entrega de turno (el recorrido que se acaba de completar), piso por piso. */
 async function generateTourPdf(tour) {
-  const jsPDFCtor = await loadJsPDF();
+  const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
-  const pageW = 210, pageH = 297, marginX = 14;
-  let y = 18;
-  const lineH = 4.6;
+  const pageH = doc.internal.pageSize.getHeight();
 
-  const ensureSpace = (need = lineH) => { if (y + need > pageH - 14) { doc.addPage(); y = 18; } };
-  const heading = (text, size = 12) => {
-    ensureSpace(9);
-    doc.setFont(undefined, "bold"); doc.setFontSize(size);
-    doc.text(text, marginX, y);
-    y += size >= 13 ? 7 : 6;
-    doc.setFont(undefined, "normal"); doc.setFontSize(9);
-  };
-  const line = (text) => {
-    const wrapped = doc.splitTextToSize(text, pageW - marginX * 2);
-    wrapped.forEach(w => { ensureSpace(); doc.text(w, marginX, y); y += lineH; });
-  };
+  let y = pdfLetterhead(doc, "Entrega de Turno", [`Turno ${tour.shift}`, tour.date, `Recorrido de ${tour.user}`]);
 
-  doc.setFontSize(16); doc.setFont(undefined, "bold");
-  doc.text("Entrega de Turno — Pisos Mecánicos", marginX, y); y += 8;
-  doc.setFont(undefined, "normal"); doc.setFontSize(9);
-  doc.text(`Turno ${tour.shift} · ${tour.date} · Recorrido realizado por ${tour.user}`, marginX, y); y += 6;
-  doc.text(`Equipos revisados: ${tour.itemCount}${tour.damagedCount ? ` · Fuera de servicio: ${tour.damagedCount}` : " · Todo en orden"}`, marginX, y); y += 9;
-  doc.setFontSize(9);
+  y = pdfStatBoxes(doc, y, [
+    { label: "Equipos revisados", value: String(tour.itemCount) },
+    { label: "Fuera de servicio", value: String(tour.damagedCount), color: tour.damagedCount ? PDF_C.red : PDF_C.green },
+  ]);
 
   tour.floors.forEach(f => {
-    heading(f.floorName, 12);
-    if (f.items.length === 0) line("Sin equipos registrados en este piso.");
-    f.items.forEach(it => {
-      line(`#${it.code} ${it.name}: ${it.valueStr}${it.damaged ? "  [FUERA DE SERVICIO]" : ""}`);
-      if (it.observation) line(`   Obs: ${it.observation}`);
-    });
-    if (f.notes) line(`Notas del piso: ${f.notes}`);
-    y += 2;
+    if (y > pageH - 45) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, f.floorName);
+    if (f.items.length === 0) {
+      doc.setFontSize(9); doc.text("Sin equipos registrados en este piso.", 14, y); y += 8;
+    } else {
+      y = pdfTable(doc, y, ["#", "Equipo", "Valor / Estado", "Observación"],
+        f.items.map(it => [String(it.code), it.name, it.valueStr + (it.damaged ? "  [FUERA DE SERVICIO]" : ""), it.observation || "—"]),
+        { columnStyles: { 0: { cellWidth: 8 } } });
+    }
+    if (f.notes) {
+      doc.setFontSize(8.5); doc.setTextColor(...PDF_C.inkSoft);
+      const wrapped = doc.splitTextToSize(`Notas del piso: ${f.notes}`, 182);
+      wrapped.forEach(w => { doc.text(w, 14, y); y += 4.4; });
+      doc.setTextColor(...PDF_C.ink); doc.setFontSize(9);
+      y += 3;
+    }
   });
 
+  pdfFooterAll(doc);
   return doc;
 }
+
 
 /**
  * Envío REAL y automático del correo con el PDF adjunto: genera el PDF en el navegador,
@@ -1566,48 +1684,44 @@ function computeEquipmentStats(issueHistory, activeIssues, sinceDate) {
 
 /** PDF del reporte de Análisis de fallas: resumen + detalle de incidentes por equipo. */
 async function generateAnalyticsPdf(stats, rangeLabel, summary) {
-  const jsPDFCtor = await loadJsPDF();
+  const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
-  const pageW = 210, pageH = 297, marginX = 14;
-  let y = 18;
-  const lineH = 4.6;
+  const pageH = doc.internal.pageSize.getHeight();
 
-  const ensureSpace = (need = lineH) => { if (y + need > pageH - 14) { doc.addPage(); y = 18; } };
-  const heading = (text, size = 12) => {
-    ensureSpace(9);
-    doc.setFont(undefined, "bold"); doc.setFontSize(size);
-    doc.text(text, marginX, y);
-    y += size >= 13 ? 7 : 6;
+  let y = pdfLetterhead(doc, "Análisis de Fallas", [`Período: ${rangeLabel}`, `Generado ${fmtDT(nowIso())}`]);
+
+  const longest = stats.filter(e => e.currentlyDown).sort((a, b) => b.totalHours - a.totalHours)[0];
+  y = pdfStatBoxes(doc, y, [
+    { label: "Fuera de servicio ahora", value: String(summary.totalCurrentlyDown), color: summary.totalCurrentlyDown ? PDF_C.red : PDF_C.green },
+    { label: "Incidentes en el período", value: String(summary.totalIncidents) },
+    { label: "Falla activa más larga", value: longest ? `${longest.name} · ${fmtHours(longest.totalHours)}` : "Ninguna" },
+  ]);
+
+  if (stats.length === 0) {
+    doc.setFontSize(9); doc.text("No hay incidentes registrados en este período.", 14, y);
+    pdfFooterAll(doc);
+    return doc;
+  }
+
+  y = pdfSectionTitle(doc, y, "Resumen por equipo (ordenado por tiempo fuera de servicio)");
+  y = pdfTable(doc, y, ["Equipo", "Piso", "Incidentes", "Horas acumuladas", "Estado"],
+    stats.map(eq => [eq.name, eq.floorName, String(eq.incidents.length), fmtHours(eq.totalHours), eq.currentlyDown ? "Fuera de servicio" : "Resuelto"]),
+    { columnStyles: { 2: { cellWidth: 20 }, 3: { cellWidth: 28 }, 4: { cellWidth: 28 } } });
+
+  if (y > pageH - 40) { doc.addPage(); y = 18; }
+  y = pdfSectionTitle(doc, y, "Detalle de incidentes por equipo");
+  stats.forEach(eq => {
+    if (y > pageH - 45) { doc.addPage(); y = 18; }
+    doc.setFont(undefined, "bold"); doc.setFontSize(9.5);
+    doc.text(`${eq.name} (${eq.floorName})`, 14, y);
     doc.setFont(undefined, "normal"); doc.setFontSize(9);
-  };
-  const line = (text) => {
-    const wrapped = doc.splitTextToSize(text, pageW - marginX * 2);
-    wrapped.forEach(w => { ensureSpace(); doc.text(w, marginX, y); y += lineH; });
-  };
-
-  doc.setFontSize(16); doc.setFont(undefined, "bold");
-  doc.text("Análisis de Fallas — Pisos Mecánicos", marginX, y); y += 8;
-  doc.setFont(undefined, "normal"); doc.setFontSize(9);
-  doc.text(`Período: ${rangeLabel} · Generado: ${fmtDT(nowIso())}`, marginX, y); y += 6;
-  doc.text(`Fuera de servicio ahora: ${summary.totalCurrentlyDown} · Incidentes en el período: ${summary.totalIncidents}`, marginX, y); y += 9;
-  doc.setFontSize(9);
-
-  heading("Resumen por equipo (ordenado por tiempo fuera de servicio)", 12);
-  stats.forEach(eq => {
-    line(`${eq.name} — ${eq.floorName}: ${eq.incidents.length} incidente${eq.incidents.length !== 1 ? "s" : ""}, ${fmtHours(eq.totalHours)} acumuladas${eq.currentlyDown ? "  [FUERA DE SERVICIO AHORA]" : ""}`);
-  });
-  y += 3;
-
-  heading("Detalle de incidentes por equipo", 12);
-  stats.forEach(eq => {
-    heading(`${eq.name} (${eq.floorName})`, 10);
-    eq.incidents.forEach(inc => {
-      line(`Desde ${fmtDT(inc.from)} — ${inc.ongoing ? "sigue fuera de servicio" : `hasta ${fmtDT(inc.to)}`} · ${fmtHours(inc.hours)}`);
-      if (inc.solution) line(`   Solución: ${inc.solution} (por ${inc.resolvedBy})`);
-    });
-    y += 2;
+    y += 5;
+    y = pdfTable(doc, y, ["Desde", "Hasta", "Duración", "Solución", "Resuelto por"],
+      eq.incidents.map(inc => [fmtDT(inc.from), inc.ongoing ? "Sigue fuera de servicio" : fmtDT(inc.to), fmtHours(inc.hours), inc.solution || "—", inc.resolvedBy || "—"]),
+      { columnStyles: { 2: { cellWidth: 22 } } });
   });
 
+  pdfFooterAll(doc);
   return doc;
 }
 

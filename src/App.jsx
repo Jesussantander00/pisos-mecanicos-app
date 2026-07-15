@@ -6,7 +6,7 @@ import {
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
-  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap
+  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays
 } from "lucide-react";
 import { sGet, sSet } from "./lib/storage";
 
@@ -457,6 +457,21 @@ const METER_GROUPS = [
       { c: "t03", n: "Agua Torres Enfriamiento HN", subs: null, u: "m³" },
     ],
   },
+  {
+    // Contadores de energía por apartamento — "Contadores_Energia_Residencias_2026.xlsx"
+    id: "hab", title: "Contadores de Energía — Habitaciones / Residencias",
+    meters: [
+      ["3901", "7943031"], ["3902", "7943051"], ["3903", "7943057"], ["3904", "7943098"],
+      ["3905", "7943104"], ["3906", "7943106"], ["3907", "7943108"], ["3908", "7943111"],
+      ["4001", "7943113"], ["4002", "7943114"], ["4003", "7943115"], ["4004", "7943116"],
+      ["4005", "7943120"], ["4006", "7943122"], ["4007", "7943125"], ["4008", "7943127"],
+      ["4101", "7943131"], ["4102", "7943135"], ["4103", "7943138"], ["4104", "7943161"],
+      ["4105", "7943166"], ["4106", "7943171"], ["4107", "7943185"], ["4108", "7943221"],
+      ["4109", "7943224"], ["4201", "7943226"], ["4202", "7943227"], ["4203", "7943228"],
+      ["4204", "7943229"], ["4205", "7943231"], ["4206", "7943232"], ["4208", "7943236"],
+      ["4209", "7943240"],
+    ].map(([apto, serial]) => ({ c: apto, n: `Apartamento ${apto} (Medidor ${serial})`, subs: null, u: "kWh" })),
+  },
 ];
 METER_GROUPS.forEach(g => g.meters.forEach(m => { m.id = `mt-${g.id}-${m.c}`; }));
 const ALL_METERS = METER_GROUPS.flatMap(g => g.meters);
@@ -498,6 +513,20 @@ function elapsed(iso) {
   const m = Math.floor((ms % 3600000) / 60000);
   return `${h} h ${m} min`;
 }
+
+/* ---- Helpers de semana (lunes a domingo), para la vista semanal de medidores ---- */
+const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+function startOfWeek(d) {
+  const date = new Date(d); date.setHours(0, 0, 0, 0);
+  const day = date.getDay();
+  const diff = (day === 0 ? -6 : 1) - day; // retrocede hasta el lunes
+  date.setDate(date.getDate() + diff);
+  return date;
+}
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function fmtDayShort(d) { return `${DAY_NAMES[d.getDay()].slice(0, 3)} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; }
+function fmtDayFull(d) { return `${DAY_NAMES[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; }
+function isSameCalendarDay(a, b) { return new Date(a).toDateString() === new Date(b).toDateString(); }
 
 /* ============================================================
    UI PRIMITIVES
@@ -819,12 +848,18 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 /* ============================================================
    VISTA: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
    ============================================================ */
-function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound }) {
+function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound }) {
   const [entries, setEntries] = useState({});
   const [notes, setNotes] = useState("");
   const [supervisor, setSupervisor] = useState("");
   const [ingeniero, setIngeniero] = useState("");
   const [saved, setSaved] = useState(false);
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [sendMsg, setSendMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
   useEffect(() => {
     const seeded = {};
@@ -847,6 +882,27 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const handleSave = () => {
     onSaveColdRound(entries, notes, supervisor, ingeniero);
     setSaved(true);
+    setSendMsg(null);
+  };
+
+  const doDownloadPdf = async () => {
+    if (!lastColdRound) return;
+    setDownloading(true);
+    try {
+      const doc = await generateColdRoomsPdf(lastColdRound);
+      doc.save(`cuartos-frios-${lastColdRound.date.replace(/\//g, "-")}.pdf`);
+    } catch { setSendMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+    setDownloading(false);
+  };
+
+  const doSendEmail = async () => {
+    if (!lastColdRound) return;
+    if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setSendMsg(null);
+    const res = await sendColdRoomsEmailAuto(emailTo.trim(), lastColdRound);
+    setSendMsg({ ok: res.ok, text: res.message });
+    onLogSent?.({ to: emailTo.trim(), method: "Cuartos Fríos (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setSending(false);
   };
 
   return (
@@ -911,7 +967,24 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
       </div>
-      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
+      {saved && <div className="text-right text-sm mt-1 mb-3" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
+
+      {lastColdRound && (
+        <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
+            PDF de la última ronda guardada ({lastColdRound.date}, turno {lastColdRound.shift})
+          </div>
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadPdf}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            <Button icon={Mail} disabled={sending} onClick={doSendEmail}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+          </div>
+          {sendMsg && <div className="text-xs mt-2" style={{ color: sendMsg.ok ? C.green : C.red }}>{sendMsg.text}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1009,6 +1082,111 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound }
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar lecturas</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Lecturas guardadas correctamente</div>}
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA: HISTORIAL SEMANAL DE MEDIDORES
+   ============================================================ */
+function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser }) {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
+
+  const grid = useMemo(() => buildMeterWeekGrid(meterHistory, weekStart), [meterHistory, weekStart]);
+  const weekLabel = `${fmtDayFull(weekStart)} — ${fmtDayFull(addDays(weekStart, 6))}`;
+  const isCurrentWeek = isSameCalendarDay(startOfWeek(new Date()), weekStart);
+
+  const doDownload = async () => {
+    setDownloading(true);
+    try {
+      const doc = await generateMetersWeekPdf(grid, weekLabel);
+      doc.save(`lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+    setDownloading(false);
+  };
+
+  const doSend = async () => {
+    if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setMsg(null);
+    const res = await sendMetersWeekEmailAuto(emailTo.trim(), grid, weekLabel);
+    setMsg({ ok: res.ok, text: res.message });
+    onLogSent?.({ to: emailTo.trim(), method: "Lecturas de medidores (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setSending(false);
+  };
+
+  let lastGroupRendered = null;
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Lecturas de Medidores — Historial semanal</h2>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setWeekStart(w => addDays(w, -7))}>‹ Semana anterior</Button>
+          <span className="text-sm font-medium" style={{ color: C.ink }}>{weekLabel}</span>
+          <Button size="sm" variant="ghost" disabled={isCurrentWeek} onClick={() => setWeekStart(w => addDays(w, 7))}>Semana siguiente ›</Button>
+        </div>
+        {!isCurrentWeek && <Button size="sm" variant="ghost" onClick={() => setWeekStart(startOfWeek(new Date()))}>Ir a esta semana</Button>}
+      </div>
+
+      <p className="text-xs mb-3" style={{ color: C.gray }}>
+        La columna "Antes" muestra la última lectura guardada justo antes de esta semana, para poder comparar el primer
+        día de la semana y seguir la misma secuencia sin cortes — igual que pasa entre meses en el Excel.
+      </p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar esta semana</div>
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+        </div>
+        {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+        <table className="min-w-full text-xs" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: C.steelDark, color: "#fff" }}>
+              <th className="text-left px-2 py-2" style={{ minWidth: 240 }}>Medidor</th>
+              <th className="px-2 py-2 text-right">Antes</th>
+              {grid.days.map((d, i) => <th key={i} className="px-2 py-2 text-right whitespace-nowrap">{fmtDayShort(d)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {grid.rows.map((row, i) => {
+              const showGroupHeader = row.groupTitle !== lastGroupRendered;
+              lastGroupRendered = row.groupTitle;
+              return (
+                <React.Fragment key={i}>
+                  {showGroupHeader && (
+                    <tr>
+                      <td colSpan={grid.days.length + 2} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                        {row.groupTitle}
+                      </td>
+                    </tr>
+                  )}
+                  <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-2 py-1.5" style={{ color: C.ink }}>{row.label}{row.unit ? ` (${row.unit})` : ""}</td>
+                    <td className="px-2 py-1.5 text-right" style={{ color: C.gray }}>{row.before ?? "—"}</td>
+                    {row.days.map((v, di) => (
+                      <td key={di} className="px-2 py-1.5 text-right" style={{ color: v != null ? C.ink : C.gray }}>{v ?? "—"}</td>
+                    ))}
+                  </tr>
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2060,6 +2238,181 @@ async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary) {
   }
 }
 
+/* ============================================================
+   PDF Y CORREO: CUARTOS FRÍOS
+   ============================================================ */
+async function generateColdRoomsPdf(record) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const pageH = doc.internal.pageSize.getHeight();
+
+  let y = pdfLetterhead(doc, "Cuartos Fríos y Máquinas de Hielo", [`Turno ${record.shift}`, record.date, `Realizado por ${record.user}`]);
+  y = pdfStatBoxes(doc, y, [
+    { label: "Puntos revisados", value: String(record.itemCount) },
+    { label: "Fuera de rango / servicio", value: String(record.damagedCount), color: record.damagedCount ? PDF_C.red : PDF_C.green },
+  ]);
+
+  const sections = [
+    { title: `Cuartos fríos (${COLD_ROOMS.length})`, items: record.items.filter(it => it.section === "cuartos") },
+    { title: `Máquinas de hielo A&B (${ICE_MACHINES_AB.length})`, items: record.items.filter(it => it.section === "hielo-ab") },
+    { title: `Máquinas de hielo — Linos/Habitaciones (${ICE_MACHINES_LINOS.length})`, items: record.items.filter(it => it.section === "hielo-linos") },
+  ];
+  sections.forEach(sec => {
+    if (sec.items.length === 0) return;
+    if (y > pageH - 45) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, sec.title);
+    const head = sec.title.startsWith("Cuartos") ? ["#", "Equipo", "Rango objetivo", "Lectura", "Observación"] : ["#", "Equipo", "Estado", "Observación"];
+    const rows = sec.items.map(it => sec.title.startsWith("Cuartos")
+      ? [it.code, it.name, it.hint || "—", it.valueStr + (it.damaged ? "  [FUERA DE RANGO]" : ""), it.observation || "—"]
+      : [it.code || "—", it.name, it.valueStr + (it.damaged ? "  [FUERA DE SERVICIO]" : ""), it.observation || "—"]);
+    y = pdfTable(doc, y, head, rows, { columnStyles: { 0: { cellWidth: 12 } } });
+  });
+
+  if (record.notes) {
+    if (y > pageH - 30) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, "Observaciones generales");
+    doc.setFontSize(9);
+    const wrapped = doc.splitTextToSize(record.notes, 182);
+    wrapped.forEach(w => { doc.text(w, 14, y); y += 4.6; });
+    y += 4;
+  }
+  if (record.supervisor || record.ingeniero) {
+    doc.setFontSize(8.5); doc.setTextColor(...PDF_C.gray);
+    doc.text(`Supervisor: ${record.supervisor || "—"}     Ingeniero: ${record.ingeniero || "—"}`, 14, y);
+    doc.setTextColor(...PDF_C.ink);
+  }
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendColdRoomsEmailAuto(to, record) {
+  try {
+    const doc = await generateColdRoomsPdf(record);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Cuartos Fríos - ${record.date} (Turno ${record.shift})`,
+        text: `Ronda de Cuartos Fríos y Máquinas de Hielo — ${record.date}, turno ${record.shift}, realizada por ${record.user}. ${record.itemCount} puntos revisados, ${record.damagedCount} fuera de rango/servicio. Ver el detalle completo en el PDF adjunto.`,
+        pdfBase64,
+        filename: `cuartos-frios-${record.date.replace(/\//g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+/* ============================================================
+   VISTA SEMANAL DE MEDIDORES
+   ============================================================ */
+/** Arma la cuadrícula semanal: para cada medidor (y cada sub-lectura si tiene varias),
+ *  busca en el historial la última lectura de CADA día de la semana, más la última
+ *  lectura anterior al inicio de la semana (para poder comparar y seguir la secuencia). */
+function buildMeterWeekGrid(meterHistory, weekStart) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const beforeCutoff = new Date(weekStart.getTime() - 1);
+
+  const rows = [];
+  METER_GROUPS.forEach(group => {
+    group.meters.forEach(meter => {
+      const subs = meter.subs || [null];
+      const hist = meterHistory[meter.id] || [];
+      subs.forEach(sub => {
+        const valueOnOrBefore = (limit) => {
+          let best = null;
+          hist.forEach(h => {
+            const hd = new Date(h.at);
+            const v = sub ? h[sub] : h.value;
+            if (hd <= limit && v !== undefined && v !== "" && (!best || hd > best.date)) best = { date: hd, value: v };
+          });
+          return best ? best.value : null;
+        };
+        const valueOnDay = (day) => {
+          const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+          let found = null;
+          hist.forEach(h => {
+            const hd = new Date(h.at);
+            const v = sub ? h[sub] : h.value;
+            if (hd >= dayStart && hd <= dayEnd && v !== undefined && v !== "") found = v;
+          });
+          return found;
+        };
+        rows.push({
+          groupTitle: group.title,
+          label: sub ? `${meter.n} — ${sub}` : meter.n,
+          unit: meter.u,
+          before: valueOnOrBefore(beforeCutoff),
+          days: days.map(d => valueOnDay(d)),
+        });
+      });
+    });
+  });
+  return { days, rows };
+}
+
+async function generateMetersWeekPdf(grid, weekLabel) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
+  const pageH = doc.internal.pageSize.getHeight();
+
+  let y = pdfLetterhead(doc, "Lecturas de Medidores — Semana", [weekLabel]);
+  const head = ["Medidor", "Antes", ...grid.days.map(d => fmtDayShort(d))];
+
+  let currentGroup = null;
+  let groupRows = [];
+  const flushGroup = () => {
+    if (!currentGroup || groupRows.length === 0) return;
+    if (y > pageH - 40) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, currentGroup);
+    const body = groupRows.map(r => [r.label + (r.unit ? ` (${r.unit})` : ""), r.before ?? "—", ...r.days.map(v => v ?? "—")]);
+    y = pdfTable(doc, y, head, body, { columnStyles: { 0: { cellWidth: 70 } } });
+  };
+
+  grid.rows.forEach(row => {
+    if (row.groupTitle !== currentGroup) {
+      flushGroup();
+      currentGroup = row.groupTitle;
+      groupRows = [];
+    }
+    groupRows.push(row);
+  });
+  flushGroup();
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendMetersWeekEmailAuto(to, grid, weekLabel) {
+  try {
+    const doc = await generateMetersWeekPdf(grid, weekLabel);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Lecturas de Medidores — ${weekLabel}`,
+        text: `Lecturas de medidores de la semana: ${weekLabel}. Ver el detalle completo (todos los medidores, día por día) en el PDF adjunto.`,
+        pdfBase64,
+        filename: `lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
 function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLogSent, currentUser }) {
   const [range, setRange] = useState("all"); // 30 | 90 | 365 | all
   const [expanded, setExpanded] = useState(null);
@@ -2335,6 +2688,7 @@ export default function App() {
   const [tankHistory, setTankHistory] = useState({});
   const [latestColdValues, setLatestColdValues] = useState({});
   const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
+  const [lastColdRound, setLastColdRound] = useState(null);
   const [latestMeterValues, setLatestMeterValues] = useState({});
   const [meterHistory, setMeterHistory] = useState({});
   const [meterRoundsIndex, setMeterRoundsIndex] = useState([]);
@@ -2349,13 +2703,14 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
         sGet("report-whatsapp", true), sGet("last-tour", true), sGet("tour-history", true),
         sGet("latest-cold-values", true), sGet("cold-rounds-index", true),
         sGet("latest-meter-values", true), sGet("meter-history", true), sGet("meter-rounds-index", true),
+        sGet("last-cold-round", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -2369,6 +2724,7 @@ export default function App() {
       setLastTour(lt || null);
       setTourHistory(thist || []);
       setLatestColdValues(lcv || {});
+      setLastColdRound(lcr || null);
       setColdRoundsIndex(cri || []);
       setLatestMeterValues(lmv || {});
       setMeterHistory(mh || {});
@@ -2612,13 +2968,31 @@ export default function App() {
     const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, itemCount, damagedCount, notes, supervisor, ingeniero };
     const newIndex = [idxRec, ...coldRoundsIndex].slice(0, 500);
 
+    const sectionOf = (item) => COLD_ROOMS.includes(item) ? "cuartos" : ICE_MACHINES_AB.includes(item) ? "hielo-ab" : "hielo-linos";
+    const record = {
+      ...idxRec,
+      items: ALL_COLD_ROOM_ITEMS.filter(item => cleanEntries[item.id]).map(item => {
+        const e = cleanEntries[item.id];
+        const parts = [];
+        if (e.status) parts.push(e.status);
+        if (e.value !== undefined && e.value !== "") parts.push(`${e.value}${item.u ? " " + item.u : ""}`);
+        return {
+          code: item.c, name: item.n, hint: item.setpoint, section: sectionOf(item),
+          valueStr: parts.join(" · ") || "(sin valor)", damaged: !!e.damaged, observation: e.observation || "",
+        };
+      }),
+    };
+
     setLatestColdValues(newLatest); setActiveIssues(newActive); setColdRoundsIndex(newIndex);
+    setLastColdRound(record);
     await Promise.all([
       sSet(`cold-round-${id}`, cleanEntries, true),
       sSet("cold-rounds-index", newIndex, true),
       sSet("latest-cold-values", newLatest, true),
       sSet("active-issues", newActive, true),
+      sSet("last-cold-round", record, true),
     ]);
+    return record;
   };
 
   const saveMetersRound = async (entries, notes) => {
@@ -2691,6 +3065,7 @@ export default function App() {
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
     { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake },
     { id: "meters", label: "Lecturas de Medidores", icon: Zap },
+    { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -2779,11 +3154,15 @@ export default function App() {
           )}
           {view === "coldrooms" && (
             <ColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
-              latestColdValues={latestColdValues} onResolveIssue={resolveIssue} onSaveColdRound={saveColdRound} />
+              latestColdValues={latestColdValues} onResolveIssue={resolveIssue} onSaveColdRound={saveColdRound}
+              reportEmail={reportEmail} onLogSent={logSentReport} lastColdRound={lastColdRound} />
           )}
           {view === "meters" && (
             <MetersView currentUser={displayName} shift={shift}
               latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} />
+          )}
+          {view === "meters-history" && (
+            <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "handoff" && (
             <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

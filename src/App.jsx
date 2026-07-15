@@ -1105,7 +1105,7 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
   const doDownload = async () => {
     setDownloading(true);
     try {
-      const doc = await generateMetersWeekPdf(grid, weekLabel);
+      const doc = await generateMetersWeekPdf(grid, weekLabel, currentUser);
       doc.save(`lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
     } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
     setDownloading(false);
@@ -1114,7 +1114,7 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
   const doSend = async () => {
     if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSending(true); setMsg(null);
-    const res = await sendMetersWeekEmailAuto(emailTo.trim(), grid, weekLabel);
+    const res = await sendMetersWeekEmailAuto(emailTo.trim(), grid, weekLabel, currentUser);
     setMsg({ ok: res.ok, text: res.message });
     onLogSent?.({ to: emailTo.trim(), method: "Lecturas de medidores (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSending(false);
@@ -1268,7 +1268,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
   const doDownloadPdf = async () => {
     setGeneratingPdf(true); setDownloadMsg(null);
     try {
-      const doc = await generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex);
+      const doc = await generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex, currentUser);
       const filename = `informe-equipos-${todayStr().replace(/\//g, "-")}.pdf`;
       doc.save(filename);
       setDownloadMsg("✓ PDF descargado con el detalle de los 12 pisos y todos los equipos (los que no tienen datos aparecen como 'Sin datos registrados').");
@@ -1295,7 +1295,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
   const doSendAutoFull = async () => {
     if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSendingAutoFull(true); setSendMsg(null);
-    const res = await sendFullReportEmailAuto(emailTo.trim(), latestValues, activeIssues, issueHistory, roundsIndex);
+    const res = await sendFullReportEmailAuto(emailTo.trim(), latestValues, activeIssues, issueHistory, roundsIndex, currentUser);
     setSendMsg({ ok: res.ok, text: res.message });
     onLogSent({ to: emailTo.trim(), method: "Informe completo (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSendingAutoFull(false);
@@ -1423,19 +1423,37 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
 /* ============================================================
    VISTA: TANQUES DE AGUA POTABLE
    ============================================================ */
-function TanksView({ latestValues, tankHistory }) {
+function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }) {
+  const [editing, setEditing] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [savedFlash, setSavedFlash] = useState(null);
+
   const data = TANK_ITEMS.map(t => {
     const lv = latestValues[t.id];
     const val = lv && lv.value !== "" && lv.value !== undefined ? Number(lv.value) : null;
-    return { id: t.id, name: `${t.n}`, floor: t.floorName, value: val, updatedAt: lv?.updatedAt, updatedBy: lv?.updatedBy };
+    return { id: t.id, item: t, name: `${t.n}`, floor: t.floorName, value: val, updatedAt: lv?.updatedAt, updatedBy: lv?.updatedBy };
   });
 
   const colorFor = (v) => v === null ? C.gray : v < 20 ? C.red : v < 50 ? C.amber : C.green;
 
+  const startEdit = (d) => { setEditing(d.id); setDraft(d.value === null ? "" : String(d.value)); setSavedFlash(null); };
+  const doSave = async (d) => {
+    const num = Number(draft);
+    if (draft === "" || isNaN(num) || num < 0 || num > 100) return;
+    await onSaveTankReading(d.item, num);
+    setEditing(null);
+    setSavedFlash(d.id);
+    setTimeout(() => setSavedFlash(null), 2500);
+  };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Niveles de tanques de agua potable</h2>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Solo tanques de agua potable (no incluye contraincendio ni ACPM). Se alimenta automáticamente de los valores capturados en cada ronda.</p>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Solo tanques de agua potable (no incluye contraincendio ni ACPM). Se alimenta de los valores capturados en cada
+        ronda, pero también puedes actualizar cualquiera manualmente aquí mismo — útil en cortes de agua, cuando
+        necesitas revisar y dejar registrado el porcentaje sin esperar a la próxima ronda completa del piso.
+      </p>
 
       <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <ResponsiveContainer width="100%" height={280}>
@@ -1469,6 +1487,23 @@ function TanksView({ latestValues, tankHistory }) {
                 </div>
                 <div className="text-lg font-bold" style={{ color: colorFor(d.value) }}>{d.value === null ? "—" : `${d.value}%`}</div>
               </div>
+
+              {editing === d.id ? (
+                <div className="flex items-center gap-2 my-2">
+                  <input type="number" min={0} max={100} autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") doSave(d); if (e.key === "Escape") setEditing(null); }}
+                    placeholder="0-100" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                  <span className="text-xs" style={{ color: C.gray }}>%</span>
+                  <Button size="sm" onClick={() => doSave(d)}>Guardar</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
+                </div>
+              ) : (
+                <div className="my-2">
+                  <Button size="sm" variant="ghost" onClick={() => startEdit(d)}>Actualizar nivel manualmente</Button>
+                  {savedFlash === d.id && <span className="text-xs ml-2" style={{ color: C.green }}>✓ Guardado</span>}
+                </div>
+              )}
+
               {hist.length > 1 ? (
                 <ResponsiveContainer width="100%" height={70}>
                   <LineChart data={hist}>
@@ -1712,12 +1747,12 @@ function pdfTable(doc, y, head, body, opts = {}) {
   });
   return doc.lastAutoTable.finalY + 8;
 }
-async function generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex) {
+async function generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();
 
-  let y = pdfLetterhead(doc, "Informe de Equipos", [`Generado ${fmtDT(nowIso())}`]);
+  let y = pdfLetterhead(doc, "Informe de Equipos", [`Generado ${fmtDT(nowIso())}`, `Por ${generatedBy || "—"}`]);
 
   const active = Object.values(activeIssues);
   y = pdfStatBoxes(doc, y, [
@@ -1891,9 +1926,9 @@ async function sendTourEmailAuto(to, tour) {
  * Igual que sendTourEmailAuto, pero para el informe completo de los 12 pisos
  * (Reportes → PDF completo), también con el PDF adjunto de verdad vía el backend.
  */
-async function sendFullReportEmailAuto(to, latestValues, activeIssues, issueHistory, roundsIndex) {
+async function sendFullReportEmailAuto(to, latestValues, activeIssues, issueHistory, roundsIndex, generatedBy) {
   try {
-    const doc = await generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex);
+    const doc = await generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex, generatedBy);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -2166,12 +2201,12 @@ function computeEquipmentStats(issueHistory, activeIssues, sinceDate) {
 }
 
 /** PDF del reporte de Análisis de fallas: resumen + detalle de incidentes por equipo. */
-async function generateAnalyticsPdf(stats, rangeLabel, summary) {
+async function generateAnalyticsPdf(stats, rangeLabel, summary, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();
 
-  let y = pdfLetterhead(doc, "Análisis de Fallas", [`Período: ${rangeLabel}`, `Generado ${fmtDT(nowIso())}`]);
+  let y = pdfLetterhead(doc, "Análisis de Fallas", [`Período: ${rangeLabel}`, `Generado ${fmtDT(nowIso())}`, `Por ${generatedBy || "—"}`]);
 
   const longest = stats.filter(e => e.currentlyDown).sort((a, b) => b.totalHours - a.totalHours)[0];
   y = pdfStatBoxes(doc, y, [
@@ -2208,9 +2243,9 @@ async function generateAnalyticsPdf(stats, rangeLabel, summary) {
   return doc;
 }
 
-async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary) {
+async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary, generatedBy) {
   try {
-    const doc = await generateAnalyticsPdf(stats, rangeLabel, summary);
+    const doc = await generateAnalyticsPdf(stats, rangeLabel, summary, generatedBy);
     const pdfBase64 = await pdfDocToBase64(doc);
     const textLines = [
       "ANÁLISIS DE FALLAS — PISOS MECÁNICOS",
@@ -2358,12 +2393,12 @@ function buildMeterWeekGrid(meterHistory, weekStart) {
   return { days, rows };
 }
 
-async function generateMetersWeekPdf(grid, weekLabel) {
+async function generateMetersWeekPdf(grid, weekLabel, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
   const pageH = doc.internal.pageSize.getHeight();
 
-  let y = pdfLetterhead(doc, "Lecturas de Medidores — Semana", [weekLabel]);
+  let y = pdfLetterhead(doc, "Lecturas de Medidores — Semana", [weekLabel, `Generado por ${generatedBy || "—"}`]);
   const head = ["Medidor", "Antes", ...grid.days.map(d => fmtDayShort(d))];
 
   let currentGroup = null;
@@ -2390,9 +2425,9 @@ async function generateMetersWeekPdf(grid, weekLabel) {
   return doc;
 }
 
-async function sendMetersWeekEmailAuto(to, grid, weekLabel) {
+async function sendMetersWeekEmailAuto(to, grid, weekLabel, generatedBy) {
   try {
-    const doc = await generateMetersWeekPdf(grid, weekLabel);
+    const doc = await generateMetersWeekPdf(grid, weekLabel, generatedBy);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -2446,7 +2481,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
   const doDownloadPdf = async () => {
     setDownloading(true);
     try {
-      const doc = await generateAnalyticsPdf(stats, rangeLabel, summary);
+      const doc = await generateAnalyticsPdf(stats, rangeLabel, summary, currentUser);
       doc.save(`analisis-fallas-${todayStr().replace(/\//g, "-")}.pdf`);
     } catch {
       setSendMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión a internet)." });
@@ -2457,7 +2492,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
   const doSendEmail = async () => {
     if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSending(true); setSendMsg(null);
-    const res = await sendAnalyticsEmailAuto(emailTo.trim(), stats, rangeLabel, summary);
+    const res = await sendAnalyticsEmailAuto(emailTo.trim(), stats, rangeLabel, summary, currentUser);
     setSendMsg({ ok: res.ok, text: res.message });
     onLogSent?.({ to: emailTo.trim(), method: "Análisis de fallas (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSending(false);
@@ -2833,6 +2868,25 @@ export default function App() {
     await sSet("active-issues", newActive, true);
   };
 
+  /**
+   * Actualiza el nivel de un tanque manualmente, SIN pasar por la ronda completa del piso.
+   * Pensado para cortes de agua u otras emergencias donde hay que revisar/actualizar
+   * rápido el porcentaje de los tanques. Usa el mismo almacenamiento que las rondas
+   * normales (latestValues/tankHistory), así que queda 100% integrado: la próxima
+   * ronda normal de ese piso ya va a mostrar este valor como "turno anterior".
+   */
+  const saveTankReading = async (item, value) => {
+    const ts = nowIso();
+    const newLatest = { ...latestValues, [item.id]: { value, updatedAt: ts, updatedBy: displayName, shift, code: item.c, name: item.n, manual: true } };
+    const arr = (tankHistory[item.id] || []).concat([{ value, at: ts, by: displayName }]).slice(-20);
+    const newTankHist = { ...tankHistory, [item.id]: arr };
+    setLatestValues(newLatest); setTankHistory(newTankHist);
+    await Promise.all([
+      sSet("latest-values", newLatest, true),
+      sSet("tank-history", newTankHist, true),
+    ]);
+  };
+
   const saveRound = async (floor, entries, notes) => {
     const ts = nowIso();
     const id = `${floor.id}-${Date.now()}`;
@@ -3086,12 +3140,18 @@ export default function App() {
           .floor-scroll::-webkit-scrollbar-thumb:hover { background: #4d6a8a; }
         `}</style>
         <div className="p-4 border-b shrink-0" style={{ borderColor: "#2a3f56" }}>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: C.amber }}><Gauge size={18} color="#fff" /></div>
-            <div>
-              <div className="text-white text-sm font-semibold leading-tight">Pisos Mecánicos</div>
-              <div className="text-xs" style={{ color: "#8fa3b8" }}>Revisión diaria</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: C.amber }}><Gauge size={18} color="#fff" /></div>
+              <div>
+                <div className="text-white text-sm font-semibold leading-tight">Pisos Mecánicos</div>
+                <div className="text-xs" style={{ color: "#8fa3b8" }}>Revisión diaria</div>
+              </div>
             </div>
+            <button className="lg:hidden shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium"
+              onClick={() => setSidebarOpen(false)} style={{ color: "#c3d0dd", background: "#2a3f56" }}>
+              <ChevronRight size={14} /> Volver
+            </button>
           </div>
         </div>
         <div className="p-3 space-y-1 shrink-0">
@@ -3175,7 +3235,7 @@ export default function App() {
               reportEmail={reportEmail} reportWhatsapp={reportWhatsapp} onOpenPrint={() => setPrintMode(true)}
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}
-          {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} />}
+          {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
           {view === "analytics" && isAdmin && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

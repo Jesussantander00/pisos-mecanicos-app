@@ -3422,6 +3422,9 @@ export default function App() {
   };
 
 
+  const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
+  const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg, color: C.inkSoft }}>Cargando…</div>;
   if (loadError) return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
@@ -3444,8 +3447,6 @@ export default function App() {
 
   const floor = FLOORS.find(f => f.id === floorId);
   const activeCount = Object.keys(activeIssues).length;
-  const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
-  const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
 
   const NAV = [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },

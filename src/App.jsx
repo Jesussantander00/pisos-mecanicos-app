@@ -409,6 +409,44 @@ const ICE_MACHINES_LINOS = [17, 18, 20, 22, 24, 26, 28, 29, 30, 31, 34, 36, 38]
 
 const ALL_COLD_ROOM_ITEMS = [...COLD_ROOMS, ...ICE_MACHINES_AB, ...ICE_MACHINES_LINOS];
 
+/** Lee un rango tipo "-16 °C a -18 °C" o "1 °C a 4 °C" y devuelve {min, max}. */
+function parseSetpointRange(setpoint) {
+  if (!setpoint) return null;
+  const nums = (setpoint.match(/-?\d+(\.\d+)?/g) || []).map(Number);
+  if (nums.length < 2) return null;
+  return { min: Math.min(nums[0], nums[1]), max: Math.max(nums[0], nums[1]) };
+}
+/** true si el valor registrado de un cuarto frío está fuera de su rango objetivo. */
+function isColdRoomOutOfRange(item, value) {
+  if (value === undefined || value === "" || value === null || isNaN(Number(value))) return false;
+  const range = parseSetpointRange(item.setpoint);
+  if (!range) return false;
+  const v = Number(value);
+  return v < range.min || v > range.max;
+}
+/** Cuenta cuántos cuartos fríos están fuera de rango ahora mismo, según la última lectura guardada. */
+function computeColdOutOfRange(latestColdValues) {
+  return COLD_ROOMS.filter(item => {
+    const lv = latestColdValues[item.id];
+    return lv && isColdRoomOutOfRange(item, lv.value);
+  });
+}
+/** Detecta medidores cuyo último consumo calculado salió negativo (probable error de lectura o reinicio del medidor). */
+function computeMeterAnomalies(meterHistory) {
+  const anomalies = [];
+  ALL_METERS.forEach(meter => {
+    const hist = meterHistory[meter.id] || [];
+    if (hist.length === 0) return;
+    const last = hist[hist.length - 1];
+    const subs = meter.subs || ["value"];
+    subs.forEach(sub => {
+      const c = last.consumos ? last.consumos[sub] : undefined;
+      if (c !== undefined && c < 0) anomalies.push({ meter, sub, consumo: c, at: last.at });
+    });
+  });
+  return anomalies;
+}
+
 /* ============================================================
    DATOS: LECTURAS DE MEDIDORES
    (según "consumo_de_servicios_publicos_hyatt_2026.xlsx": hojas
@@ -660,16 +698,17 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
 /* ============================================================
    COMPONENTE DE ITEM DE EQUIPO (dentro de una ronda)
    ============================================================ */
-function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous, statusOptions, hint }) {
+function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous, statusOptions, hint, outOfRange }) {
   const [resolving, setResolving] = useState(false);
   const [solution, setSolution] = useState("");
   const damaged = !!entry?.damaged;
+  const alert = damaged || outOfRange;
   const opts = statusOptions || STATUS_OPTS;
 
   const update = (patch) => onChange(item.id, { ...entry, ...patch });
 
   return (
-    <div className="rounded-lg border p-3 mb-2" style={{ borderColor: damaged ? C.red : C.line, background: damaged ? C.redSoft : C.panel }}>
+    <div className="rounded-lg border p-3 mb-2" style={{ borderColor: alert ? C.red : C.line, background: alert ? C.redSoft : C.panel }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-2" style={{ minWidth: 200 }}>
           <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0 mt-0.5" style={{ background: C.bg, color: C.inkSoft }}>#{item.c}</span>
@@ -677,6 +716,9 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
             <div className="text-sm font-medium" style={{ color: C.ink }}>{item.n}</div>
             {item.tank && <Pill tone="blue">Tanque agua potable</Pill>}
             {hint && <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>Rango objetivo: <b>{hint}</b></div>}
+            {outOfRange && !damaged && (
+              <div className="text-xs mt-0.5 font-semibold" style={{ color: C.red }}>⚠ Fuera del rango objetivo — considera marcarlo dañado.</div>
+            )}
             {previous && (
               <div className="text-xs mt-0.5" style={{ color: C.blue }}>
                 Turno anterior ({previous.shift}, {fmtDT(previous.updatedAt)} · {previous.updatedBy}):{" "}
@@ -833,7 +875,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Vo.Bo. pendiente de supervisor</div>
         <Button icon={Save} variant="amber" onClick={handleSave}>
-          {isLast ? "Guardar y finalizar recorrido" : "Guardar y pasar al siguiente piso"}
+          {isLast ? "Finalizar y enviar" : "Guardar y pasar al siguiente piso"}
         </Button>
       </div>
       {saved && (
@@ -848,7 +890,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 /* ============================================================
    VISTA: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
    ============================================================ */
-function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound }) {
+function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound, coldHistory }) {
   const [entries, setEntries] = useState({});
   const [notes, setNotes] = useState("");
   const [supervisor, setSupervisor] = useState("");
@@ -878,6 +920,12 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
 
   const filledCount = Object.values(entries).filter(e => e && (e.status || (e.value !== undefined && e.value !== "") || e.observation || e.damaged)).length;
   const damagedCount = Object.values(entries).filter(e => e?.damaged).length;
+  const outOfRangeNow = COLD_ROOMS.filter(item => isColdRoomOutOfRange(item, entries[item.id]?.value));
+
+  const todayIsSunday = new Date().getDay() === 0;
+  const weekStart = useMemo(() => startOfWeek(new Date()), []);
+  const weekGrid = useMemo(() => buildColdRoomsWeekGrid(coldHistory || {}, weekStart), [coldHistory, weekStart]);
+  const weekLabel = `${fmtDayFull(weekStart)} — ${fmtDayFull(addDays(weekStart, 6))}`;
 
   const handleSave = () => {
     onSaveColdRound(entries, notes, supervisor, ingeniero);
@@ -886,22 +934,20 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   };
 
   const doDownloadPdf = async () => {
-    if (!lastColdRound) return;
     setDownloading(true);
     try {
-      const doc = await generateColdRoomsPdf(lastColdRound);
-      doc.save(`cuartos-frios-${lastColdRound.date.replace(/\//g, "-")}.pdf`);
+      const doc = await generateColdRoomsWeekPdf(weekGrid, weekLabel, currentUser);
+      doc.save(`cuartos-frios-semana-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
     } catch { setSendMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
     setDownloading(false);
   };
 
   const doSendEmail = async () => {
-    if (!lastColdRound) return;
     if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSending(true); setSendMsg(null);
-    const res = await sendColdRoomsEmailAuto(emailTo.trim(), lastColdRound);
+    const res = await sendColdRoomsWeekEmailAuto(emailTo.trim(), weekGrid, weekLabel, currentUser);
     setSendMsg({ ok: res.ok, text: res.message });
-    onLogSent?.({ to: emailTo.trim(), method: "Cuartos Fríos (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    onLogSent?.({ to: emailTo.trim(), method: "Cuartos Fríos (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSending(false);
   };
 
@@ -923,10 +969,18 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         si un cuarto está fuera de su rango de temperatura o una máquina de hielo no funciona.
       </div>
 
+      {outOfRangeNow.length > 0 && (
+        <div className="rounded-md p-2 mb-3 text-xs font-semibold flex items-center gap-2" style={{ background: C.redSoft, color: C.red }}>
+          <AlertTriangle size={14} /> {outOfRangeNow.length} cuarto{outOfRangeNow.length !== 1 ? "s" : ""} fuera de rango ahora mismo:{" "}
+          {outOfRangeNow.map(i => i.n).join(", ")}
+        </div>
+      )}
+
       <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>Cuartos fríos ({COLD_ROOMS.length})</div>
       {COLD_ROOMS.map(item => (
         <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
           activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} hint={item.setpoint}
+          outOfRange={isColdRoomOutOfRange(item, entries[item.id]?.value)}
           onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
       ))}
 
@@ -969,10 +1023,17 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
       </div>
       {saved && <div className="text-right text-sm mt-1 mb-3" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
 
-      {lastColdRound && (
-        <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
-          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
-            PDF de la última ronda guardada ({lastColdRound.date}, turno {lastColdRound.shift})
+      {lastColdRound && !todayIsSunday && (
+        <div className="rounded-md p-2 text-xs" style={{ background: "#eef1f4", color: C.inkSoft }}>
+          El envío por correo de Cuartos Fríos se hace cada 7 días — el domingo, aquí mismo, va a aparecer el botón
+          para enviar la semana completa. Si necesitas enviarla antes, ve a "Historial de Cuartos Fríos" en el menú.
+        </div>
+      )}
+
+      {lastColdRound && todayIsSunday && (
+        <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.amber, background: C.amberSoft }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: "#7a5405" }}>
+            ✓ Semana completa — envía el reporte semanal de Cuartos Fríos ({weekLabel})
           </div>
           <div className="flex items-center gap-2 flex-wrap mb-3">
             <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadPdf}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
@@ -1027,7 +1088,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
   );
 }
 
-function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound }) {
+function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, meterHistory }) {
   const [entries, setEntries] = useState({});
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
@@ -1039,6 +1100,8 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound }
     const subs = m.subs || ["value"];
     return subs.some(s => e[s] !== undefined && e[s] !== "");
   }).length;
+
+  const anomalies = useMemo(() => computeMeterAnomalies(meterHistory || {}), [meterHistory]);
 
   const handleSave = () => {
     onSaveMetersRound(entries, notes);
@@ -1060,6 +1123,16 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound }
       <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
         Escribe la lectura actual de cada medidor. El consumo (diferencia contra la última lectura guardada) se calcula solo, igual que en el Excel.
       </div>
+
+      {anomalies.length > 0 && (
+        <div className="rounded-md p-2 mb-3 text-xs font-semibold flex items-start gap-2" style={{ background: C.redSoft, color: C.red }}>
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span>
+            {anomalies.length} lectura{anomalies.length !== 1 ? "s" : ""} con consumo negativo detectada{anomalies.length !== 1 ? "s" : ""} (probable error de lectura o medidor reiniciado):{" "}
+            {anomalies.map((a, i) => `${a.meter.n}${a.sub ? ` (${a.sub})` : ""}`).join(", ")}
+          </span>
+        </div>
+      )}
 
       {METER_GROUPS.map(group => (
         <div key={group.id}>
@@ -1088,6 +1161,9 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound }
 
 /* ============================================================
    VISTA: HISTORIAL SEMANAL DE MEDIDORES
+   ============================================================ */
+/* ============================================================
+   VISTA SEMANAL DE MEDIDORES
    ============================================================ */
 function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -1177,9 +1253,128 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
                   <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
                     <td className="px-2 py-1.5" style={{ color: C.ink }}>{row.label}{row.unit ? ` (${row.unit})` : ""}</td>
                     <td className="px-2 py-1.5 text-right" style={{ color: C.gray }}>{row.before ?? "—"}</td>
-                    {row.days.map((v, di) => (
-                      <td key={di} className="px-2 py-1.5 text-right" style={{ color: v != null ? C.ink : C.gray }}>{v ?? "—"}</td>
-                    ))}
+                    {row.days.map((v, di) => {
+                      const neg = row.daysConsumo?.[di] < 0;
+                      return (
+                        <td key={di} className="px-2 py-1.5 text-right" title={neg ? `Consumo negativo: ${row.daysConsumo[di]}` : undefined}
+                          style={{ color: neg ? "#fff" : v != null ? C.ink : C.gray, background: neg ? C.red : "transparent", fontWeight: neg ? 700 : 400 }}>
+                          {v ?? "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA SEMANAL DE CUARTOS FRÍOS
+   ============================================================ */
+function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser }) {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
+
+  const grid = useMemo(() => buildColdRoomsWeekGrid(coldHistory, weekStart), [coldHistory, weekStart]);
+  const weekLabel = `${fmtDayFull(weekStart)} — ${fmtDayFull(addDays(weekStart, 6))}`;
+  const isCurrentWeek = isSameCalendarDay(startOfWeek(new Date()), weekStart);
+  const weekComplete = isSameCalendarDay(new Date(), addDays(weekStart, 6)) || addDays(weekStart, 6) < new Date();
+
+  const doDownload = async () => {
+    setDownloading(true);
+    try {
+      const doc = await generateColdRoomsWeekPdf(grid, weekLabel, currentUser);
+      doc.save(`cuartos-frios-semana-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+    setDownloading(false);
+  };
+
+  const doSend = async () => {
+    if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setMsg(null);
+    const res = await sendColdRoomsWeekEmailAuto(emailTo.trim(), grid, weekLabel, currentUser);
+    setMsg({ ok: res.ok, text: res.message });
+    onLogSent?.({ to: emailTo.trim(), method: "Cuartos Fríos (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setSending(false);
+  };
+
+  let lastGroupRendered = null;
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Cuartos Fríos — Historial semanal</h2>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setWeekStart(w => addDays(w, -7))}>‹ Semana anterior</Button>
+          <span className="text-sm font-medium" style={{ color: C.ink }}>{weekLabel}</span>
+          <Button size="sm" variant="ghost" disabled={isCurrentWeek} onClick={() => setWeekStart(w => addDays(w, 7))}>Semana siguiente ›</Button>
+        </div>
+        {!isCurrentWeek && <Button size="sm" variant="ghost" onClick={() => setWeekStart(startOfWeek(new Date()))}>Ir a esta semana</Button>}
+      </div>
+
+      <p className="text-xs mb-3" style={{ color: C.gray }}>
+        El formato de cuartos fríos se guarda todos los días, pero el envío por correo está pensado para hacerse
+        cada 7 días (al completar la semana) — igual que el papel original. Aquí puedes descargar o enviar la
+        semana que quieras, cuando quieras.
+      </p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
+          Descargar / enviar esta semana {weekComplete ? "" : "(semana en curso, aún no termina)"}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+        </div>
+        {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+        <table className="min-w-full text-xs" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: C.steelDark, color: "#fff" }}>
+              <th className="text-left px-2 py-2" style={{ minWidth: 220 }}>Equipo</th>
+              {grid.days.map((d, i) => <th key={i} className="px-2 py-2 text-right whitespace-nowrap">{fmtDayShort(d)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {grid.rows.map((row, i) => {
+              const showGroupHeader = row.groupTitle !== lastGroupRendered;
+              lastGroupRendered = row.groupTitle;
+              return (
+                <React.Fragment key={i}>
+                  {showGroupHeader && (
+                    <tr>
+                      <td colSpan={grid.days.length + 1} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                        {row.groupTitle}
+                      </td>
+                    </tr>
+                  )}
+                  <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-2 py-1.5" style={{ color: C.ink }}>{row.label}</td>
+                    {row.days.map((v, di) => {
+                      const bad = row.item.k !== "status" ? isColdRoomOutOfRange(row.item, v) : v === "Fuera de servicio";
+                      return (
+                        <td key={di} className="px-2 py-1.5 text-right"
+                          style={{ color: bad ? "#fff" : v != null ? C.ink : C.gray, background: bad ? C.red : "transparent", fontWeight: bad ? 700 : 400 }}>
+                          {v ?? "—"}
+                        </td>
+                      );
+                    })}
                   </tr>
                 </React.Fragment>
               );
@@ -1744,6 +1939,7 @@ function pdfTable(doc, y, head, body, opts = {}) {
     headStyles: { fillColor: opts.headColor || PDF_C.steelDark, textColor: PDF_C.white, fontStyle: "bold", fontSize: 8 },
     alternateRowStyles: { fillColor: PDF_C.rowStripe },
     columnStyles: opts.columnStyles || {},
+    didParseCell: opts.didParseCell,
   });
   return doc.lastAutoTable.finalY + 8;
 }
@@ -2344,9 +2540,109 @@ async function sendColdRoomsEmailAuto(to, record) {
   }
 }
 
-/* ============================================================
-   VISTA SEMANAL DE MEDIDORES
-   ============================================================ */
+/** true si la fecha indicada es domingo (el último día de la semana lunes-domingo que usa la app). */
+function isSundayOf(dateIso) { return new Date(dateIso).getDay() === 0; }
+
+/** Arma la cuadrícula semanal de Cuartos Fríos y Máquinas de Hielo, igual que la de medidores. */
+function buildColdRoomsWeekGrid(coldHistory, weekStart) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const sections = [
+    { title: `Cuartos fríos (${COLD_ROOMS.length})`, items: COLD_ROOMS },
+    { title: `Máquinas de hielo A&B (${ICE_MACHINES_AB.length})`, items: ICE_MACHINES_AB },
+    { title: `Máquinas de hielo — Linos/Habitaciones (${ICE_MACHINES_LINOS.length})`, items: ICE_MACHINES_LINOS },
+  ];
+  const rows = [];
+  sections.forEach(sec => {
+    sec.items.forEach(item => {
+      const hist = coldHistory[item.id] || [];
+      const cellFor = (entry) => {
+        if (!entry) return null;
+        if (item.k === "status") return entry.status || null;
+        if (entry.value === undefined || entry.value === "") return null;
+        return entry.value;
+      };
+      const valueOnDay = (day) => {
+        const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+        let found = null;
+        hist.forEach(h => { const hd = new Date(h.at); if (hd >= dayStart && hd <= dayEnd) found = h; });
+        return found ? cellFor(found) : null;
+      };
+      rows.push({ groupTitle: sec.title, item, label: `${item.n}${item.c ? ` (#${item.c})` : ""}`, days: days.map(d => valueOnDay(d)) });
+    });
+  });
+  return { days, rows };
+}
+
+async function generateColdRoomsWeekPdf(grid, weekLabel, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
+  const pageH = doc.internal.pageSize.getHeight();
+
+  let y = pdfLetterhead(doc, "Cuartos Fríos y Máquinas de Hielo — Semana", [weekLabel, `Generado por ${generatedBy || "—"}`]);
+  const head = ["Equipo", ...grid.days.map(d => fmtDayShort(d))];
+
+  let currentGroup = null;
+  let groupRows = [];
+  const flushGroup = () => {
+    if (!currentGroup || groupRows.length === 0) return;
+    if (y > pageH - 40) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, currentGroup);
+    const body = groupRows.map(r => [r.label, ...r.days.map(v => v ?? "—")]);
+    y = pdfTable(doc, y, head, body, {
+      columnStyles: { 0: { cellWidth: 80 } },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        const col = data.column.index;
+        if (col < 1) return;
+        const row = groupRows[data.row.index];
+        const val = row?.days?.[col - 1];
+        if (row?.item?.k !== "status" && isColdRoomOutOfRange(row.item, val)) {
+          data.cell.styles.fillColor = PDF_C.red;
+          data.cell.styles.textColor = PDF_C.white;
+          data.cell.styles.fontStyle = "bold";
+        } else if (row?.item?.k === "status" && val === "Fuera de servicio") {
+          data.cell.styles.fillColor = PDF_C.red;
+          data.cell.styles.textColor = PDF_C.white;
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+  };
+  grid.rows.forEach(row => {
+    if (row.groupTitle !== currentGroup) { flushGroup(); currentGroup = row.groupTitle; groupRows = []; }
+    groupRows.push(row);
+  });
+  flushGroup();
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendColdRoomsWeekEmailAuto(to, grid, weekLabel, generatedBy) {
+  try {
+    const doc = await generateColdRoomsWeekPdf(grid, weekLabel, generatedBy);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Cuartos Fríos — Semana ${weekLabel}`,
+        text: `Reporte semanal de Cuartos Fríos y Máquinas de Hielo: ${weekLabel}. Ver el detalle día por día en el PDF adjunto.`,
+        pdfBase64,
+        filename: `cuartos-frios-semana-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+
 /** Arma la cuadrícula semanal: para cada medidor (y cada sub-lectura si tiene varias),
  *  busca en el historial la última lectura de CADA día de la semana, más la última
  *  lectura anterior al inicio de la semana (para poder comparar y seguir la secuencia). */
@@ -2390,6 +2686,17 @@ function buildMeterWeekGrid(meterHistory, weekStart) {
       });
     });
   });
+  // Calcula el consumo de cada día (valor de ese día menos el último valor disponible antes de ese día),
+  // para poder resaltar en rojo los días donde el consumo salió negativo (probable error de lectura).
+  rows.forEach(row => {
+    const all = [row.before, ...row.days];
+    row.daysConsumo = row.days.map((v, i) => {
+      if (v === null || v === undefined) return null;
+      const prevVal = all[i]; // el valor justo antes de este día en la secuencia (before o el día anterior)
+      if (prevVal === null || prevVal === undefined) return null;
+      return Number(v) - Number(prevVal);
+    });
+  });
   return { days, rows };
 }
 
@@ -2408,7 +2715,20 @@ async function generateMetersWeekPdf(grid, weekLabel, generatedBy) {
     if (y > pageH - 40) { doc.addPage(); y = 18; }
     y = pdfSectionTitle(doc, y, currentGroup);
     const body = groupRows.map(r => [r.label + (r.unit ? ` (${r.unit})` : ""), r.before ?? "—", ...r.days.map(v => v ?? "—")]);
-    y = pdfTable(doc, y, head, body, { columnStyles: { 0: { cellWidth: 70 } } });
+    y = pdfTable(doc, y, head, body, {
+      columnStyles: { 0: { cellWidth: 70 } },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        const col = data.column.index;
+        if (col < 2) return; // "Medidor" y "Antes" no se resaltan
+        const row = groupRows[data.row.index];
+        if (row?.daysConsumo?.[col - 2] < 0) {
+          data.cell.styles.fillColor = PDF_C.red;
+          data.cell.styles.textColor = PDF_C.white;
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
   };
 
   grid.rows.forEach(row => {
@@ -2724,6 +3044,7 @@ export default function App() {
   const [latestColdValues, setLatestColdValues] = useState({});
   const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
   const [lastColdRound, setLastColdRound] = useState(null);
+  const [coldHistory, setColdHistory] = useState({});
   const [latestMeterValues, setLatestMeterValues] = useState({});
   const [meterHistory, setMeterHistory] = useState({});
   const [meterRoundsIndex, setMeterRoundsIndex] = useState([]);
@@ -2738,14 +3059,14 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
         sGet("report-whatsapp", true), sGet("last-tour", true), sGet("tour-history", true),
         sGet("latest-cold-values", true), sGet("cold-rounds-index", true),
         sGet("latest-meter-values", true), sGet("meter-history", true), sGet("meter-rounds-index", true),
-        sGet("last-cold-round", true),
+        sGet("last-cold-round", true), sGet("cold-history", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -2760,6 +3081,7 @@ export default function App() {
       setTourHistory(thist || []);
       setLatestColdValues(lcv || {});
       setLastColdRound(lcr || null);
+      setColdHistory(ch || {});
       setColdRoundsIndex(cri || []);
       setLatestMeterValues(lmv || {});
       setMeterHistory(mh || {});
@@ -3037,14 +3359,22 @@ export default function App() {
       }),
     };
 
+    const newColdHistory = { ...coldHistory };
+    ALL_COLD_ROOM_ITEMS.filter(item => cleanEntries[item.id]).forEach(item => {
+      const e = cleanEntries[item.id];
+      const hist = (newColdHistory[item.id] || []).concat([{ status: e.status, value: e.value, damaged: !!e.damaged, at: ts, by: displayName }]).slice(-30);
+      newColdHistory[item.id] = hist;
+    });
+
     setLatestColdValues(newLatest); setActiveIssues(newActive); setColdRoundsIndex(newIndex);
-    setLastColdRound(record);
+    setLastColdRound(record); setColdHistory(newColdHistory);
     await Promise.all([
       sSet(`cold-round-${id}`, cleanEntries, true),
       sSet("cold-rounds-index", newIndex, true),
       sSet("latest-cold-values", newLatest, true),
       sSet("active-issues", newActive, true),
       sSet("last-cold-round", record, true),
+      sSet("cold-history", newColdHistory, true),
     ]);
     return record;
   };
@@ -3114,11 +3444,14 @@ export default function App() {
 
   const floor = FLOORS.find(f => f.id === floorId);
   const activeCount = Object.keys(activeIssues).length;
+  const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
+  const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
 
   const NAV = [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
-    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake },
-    { id: "meters", label: "Lecturas de Medidores", icon: Zap },
+    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, badge: coldOutOfRange.length },
+    { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays },
+    { id: "meters", label: "Lecturas de Medidores", icon: Zap, badge: meterAnomalies.length },
     { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
@@ -3215,11 +3548,14 @@ export default function App() {
           {view === "coldrooms" && (
             <ColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
               latestColdValues={latestColdValues} onResolveIssue={resolveIssue} onSaveColdRound={saveColdRound}
-              reportEmail={reportEmail} onLogSent={logSentReport} lastColdRound={lastColdRound} />
+              reportEmail={reportEmail} onLogSent={logSentReport} lastColdRound={lastColdRound} coldHistory={coldHistory} />
+          )}
+          {view === "coldrooms-history" && (
+            <ColdRoomsWeeklyView coldHistory={coldHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "meters" && (
             <MetersView currentUser={displayName} shift={shift}
-              latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} />
+              latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} meterHistory={meterHistory} />
           )}
           {view === "meters-history" && (
             <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

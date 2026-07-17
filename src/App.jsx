@@ -47,10 +47,6 @@ const FLOORS = [
     { c: 3, n: "Nivel tanque de agua potable", k: "numeric", u: "%", tank: true },
     { c: 4, n: "Presión Bomba Encendida", k: "numeric", u: "psi" },
     { c: 5, n: "Rejillas Desagües Cuarto Bomba Agua Potable", k: "status" },
-    { c: 6, n: "Nivel de Cloro Tanque Agua Potable", k: "numeric", u: "%" },
-    { c: 7, n: "Bomba Dosificadora de Cloro Tanque Agua Potable", k: "status" },
-    { c: 8, n: "Sistema automático dosificación de cloro Tanque Agua Potable", k: "status" },
-    { c: 9, n: "Tablero sistema automático de llenado tanques", k: "status" },
     { c: 12, n: "Nivel tanque de agua contraincendio", k: "numeric", u: "%" },
     { c: 13, n: "Bomba # 1 Suministro de Agua Contraincendios", k: "status" },
     { c: 14, n: "Bomba # 2 Suministro de Agua Contraincendios", k: "status" },
@@ -59,7 +55,6 @@ const FLOORS = [
     { c: 17, n: "Nivel Tanque de Cloro agua contraincendio", k: "numeric", u: "%" },
     { c: 18, n: "Bomba Dosificadora de Cloro Agua Contraincendio", k: "status" },
     { c: 19, n: "Sistema automático dosificación de cloro Tanque Contraincendio", k: "status" },
-    { c: 20, n: "Tablero sistema automático de llenado tanques", k: "status" },
     { c: 23, n: "Encendido de letras zona de Bahía", k: "status" },
     { c: 24, n: "Encendido de letras zona de playas", k: "status" },
   ]},
@@ -117,7 +112,17 @@ const FLOORS = [
     { c: 70, n: "Temperatura controlador recirculación agua caliente", k: "numeric", u: "°C" },
     { c: 71, n: "Temperatura Tanque Agua Caliente", k: "numeric", u: "°C" },
     { c: 73, n: "Nivel Tanque de Agua Potable # 1", k: "numeric", u: "%", tank: true },
+    { c: 91, n: "Nivel tanque de Cloro Tanque Agua Potable", k: "numeric", u: "%" },
+    { c: 92, n: "Bomba Dosificadora de Cloro Tanque Agua Potable", k: "status" },
+    { c: 93, n: "Estado Regulador PROMINENT Tanque Agua Potable", k: "status" },
+    { c: 94, n: "Numero de pimpinas de cloro llenas", k: "numeric", u: "#" },
+    { c: 95, n: "Porcentaje de cloro en sistema", k: "numeric", u: "%" },
     { c: 74, n: "Nivel Tanque de Agua Potable # 2", k: "numeric", u: "%", tank: true },
+    { c: 96, n: "Nivel tanque de Cloro Tanque Agua Potable", k: "numeric", u: "%" },
+    { c: 97, n: "Bomba Dosificadora de Cloro Tanque Agua Potable", k: "status" },
+    { c: 98, n: "Estado Regulador PROMINENT Tanque Agua Potable", k: "status" },
+    { c: 99, n: "Numero de pimpinas de cloro llenas", k: "numeric", u: "#" },
+    { c: 100, n: "Porcentaje de cloro en sistema", k: "numeric", u: "%" },
     { c: 75, n: "Nivel Tanque de Cloro", k: "numeric", u: "%" },
     { c: 76, n: "Bomba Dosificadora de Cloro (# pimpinas)", k: "numeric", u: "#" },
     { c: 78, n: "Bomba Suministro de Agua Potable #1", k: "status" },
@@ -192,6 +197,7 @@ const FLOORS = [
     { c: 141, n: "Manejadora AC-1501", k: "status" },
     { c: 142, n: "Manejadora AC-1103", k: "status" },
     { c: 143, n: "Manejadora AC-1601", k: "status" },
+    { c: 199, n: "Manejadora AC-1602", k: "status" },
     { c: 144, n: "Recuperadora RE-1601", k: "status" },
     { c: 145, n: "Manejadora AC-1101", k: "status" },
     { c: 146, n: "Manejadora AC-1102", k: "status" },
@@ -264,7 +270,17 @@ const FLOORS = [
     { c: 215, n: "Tanque de agua caliente #1", k: "statusNumeric", u: "°C" },
     { c: 216, n: "Tanque de agua caliente #2", k: "statusNumeric", u: "°C" },
     { c: 219, n: "Nivel Tanque Agua Potable # 1", k: "numeric", u: "%", tank: true },
+    { c: 258, n: "Nivel tanque de Cloro Tanque Agua Potable", k: "numeric", u: "%" },
+    { c: 259, n: "Bomba Dosificadora de Cloro Tanque Agua Potable", k: "status" },
+    { c: 260, n: "Estado Regulador PROMINENT Tanque Agua Potable", k: "status" },
+    { c: 261, n: "Numero de pimpinas de cloro llenas", k: "numeric", u: "#" },
+    { c: 262, n: "Porcentaje de cloro en sistema", k: "numeric", u: "%" },
     { c: 220, n: "Nivel Tanque Agua Potable # 2", k: "numeric", u: "%", tank: true },
+    { c: 263, n: "Nivel tanque de Cloro Tanque Agua Potable", k: "numeric", u: "%" },
+    { c: 264, n: "Bomba Dosificadora de Cloro Tanque Agua Potable", k: "status" },
+    { c: 265, n: "Estado Regulador PROMINENT Tanque Agua Potable", k: "status" },
+    { c: 266, n: "Numero de pimpinas de cloro llenas", k: "numeric", u: "#" },
+    { c: 267, n: "Porcentaje de cloro en sistema", k: "numeric", u: "%" },
     { c: 221, n: "Nivel Tanque de Cloro", k: "numeric", u: "%" },
     { c: 222, n: "Bomba Dosificadora de Cloro (# pimpinas)", k: "numeric", u: "#" },
     { c: 223, n: "Tablero de control bombas de Agua Potable", k: "status" },
@@ -3422,6 +3438,9 @@ export default function App() {
   };
 
 
+  const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
+  const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg, color: C.inkSoft }}>Cargando…</div>;
   if (loadError) return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
@@ -3444,8 +3463,6 @@ export default function App() {
 
   const floor = FLOORS.find(f => f.id === floorId);
   const activeCount = Object.keys(activeIssues).length;
-  const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
-  const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
 
   const NAV = [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },

@@ -6,8 +6,10 @@ import {
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
-  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays
+  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft
 } from "lucide-react";
+import QRCode from "qrcode";
 import { sGet, sSet } from "./lib/storage";
 
 /* ============================================================
@@ -442,6 +444,21 @@ function computeMeterAnomalies(meterHistory) {
     });
   });
   return anomalies;
+}
+
+/* ============================================================
+   INVENTARIO — helpers
+   ============================================================ */
+function uid(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+/** URL única de una estantería (lo que va codificado en su código QR). */
+function shelfUrl(shelfId) {
+  return `${window.location.origin}${window.location.pathname}?shelf=${shelfId}`;
+}
+/** Repuestos cuya cantidad actual está en o por debajo de su mínimo configurado. */
+function computeLowStock(invItems) {
+  return invItems.filter(it => it.minThreshold > 0 && it.quantity <= it.minThreshold);
 }
 
 /* ============================================================
@@ -1379,6 +1396,374 @@ function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser 
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   INVENTARIO — componentes de vista
+   ============================================================ */
+function QrCodeBox({ url, label, filename }) {
+  const [dataUrl, setDataUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(url, { width: 320, margin: 1 }).then(d => { if (!cancelled) setDataUrl(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [url]);
+
+  const doDownload = () => {
+    if (!dataUrl) return;
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = filename || "qr.png";
+    a.click();
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel }}>
+      {dataUrl
+        ? <img src={dataUrl} alt="Código QR" width={140} height={140} />
+        : <div className="w-[140px] h-[140px] flex items-center justify-center text-xs" style={{ color: C.gray }}>Generando…</div>}
+      {label && <div className="text-xs text-center" style={{ color: C.inkSoft }}>{label}</div>}
+      <Button size="sm" variant="ghost" icon={Download} disabled={!dataUrl} onClick={doDownload}>Descargar QR</Button>
+    </div>
+  );
+}
+
+function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega, onCreateBodega }) {
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const doCreate = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    await onCreateBodega(newName.trim());
+    setNewName("");
+    setCreating(false);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Inventario — Bodegas</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Elige una bodega para ver sus estanterías y repuestos.</p>
+
+      {canManage && (
+        <div className="rounded-lg border p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nombre de la bodega nueva"
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 200 }} />
+          <Button icon={PlusCircle} disabled={creating} onClick={doCreate}>Crear bodega</Button>
+        </div>
+      )}
+
+      {bodegas.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
+          Aún no hay bodegas creadas. {canManage ? "Crea la primera arriba." : "Pídele a un administrador o al almacenista que cree la primera."}
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {bodegas.map(b => {
+            const myShelves = shelves.filter(s => s.bodegaId === b.id);
+            const myItems = invItems.filter(i => i.bodegaId === b.id);
+            const low = computeLowStock(myItems).length;
+            return (
+              <button key={b.id} onClick={() => onSelectBodega(b.id)}
+                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold" style={{ color: C.ink }}>{b.name}</div>
+                  {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
+                </div>
+                <div className="text-xs mt-1" style={{ color: C.gray }}>
+                  {myShelves.length} estantería{myShelves.length !== 1 ? "s" : ""} · {myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSelectShelf, onCreateShelf }) {
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newShelf, setNewShelf] = useState(null);
+
+  const doCreate = async () => {
+    if (!code.trim()) return;
+    setCreating(true);
+    const rec = await onCreateShelf(bodega.id, code.trim(), name.trim());
+    setNewShelf(rec);
+    setCode(""); setName("");
+    setCreating(false);
+  };
+
+  return (
+    <div>
+      <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a bodegas</Button>
+      <h2 className="text-lg font-semibold mt-2 mb-1" style={{ color: C.ink }}>{bodega.name} — Estanterías</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Elige una estantería para ver o retirar repuestos.</p>
+
+      {canManage && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Crear estantería nueva</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={code} onChange={e => setCode(e.target.value)} placeholder="Código, ej. A-01"
+              className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, width: 140 }} />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Descripción (opcional)"
+              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 160 }} />
+            <Button icon={PlusCircle} disabled={creating} onClick={doCreate}>Crear</Button>
+          </div>
+          {newShelf && (
+            <div className="mt-3 flex items-start gap-3 flex-wrap">
+              <QrCodeBox url={shelfUrl(newShelf.id)} label={`Estantería ${newShelf.code}`} filename={`qr-estanteria-${newShelf.code}.png`} />
+              <div className="text-xs max-w-xs" style={{ color: C.inkSoft }}>
+                Imprime este código y pégalo en la estantería <b>{newShelf.code}</b>. Al escanearlo con el celular, cualquier
+                técnico llega directo a esta estantería en la app, sin tener que buscarla en el menú.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {shelves.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin estanterías todavía en esta bodega.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {shelves.map(s => {
+            const myItems = invItems.filter(i => i.shelfId === s.id);
+            const low = computeLowStock(myItems).length;
+            return (
+              <button key={s.id} onClick={() => onSelectShelf(s.id)}
+                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold" style={{ color: C.ink }}>Estantería {s.code}</div>
+                  {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
+                </div>
+                {s.name && <div className="text-xs" style={{ color: C.inkSoft }}>{s.name}</div>}
+                <div className="text-xs mt-1" style={{ color: C.gray }}>{myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem, onRetiro, onEntrada }) {
+  const [showNewItem, setShowNewItem] = useState(false);
+  const [form, setForm] = useState({ name: "", sku: "", unit: "unidad", quantity: "", minThreshold: "" });
+  const [busyId, setBusyId] = useState(null);
+  const [qtyDraft, setQtyDraft] = useState({});
+
+  const doCreateItem = async () => {
+    if (!form.name.trim()) return;
+    await onCreateItem(shelf.id, bodega.id, form);
+    setForm({ name: "", sku: "", unit: "unidad", quantity: "", minThreshold: "" });
+    setShowNewItem(false);
+  };
+
+  const openMove = (itemId, mode) => setQtyDraft(prev => ({ ...prev, [itemId]: { mode, qty: "", note: "" } }));
+  const closeMove = (itemId) => setQtyDraft(prev => { const n = { ...prev }; delete n[itemId]; return n; });
+
+  const doMove = async (item) => {
+    const draft = qtyDraft[item.id];
+    const n = Number(draft.qty);
+    if (!n || n <= 0) return;
+    setBusyId(item.id);
+    if (draft.mode === "retiro") await onRetiro(item, n, draft.note);
+    else await onEntrada(item, n, draft.note);
+    setBusyId(null);
+    closeMove(item.id);
+  };
+
+  return (
+    <div>
+      <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a {bodega.name}</Button>
+      <h2 className="text-lg font-semibold mt-2 mb-1" style={{ color: C.ink }}>
+        Estantería {shelf.code}{shelf.name ? ` — ${shelf.name}` : ""}
+      </h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{bodega.name} · {items.length} repuesto{items.length !== 1 ? "s" : ""}</p>
+
+      <div className="flex items-start gap-3 flex-wrap mb-4">
+        <QrCodeBox url={shelfUrl(shelf.id)} label={`Estantería ${shelf.code}`} filename={`qr-estanteria-${shelf.code}.png`} />
+        {canManage && (
+          <div className="flex-1 min-w-[240px]">
+            <Button size="sm" icon={PlusCircle} onClick={() => setShowNewItem(v => !v)}>
+              {showNewItem ? "Cancelar" : "Agregar repuesto a esta estantería"}
+            </Button>
+            {showNewItem && (
+              <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del repuesto"
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none col-span-2" style={{ borderColor: C.line }} />
+                  <input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="Código / SKU (opcional)"
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                  <input value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="Unidad (ej. unidad, caja)"
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                  <input type="number" min={0} value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="Cantidad inicial"
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                  <input type="number" min={0} value={form.minThreshold} onChange={e => setForm(f => ({ ...f, minThreshold: e.target.value }))} placeholder="Mínimo para alertar"
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                </div>
+                <Button size="sm" onClick={doCreateItem}>Guardar repuesto</Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm py-8 text-center" style={{ color: C.gray }}>Esta estantería todavía no tiene repuestos registrados.</p>
+      ) : items.map(item => {
+        const low = item.minThreshold > 0 && item.quantity <= item.minThreshold;
+        const draft = qtyDraft[item.id];
+        return (
+          <div key={item.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: low ? C.red : C.line, background: low ? C.redSoft : C.panel }}>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-sm font-medium" style={{ color: C.ink }}>
+                  {item.name}{item.sku ? <span style={{ color: C.gray }}> · {item.sku}</span> : ""}
+                </div>
+                <div className="text-xs" style={{ color: C.gray }}>Mínimo: {item.minThreshold} {item.unit}</div>
+                {low && <div className="text-xs font-semibold mt-0.5" style={{ color: C.red }}>⚠ Stock bajo — hay que reponer</div>}
+              </div>
+              <div className="text-xl font-bold" style={{ color: low ? C.red : C.ink }}>
+                {item.quantity} <span className="text-xs font-normal" style={{ color: C.gray }}>{item.unit}</span>
+              </div>
+            </div>
+
+            {!draft && (
+              <div className="flex items-center gap-2 mt-2">
+                <Button size="sm" icon={PackageMinus} onClick={() => openMove(item.id, "retiro")}>Retirar</Button>
+                {canManage && <Button size="sm" variant="ghost" icon={PackagePlus} onClick={() => openMove(item.id, "entrada")}>Registrar entrada</Button>}
+              </div>
+            )}
+            {draft && (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className="text-xs font-medium" style={{ color: C.inkSoft }}>{draft.mode === "retiro" ? "Retirar" : "Entrada de"} cantidad:</span>
+                <input type="number" min={1} autoFocus value={draft.qty} onChange={e => setQtyDraft(prev => ({ ...prev, [item.id]: { ...draft, qty: e.target.value } }))}
+                  className="w-20 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }} />
+                <input value={draft.note} onChange={e => setQtyDraft(prev => ({ ...prev, [item.id]: { ...draft, note: e.target.value } }))} placeholder="Motivo (opcional)"
+                  className="text-sm border rounded-md px-2 py-1 outline-none flex-1" style={{ borderColor: C.line, minWidth: 140 }} />
+                <Button size="sm" disabled={busyId === item.id} onClick={() => doMove(item)}>{busyId === item.id ? "Guardando…" : "Confirmar"}</Button>
+                <Button size="sm" variant="ghost" onClick={() => closeMove(item.id)}>Cancelar</Button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, initialShelfId, onConsumedInitialShelf }) {
+  const [selectedBodegaId, setSelectedBodegaId] = useState(null);
+  const [selectedShelfId, setSelectedShelfId] = useState(null);
+  const canManage = isAdmin || isAlmacenista;
+
+  useEffect(() => {
+    if (initialShelfId) {
+      const shelf = shelves.find(s => s.id === initialShelfId);
+      if (shelf) { setSelectedBodegaId(shelf.bodegaId); setSelectedShelfId(shelf.id); }
+      onConsumedInitialShelf?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialShelfId]);
+
+  const shelf = selectedShelfId ? shelves.find(s => s.id === selectedShelfId) : null;
+  const bodegaForShelf = shelf ? bodegas.find(b => b.id === shelf.bodegaId) : null;
+  if (shelf && bodegaForShelf) {
+    return (
+      <ShelfDetailView bodega={bodegaForShelf} shelf={shelf} items={invItems.filter(i => i.shelfId === shelf.id)}
+        canManage={canManage} onBack={() => setSelectedShelfId(null)}
+        onCreateItem={onCreateItem} onRetiro={onRetiro} onEntrada={onEntrada} />
+    );
+  }
+
+  const bodega = selectedBodegaId ? bodegas.find(b => b.id === selectedBodegaId) : null;
+  if (bodega) {
+    return (
+      <BodegaShelvesView bodega={bodega} shelves={shelves.filter(s => s.bodegaId === bodega.id)} invItems={invItems}
+        canManage={canManage} onBack={() => setSelectedBodegaId(null)} onSelectShelf={setSelectedShelfId} onCreateShelf={onCreateShelf} />
+    );
+  }
+
+  return (
+    <BodegasListView bodegas={bodegas} shelves={shelves} invItems={invItems} canManage={canManage}
+      onSelectBodega={setSelectedBodegaId} onCreateBodega={onCreateBodega} />
+  );
+}
+
+function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, currentUser }) {
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
+
+  const low = useMemo(() => computeLowStock(invItems).map(it => ({
+    ...it,
+    bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
+    shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
+  })), [invItems, bodegas, shelves]);
+
+  const doDownload = async () => {
+    setDownloading(true);
+    try {
+      const doc = await generateStockAlertsPdf(low, currentUser);
+      doc.save(`lista-de-compras-${todayStr().replace(/\//g, "-")}.pdf`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+    setDownloading(false);
+  };
+  const doSend = async () => {
+    if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setMsg(null);
+    const res = await sendStockAlertsEmailAuto(emailTo.trim(), low, currentUser);
+    setMsg({ ok: res.ok, text: res.message });
+    onLogSent?.({ to: emailTo.trim(), method: "Alertas de stock (correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setSending(false);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Alertas de Stock</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Repuestos que llegaron a su cantidad mínima y necesitan reposición.</p>
+
+      {low.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todo el inventario está por encima de su mínimo. Nada que reponer por ahora.</p>
+      ) : (
+        <>
+          <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Lista de compras</div>
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+                className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+              <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+            </div>
+            {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+          </div>
+
+          {low.map(it => (
+            <div key={it.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium" style={{ color: C.ink }}>{it.name}{it.sku ? ` · ${it.sku}` : ""}</div>
+                  <div className="text-xs" style={{ color: C.inkSoft }}>{it.bodegaName} · Estantería {it.shelfCode}</div>
+                </div>
+                <div className="text-sm font-bold" style={{ color: C.red }}>{it.quantity} / {it.minThreshold} {it.unit}</div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -2467,6 +2852,49 @@ async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary, generatedB
 }
 
 /* ============================================================
+   PDF Y CORREO: INVENTARIO (lista de compras)
+   ============================================================ */
+async function generateStockAlertsPdf(low, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  let y = pdfLetterhead(doc, "Lista de Compras — Inventario", [`Generado ${fmtDT(nowIso())}`, `Por ${generatedBy || "—"}`]);
+  y = pdfStatBoxes(doc, y, [{ label: "Repuestos por reponer", value: String(low.length), color: low.length ? PDF_C.red : PDF_C.green }]);
+  y = pdfSectionTitle(doc, y, "Repuestos en o por debajo de su cantidad mínima", { color: PDF_C.red });
+  if (low.length === 0) {
+    doc.setFontSize(9); doc.text("No hay repuestos bajo el mínimo por ahora.", 14, y);
+  } else {
+    pdfTable(doc, y, ["Repuesto", "Bodega", "Estantería", "Actual", "Mínimo", "Unidad"],
+      low.map(it => [it.name + (it.sku ? ` (${it.sku})` : ""), it.bodegaName, it.shelfCode, String(it.quantity), String(it.minThreshold), it.unit]),
+      { headColor: PDF_C.red });
+  }
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendStockAlertsEmailAuto(to, low, generatedBy) {
+  try {
+    const doc = await generateStockAlertsPdf(low, generatedBy);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Lista de compras - Inventario (${todayStr()})`,
+        text: `Hay ${low.length} repuesto(s) en o por debajo de su cantidad mínima. Ver el detalle en el PDF adjunto.`,
+        pdfBase64,
+        filename: `lista-de-compras-${todayStr().replace(/\//g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+/* ============================================================
    PDF Y CORREO: CUARTOS FRÍOS
    ============================================================ */
 async function generateColdRoomsPdf(record) {
@@ -2936,7 +3364,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
 /* ============================================================
    VISTA: PANEL DE ADMINISTRADOR
    ============================================================ */
-function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onDeleteAccount, onResetPassword, currentUsername }) {
+function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onDeleteAccount, onResetPassword, currentUsername }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -2991,11 +3419,15 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
               </div>
               <div className="flex items-center gap-2">
                 {acc.isAdmin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
+                {acc.isAlmacenista && <Pill tone="blue">Almacenista</Pill>}
                 <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uname ? null : uname); setNewPw(""); setResetMsg(""); }}>
                   Restablecer contraseña
                 </Button>
                 <Button size="sm" variant="ghost" disabled={acc.isAdmin && adminCount === 1} onClick={() => onToggleAdmin(uname)}>
                   {acc.isAdmin ? "Quitar admin" : "Hacer admin"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onToggleAlmacenista(uname)}>
+                  {acc.isAlmacenista ? "Quitar almacenista" : "Hacer almacenista"}
                 </Button>
                 <Button size="sm" variant="red" disabled={uname === currentUsername} onClick={() => onDeleteAccount(uname)}>Eliminar</Button>
               </div>
@@ -3045,6 +3477,11 @@ export default function App() {
   const [latestMeterValues, setLatestMeterValues] = useState({});
   const [meterHistory, setMeterHistory] = useState({});
   const [meterRoundsIndex, setMeterRoundsIndex] = useState([]);
+  const [bodegas, setBodegas] = useState([]);
+  const [shelves, setShelves] = useState([]);
+  const [invItems, setInvItems] = useState([]);
+  const [invMovements, setInvMovements] = useState([]);
+  const [pendingShelfId, setPendingShelfId] = useState(() => new URLSearchParams(window.location.search).get("shelf"));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
@@ -3056,7 +3493,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -3064,6 +3501,8 @@ export default function App() {
         sGet("latest-cold-values", true), sGet("cold-rounds-index", true),
         sGet("latest-meter-values", true), sGet("meter-history", true), sGet("meter-rounds-index", true),
         sGet("last-cold-round", true), sGet("cold-history", true),
+        sGet("inventory-bodegas", true), sGet("inventory-shelves", true),
+        sGet("inventory-items", true), sGet("inventory-movements", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -3083,6 +3522,10 @@ export default function App() {
       setLatestMeterValues(lmv || {});
       setMeterHistory(mh || {});
       setMeterRoundsIndex(mri || []);
+      setBodegas(bod || []);
+      setShelves(shv || []);
+      setInvItems(iit || []);
+      setInvMovements(imv || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -3159,6 +3602,12 @@ export default function App() {
     await sSet("accounts", next, true);
   };
 
+  const toggleAlmacenista = async (username) => {
+    const next = { ...accounts, [username]: { ...accounts[username], isAlmacenista: !accounts[username].isAlmacenista } };
+    setAccounts(next);
+    await sSet("accounts", next, true);
+  };
+
   const resetPassword = async (username, newPassword) => {
     const passwordHash = await hashPassword(newPassword);
     const next = { ...accounts, [username]: { ...accounts[username], passwordHash } };
@@ -3205,6 +3654,56 @@ export default function App() {
       sSet("tank-history", newTankHist, true),
     ]);
   };
+
+  /* ---- Inventario ---- */
+  const logInvMovement = async (itemId, type, quantity, balanceAfter, note, movementsBase) => {
+    const rec = { id: uid("mov"), itemId, type, quantity, balanceAfter, by: displayName, at: nowIso(), note: note || "" };
+    const next = [rec, ...(movementsBase ?? invMovements)].slice(0, 3000);
+    setInvMovements(next);
+    await sSet("inventory-movements", next, true);
+    return next;
+  };
+
+  const createBodega = async (name) => {
+    const rec = { id: uid("bod"), name, createdBy: displayName, createdAt: nowIso() };
+    const next = [rec, ...bodegas];
+    setBodegas(next);
+    await sSet("inventory-bodegas", next, true);
+    return rec;
+  };
+
+  const createShelf = async (bodegaId, code, name) => {
+    const rec = { id: uid("shf"), bodegaId, code, name, createdBy: displayName, createdAt: nowIso() };
+    const next = [rec, ...shelves];
+    setShelves(next);
+    await sSet("inventory-shelves", next, true);
+    return rec;
+  };
+
+  const createInvItem = async (shelfId, bodegaId, form) => {
+    const quantity = Number(form.quantity) || 0;
+    const rec = {
+      id: uid("itm"), shelfId, bodegaId, name: form.name.trim(), sku: (form.sku || "").trim(),
+      unit: (form.unit || "unidad").trim() || "unidad", quantity, minThreshold: Number(form.minThreshold) || 0,
+      createdBy: displayName, createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    const next = [rec, ...invItems];
+    setInvItems(next);
+    await sSet("inventory-items", next, true);
+    if (quantity > 0) await logInvMovement(rec.id, "entrada", quantity, quantity, "Alta inicial del repuesto");
+    return rec;
+  };
+
+  const adjustInvStock = async (item, delta, type, note) => {
+    const newQty = Math.max(0, item.quantity + delta);
+    const nextItems = invItems.map(it => it.id === item.id ? { ...it, quantity: newQty, updatedAt: nowIso() } : it);
+    setInvItems(nextItems);
+    await sSet("inventory-items", nextItems, true);
+    await logInvMovement(item.id, type, delta, newQty, note);
+  };
+
+  const doInvRetiro = (item, qty, note) => adjustInvStock(item, -Math.abs(qty), "retiro", note);
+  const doInvEntrada = (item, qty, note) => adjustInvStock(item, Math.abs(qty), "entrada", note);
 
   const saveRound = async (floor, entries, notes) => {
     const ts = nowIso();
@@ -3421,6 +3920,11 @@ export default function App() {
 
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
+  const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
+
+  useEffect(() => {
+    if (currentUser && pendingShelfId) setView("inventory");
+  }, [currentUser, pendingShelfId]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg, color: C.inkSoft }}>Cargando…</div>;
   if (loadError) return (
@@ -3437,6 +3941,7 @@ export default function App() {
   const account = accounts[currentUser] || {};
   const displayName = account.displayName || currentUser;
   const isAdmin = !!account.isAdmin;
+  const isAlmacenista = !!account.isAlmacenista;
 
   if (printMode) {
     return <PrintableReport activeIssues={activeIssues} issueHistory={issueHistory} roundsIndex={roundsIndex} onClose={() => setPrintMode(false)} />;
@@ -3451,6 +3956,8 @@ export default function App() {
     { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays },
     { id: "meters", label: "Lecturas de Medidores", icon: Zap, badge: meterAnomalies.length },
     { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
+    { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length },
+    ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length }] : []),
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -3574,10 +4081,20 @@ export default function App() {
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
+          {view === "inventory" && (
+            <InventoryView bodegas={bodegas} shelves={shelves} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
+              onCreateBodega={createBodega} onCreateShelf={createShelf} onCreateItem={createInvItem}
+              onRetiro={doInvRetiro} onEntrada={doInvEntrada}
+              initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)} />
+          )}
+          {view === "inventory-alerts" && (isAdmin || isAlmacenista) && (
+            <StockAlertsView invItems={invItems} bodegas={bodegas} shelves={shelves}
+              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+          )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onDeleteAccount={deleteAccount} onResetPassword={resetPassword} currentUsername={currentUser} />
+              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onDeleteAccount={deleteAccount} onResetPassword={resetPassword} currentUsername={currentUser} />
           )}
         </main>
       </div>

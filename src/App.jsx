@@ -7,7 +7,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users
 } from "lucide-react";
 import QRCode from "qrcode";
 import { sGet, sSet } from "./lib/storage";
@@ -531,6 +531,68 @@ const ALL_METERS = METER_GROUPS.flatMap(g => g.meters);
 const SHIFTS = ["06:00 – 14:00", "14:00 – 22:00", "22:00 – 06:00"];
 
 /* ============================================================
+   HORARIOS — festivos Colombia 2026 y reglas de turnistas
+   ============================================================ */
+const COLOMBIA_HOLIDAYS_2026 = [
+  "2026-01-01", "2026-01-12", "2026-03-23", "2026-04-02", "2026-04-03",
+  "2026-05-01", "2026-05-18", "2026-06-08", "2026-06-15", "2026-06-29",
+  "2026-07-13", "2026-07-20", "2026-08-07", "2026-08-17", "2026-10-12",
+  "2026-11-02", "2026-11-16", "2026-12-08", "2026-12-25",
+];
+
+const SHIFT_CODES = [
+  { code: "06-14", label: "06:00–14:00" },
+  { code: "14-22", label: "14:00–22:00" },
+  { code: "22-06", label: "22:00–06:00" },
+  { code: "HR", label: "Hora de reducción" },
+  { code: "LIBRE", label: "Libre" },
+  { code: "VAC", label: "Vacaciones" },
+];
+const SHIFT_COLORS = {
+  "06-14": { bg: "#e3f0ff", fg: "#1a4f8a" },
+  "14-22": { bg: "#fff3d6", fg: "#8a5a00" },
+  "22-06": { bg: "#eae3ff", fg: "#4a2b8a" },
+  "HR": { bg: "#ffe3ea", fg: "#a31245" },
+  "LIBRE": { bg: "#eef1f4", fg: "#5c6b7a" },
+  "VAC": { bg: "#dff5e3", fg: "#1c7a34" },
+};
+const WORKED_CODES = ["06-14", "14-22", "22-06", "HR"]; // cuenta como "trabajado" para las reglas de domingo/festivo
+
+function isHoliday2026(dateIso) { return COLOMBIA_HOLIDAYS_2026.includes(dateIso); }
+function isSundayOrHoliday(dateIso) {
+  const d = new Date(dateIso + "T00:00:00");
+  return d.getDay() === 0 || isHoliday2026(dateIso);
+}
+function scheduleKey(employeeId, dateIso) { return `${employeeId}::${dateIso}`; }
+
+/**
+ * Alertas (informativas, no un veredicto legal) para el horario de un empleado en un mes dado.
+ * daysIso: lista de fechas ISO del mes. entries: { [dateIso]: { code, note } } de ESE empleado.
+ */
+function computeScheduleWarnings(employee, daysIso, entries) {
+  const warnings = [];
+  const sundaysHolidaysWorked = daysIso.filter(d => isSundayOrHoliday(d) && WORKED_CODES.includes(entries[d]?.code));
+  if (sundaysHolidaysWorked.length > 3) {
+    warnings.push(`Trabajó ${sundaysHolidaysWorked.length} domingos/festivos este mes (máximo recomendado: 3).`);
+  }
+  if (employee.fixedRestDay !== null && employee.fixedRestDay !== undefined) {
+    const violated = daysIso.filter(d => new Date(d + "T00:00:00").getDay() === employee.fixedRestDay && WORKED_CODES.includes(entries[d]?.code));
+    if (violated.length > 0) {
+      const dayName = DAY_NAMES[employee.fixedRestDay];
+      warnings.push(`Tiene ${dayName} marcado como descanso fijo, pero aparece trabajando ${violated.length} ${dayName}(s) este mes.`);
+    }
+  }
+  // domingo/festivo trabajado seguido de otro domingo/festivo trabajado inmediatamente después
+  for (let i = 0; i < daysIso.length - 1; i++) {
+    const d1 = daysIso[i], d2 = daysIso[i + 1];
+    if (isSundayOrHoliday(d1) && isSundayOrHoliday(d2) && WORKED_CODES.includes(entries[d1]?.code) && WORKED_CODES.includes(entries[d2]?.code)) {
+      warnings.push(`Trabajó dos domingos/festivos seguidos (${fmtDayFull(new Date(d1 + "T00:00:00"))} y ${fmtDayFull(new Date(d2 + "T00:00:00"))}).`);
+    }
+  }
+  return { sundaysHolidaysCount: sundaysHolidaysWorked.length, warnings };
+}
+
+/* ============================================================
    HELPERS
    (sGet/sSet ahora viven en ./lib/storage.js, respaldados por Supabase)
    ============================================================ */
@@ -579,6 +641,12 @@ function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); retu
 function fmtDayShort(d) { return `${DAY_NAMES[d.getDay()].slice(0, 3)} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; }
 function fmtDayFull(d) { return `${DAY_NAMES[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; }
 function isSameCalendarDay(a, b) { return new Date(a).toDateString() === new Date(b).toDateString(); }
+function daysInMonthIso(year, month) {
+  const days = [];
+  const count = new Date(year, month + 1, 0).getDate();
+  for (let i = 1; i <= count; i++) days.push(`${year}-${String(month + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`);
+  return days;
+}
 
 /* ============================================================
    UI PRIMITIVES
@@ -1769,6 +1837,287 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
 }
 
 /* ============================================================
+   HORARIOS — componentes de vista
+   ============================================================ */
+const CARGOS = ["Administrativo", "Turnista", "Apoyo", "Mecánico", "Practicante", "Pintor", "Carpintero", "Albañil", "Jardinero"];
+
+function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee }) {
+  const [name, setName] = useState("");
+  const [cargo, setCargo] = useState("");
+  const [restDay, setRestDay] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const doCreate = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    await onCreateEmployee(name.trim(), cargo, restDay);
+    setName(""); setCargo(""); setRestDay("");
+    setCreating(false);
+  };
+
+  const grouped = CARGOS.map(c => ({ cargo: c, list: employees.filter(e => e.cargo === c) }))
+    .concat([{ cargo: "Sin cargo asignado", list: employees.filter(e => !e.cargo) }])
+    .filter(g => g.list.length > 0);
+
+  return (
+    <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Agregar empleado</div>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre completo"
+          className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+        <select value={cargo} onChange={e => setCargo(e.target.value)}
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+          <option value="">Cargo…</option>
+          {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={restDay} onChange={e => setRestDay(e.target.value)}
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+          <option value="">Sin descanso fijo</option>
+          {DAY_NAMES.map((d, i) => <option key={i} value={i}>Descanso fijo: {d}</option>)}
+        </select>
+        <Button size="sm" icon={PlusCircle} disabled={creating} onClick={doCreate}>Agregar</Button>
+      </div>
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Empleados ({employees.length})</div>
+      {grouped.map(g => (
+        <div key={g.cargo} className="mb-2">
+          <div className="text-xs font-semibold mt-2 mb-1" style={{ color: C.blue }}>{g.cargo} ({g.list.length})</div>
+          {g.list.map(emp => (
+            <div key={emp.id} className="flex items-center justify-between py-1.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: C.line }}>
+              <div className="text-sm" style={{ color: C.ink }}>
+                {emp.name}
+                {!emp.active && <span className="text-xs" style={{ color: C.gray }}> · Inactivo</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={emp.cargo || ""} onChange={e => onUpdateEmployee(emp.id, { cargo: e.target.value })}
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line }}>
+                  <option value="">Cargo…</option>
+                  {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <select value={emp.fixedRestDay ?? ""} onChange={e => onUpdateEmployee(emp.id, { fixedRestDay: e.target.value === "" ? null : Number(e.target.value) })}
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line }}>
+                  <option value="">Sin descanso fijo</option>
+                  {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+                <Button size="sm" variant="ghost" onClick={() => onUpdateEmployee(emp.id, { active: !emp.active })}>{emp.active ? "Desactivar" : "Activar"}</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onSetScheduleEntry, reportEmail, onLogSent }) {
+  const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [showManage, setShowManage] = useState(false);
+  const [editingCell, setEditingCell] = useState(null);
+  const [draftCode, setDraftCode] = useState("");
+  const [draftNote, setDraftNote] = useState("");
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
+
+  const year = monthDate.getFullYear(), month = monthDate.getMonth();
+  const daysIso = useMemo(() => daysInMonthIso(year, month), [year, month]);
+  const monthLabel = monthDate.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+  const activeEmployees = employees.filter(e => e.active !== false);
+
+  const entriesByEmployee = useMemo(() => {
+    const map = {};
+    activeEmployees.forEach(emp => {
+      map[emp.id] = {};
+      daysIso.forEach(d => {
+        const e = scheduleEntries[scheduleKey(emp.id, d)];
+        if (e) map[emp.id][d] = e;
+      });
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees, scheduleEntries, daysIso]);
+
+  const openCell = (employeeId, dateIso) => {
+    const entry = entriesByEmployee[employeeId]?.[dateIso];
+    setEditingCell({ employeeId, dateIso });
+    setDraftCode(entry?.code || "");
+    setDraftNote(entry?.note || "");
+  };
+  const saveCell = () => {
+    onSetScheduleEntry(editingCell.employeeId, editingCell.dateIso, draftCode, draftNote);
+    setEditingCell(null);
+  };
+
+  const sortedEmployees = useMemo(() => {
+    const order = [...CARGOS, ""];
+    return [...activeEmployees].sort((a, b) => order.indexOf(a.cargo || "") - order.indexOf(b.cargo || ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEmployees]);
+
+  const doDownload = async () => {
+    setDownloading(true);
+    try {
+      const doc = await generateSchedulePdf(monthLabel, sortedEmployees, daysIso, entriesByEmployee, currentUser);
+      doc.save(`horario-${monthLabel.replace(/\s+/g, "-")}.pdf`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+    setDownloading(false);
+  };
+  const doSend = async () => {
+    if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setMsg(null);
+    const res = await sendScheduleEmailAuto(emailTo.trim(), monthLabel, sortedEmployees, daysIso, entriesByEmployee, currentUser);
+    setMsg({ ok: res.ok, text: res.message });
+    onLogSent?.({ to: emailTo.trim(), method: "Horario mensual (correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setSending(false);
+  };
+
+  const employeeWarnings = activeEmployees.map(emp => ({
+    emp, ...computeScheduleWarnings(emp, daysIso, entriesByEmployee[emp.id] || {}),
+  })).filter(w => w.warnings.length > 0);
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Horario Mensual</h2>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setMonthDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>‹ Mes anterior</Button>
+          <span className="text-sm font-medium capitalize" style={{ color: C.ink }}>{monthLabel}</span>
+          <Button size="sm" variant="ghost" onClick={() => setMonthDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>Mes siguiente ›</Button>
+        </div>
+        {isAdmin && <Button size="sm" variant="ghost" onClick={() => setShowManage(v => !v)}>{showManage ? "Ocultar gestión" : "Gestionar empleados"}</Button>}
+      </div>
+
+      {!isAdmin && (
+        <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
+          Solo puedes ver el horario. Si necesitas un cambio, pídeselo a un administrador.
+        </div>
+      )}
+
+      {isAdmin && showManage && <EmployeeManagePanel employees={employees} onCreateEmployee={onCreateEmployee} onUpdateEmployee={onUpdateEmployee} />}
+
+      {isAdmin && editingCell && (
+        <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.amber, background: C.amberSoft }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: "#7a5405" }}>
+            {activeEmployees.find(e => e.id === editingCell.employeeId)?.name} — {fmtDayFull(new Date(editingCell.dateIso + "T00:00:00"))}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select value={draftCode} onChange={e => setDraftCode(e.target.value)}
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+              <option value="">(vacío)</option>
+              {SHIFT_CODES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
+            </select>
+            <input value={draftNote} onChange={e => setDraftNote(e.target.value)} placeholder="Nota (opcional, ej. hora exacta de reducción)"
+              className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            <Button size="sm" onClick={saveCell}>Guardar</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditingCell(null)}>Cancelar</Button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar este mes</div>
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+        </div>
+        {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      </div>
+
+      <div className="text-xs mb-2" style={{ color: C.gray }}>
+        Encabezado en rojo = domingo o festivo. Las alertas (⚠) son una ayuda visual según las reglas que nos diste — no reemplazan la revisión de las normas laborales vigentes.
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+        <table className="text-xs" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: C.steelDark, color: "#fff" }}>
+              <th className="text-left px-2 py-2" style={{ minWidth: 150 }}>Empleado</th>
+              {daysIso.map(d => {
+                const dd = new Date(d + "T00:00:00");
+                return (
+                  <th key={d} className="px-1 py-2 text-center" style={{ minWidth: 30, background: isSundayOrHoliday(d) ? "#7a3535" : C.steelDark }}>
+                    {dd.getDate()}
+                  </th>
+                );
+              })}
+              <th className="px-2 py-2 text-center" style={{ minWidth: 46 }}>Dom/Fest</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(() => {
+              let lastCargo = null;
+              return sortedEmployees.map((emp, i) => {
+                const entries = entriesByEmployee[emp.id] || {};
+                const { sundaysHolidaysCount, warnings } = computeScheduleWarnings(emp, daysIso, entries);
+                const showGroupHeader = (emp.cargo || "") !== lastCargo;
+                lastCargo = emp.cargo || "";
+                return (
+                  <React.Fragment key={emp.id}>
+                    {showGroupHeader && (
+                      <tr>
+                        <td colSpan={daysIso.length + 2} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                          {emp.cargo || "Sin cargo asignado"}
+                        </td>
+                      </tr>
+                    )}
+                    <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+                      <td className="px-2 py-1.5" style={{ color: C.ink, fontWeight: 500 }}>
+                        {emp.name}
+                        {warnings.length > 0 && <AlertTriangle size={12} style={{ display: "inline", color: C.red, marginLeft: 4, verticalAlign: "-1px" }} />}
+                      </td>
+                      {daysIso.map(d => {
+                        const entry = entries[d];
+                        const colors = entry ? SHIFT_COLORS[entry.code] : null;
+                        return (
+                          <td key={d} className="px-0.5 py-1 text-center" style={{ background: colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : "transparent") }}>
+                            {isAdmin ? (
+                              <button onClick={() => openCell(emp.id, d)} className="w-full text-xs py-1" style={{ color: colors?.fg || C.gray }}>
+                                {entry?.code || "·"}
+                              </button>
+                            ) : (
+                              <span className="text-xs" style={{ color: colors?.fg || C.gray }}>{entry?.code || ""}</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="px-2 py-1.5 text-center font-semibold" style={{ color: sundaysHolidaysCount > 3 ? C.red : C.ink }}>{sundaysHolidaysCount}</td>
+                    </tr>
+                  </React.Fragment>
+                );
+              });
+            })()}
+            {activeEmployees.length === 0 && (
+              <tr><td className="px-2 py-6 text-center text-xs" colSpan={daysIso.length + 2} style={{ color: C.gray }}>
+                Sin empleados registrados todavía.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {employeeWarnings.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Alertas de este mes</div>
+          {employeeWarnings.map(({ emp, warnings }) => (
+            <div key={emp.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
+              <div className="text-sm font-medium" style={{ color: C.ink }}>{emp.name}</div>
+              {warnings.map((w, i) => <div key={i} className="text-xs" style={{ color: C.red }}>⚠ {w}</div>)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    VISTA: EQUIPOS FUERA DE SERVICIO
    ============================================================ */
 function IssuesView({ activeIssues, onResolve }) {
@@ -2895,6 +3244,68 @@ async function sendStockAlertsEmailAuto(to, low, generatedBy) {
 }
 
 /* ============================================================
+   PDF Y CORREO: HORARIO MENSUAL
+   ============================================================ */
+async function generateSchedulePdf(monthLabel, employees, daysIso, entriesByEmployee, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
+  let y = pdfLetterhead(doc, "Horario Mensual", [monthLabel, `Generado por ${generatedBy || "—"}`]);
+
+  const head = ["Empleado", ...daysIso.map(d => {
+    const dd = new Date(d + "T00:00:00");
+    return `${String(dd.getDate()).padStart(2, "0")}${isSundayOrHoliday(d) ? "*" : ""}`;
+  })];
+  const body = employees.map(emp => {
+    const entries = entriesByEmployee[emp.id] || {};
+    return [emp.name, ...daysIso.map(d => entries[d]?.code || "")];
+  });
+
+  pdfTable(doc, y, head, body, {
+    columnStyles: { 0: { cellWidth: 42 } },
+    didParseCell: (data) => {
+      if (data.section !== "body" || data.column.index === 0) return;
+      const code = data.cell.raw;
+      const colors = SHIFT_COLORS[code];
+      if (colors) {
+        const rgb = hexToRgb(colors.bg);
+        data.cell.styles.fillColor = rgb;
+      }
+    },
+  });
+
+  doc.setFontSize(7.5);
+  const finalY = doc.lastAutoTable.finalY + 6;
+  doc.text("* Domingo o festivo. Códigos: 06-14 / 14-22 / 22-06 = turno · HR = hora de reducción · LIBRE = descanso · VAC = vacaciones", 14, finalY);
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendScheduleEmailAuto(to, monthLabel, employees, daysIso, entriesByEmployee, generatedBy) {
+  try {
+    const doc = await generateSchedulePdf(monthLabel, employees, daysIso, entriesByEmployee, generatedBy);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Horario Mensual — ${monthLabel}`,
+        text: `Horario mensual del personal — ${monthLabel}. Ver el detalle en el PDF adjunto.`,
+        pdfBase64,
+        filename: `horario-${monthLabel.replace(/[\s/]+/g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+
+/* ============================================================
    PDF Y CORREO: CUARTOS FRÍOS
    ============================================================ */
 async function generateColdRoomsPdf(record) {
@@ -3482,6 +3893,8 @@ export default function App() {
   const [invItems, setInvItems] = useState([]);
   const [invMovements, setInvMovements] = useState([]);
   const [pendingShelfId, setPendingShelfId] = useState(() => new URLSearchParams(window.location.search).get("shelf"));
+  const [employees, setEmployees] = useState([]);
+  const [scheduleEntries, setScheduleEntries] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
@@ -3493,7 +3906,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -3503,6 +3916,7 @@ export default function App() {
         sGet("last-cold-round", true), sGet("cold-history", true),
         sGet("inventory-bodegas", true), sGet("inventory-shelves", true),
         sGet("inventory-items", true), sGet("inventory-movements", true),
+        sGet("employees", true), sGet("schedule-entries", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -3526,6 +3940,8 @@ export default function App() {
       setShelves(shv || []);
       setInvItems(iit || []);
       setInvMovements(imv || []);
+      setEmployees(emp || []);
+      setScheduleEntries(sch || {});
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -3704,6 +4120,30 @@ export default function App() {
 
   const doInvRetiro = (item, qty, note) => adjustInvStock(item, -Math.abs(qty), "retiro", note);
   const doInvEntrada = (item, qty, note) => adjustInvStock(item, Math.abs(qty), "entrada", note);
+
+  /* ---- Horarios ---- */
+  const createEmployee = async (name, cargo, fixedRestDay) => {
+    const rec = { id: uid("emp"), name, cargo: cargo || "", fixedRestDay: fixedRestDay === "" ? null : Number(fixedRestDay), active: true, createdBy: displayName, createdAt: nowIso() };
+    const next = [...employees, rec];
+    setEmployees(next);
+    await sSet("employees", next, true);
+    return rec;
+  };
+
+  const updateEmployee = async (id, patch) => {
+    const next = employees.map(e => e.id === id ? { ...e, ...patch } : e);
+    setEmployees(next);
+    await sSet("employees", next, true);
+  };
+
+  const setScheduleEntry = async (employeeId, dateIso, code, note) => {
+    const key = scheduleKey(employeeId, dateIso);
+    const next = { ...scheduleEntries };
+    if (!code) delete next[key];
+    else next[key] = { code, note: note || "", updatedBy: displayName, updatedAt: nowIso() };
+    setScheduleEntries(next);
+    await sSet("schedule-entries", next, true);
+  };
 
   const saveRound = async (floor, entries, notes) => {
     const ts = nowIso();
@@ -3958,6 +4398,7 @@ export default function App() {
     { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
     { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length },
     ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length }] : []),
+    { id: "schedules", label: "Horario Mensual", icon: Users },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -4090,6 +4531,11 @@ export default function App() {
           {view === "inventory-alerts" && (isAdmin || isAlmacenista) && (
             <StockAlertsView invItems={invItems} bodegas={bodegas} shelves={shelves}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+          )}
+          {view === "schedules" && (
+            <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
+              onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onSetScheduleEntry={setScheduleEntry}
+              reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

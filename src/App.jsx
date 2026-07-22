@@ -10,6 +10,7 @@ import {
   Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users
 } from "lucide-react";
 import QRCode from "qrcode";
+import * as XLSX from "xlsx";
 import { sGet, sSet } from "./lib/storage";
 
 /* ============================================================
@@ -540,23 +541,19 @@ const COLOMBIA_HOLIDAYS_2026 = [
   "2026-11-02", "2026-11-16", "2026-12-08", "2026-12-25",
 ];
 
-const SHIFT_CODES = [
-  { code: "06-14", label: "06:00–14:00" },
-  { code: "14-22", label: "14:00–22:00" },
-  { code: "22-06", label: "22:00–06:00" },
-  { code: "HR", label: "Hora de reducción" },
-  { code: "LIBRE", label: "Libre" },
+const SPECIAL_CODES = [
   { code: "VAC", label: "Vacaciones" },
+  { code: "LIBRE", label: "Libre" },
+  { code: "INC", label: "Incapacidad" },
+  { code: "ALT", label: "Alterno / cambio" },
 ];
-const SHIFT_COLORS = {
-  "06-14": { bg: "#e3f0ff", fg: "#1a4f8a" },
-  "14-22": { bg: "#fff3d6", fg: "#8a5a00" },
-  "22-06": { bg: "#eae3ff", fg: "#4a2b8a" },
-  "HR": { bg: "#ffe3ea", fg: "#a31245" },
-  "LIBRE": { bg: "#eef1f4", fg: "#5c6b7a" },
-  "VAC": { bg: "#dff5e3", fg: "#1c7a34" },
+const SPECIAL_CODE_COLORS = {
+  VAC: { bg: "#dff5e3", fg: "#1c7a34" },
+  LIBRE: { bg: "#eef1f4", fg: "#5c6b7a" },
+  INC: { bg: "#ffe3ea", fg: "#a31245" },
+  ALT: { bg: "#fff3d6", fg: "#8a5a00" },
 };
-const WORKED_CODES = ["06-14", "14-22", "22-06", "HR"]; // cuenta como "trabajado" para las reglas de domingo/festivo
+const WEEKLY_HOURS_TARGET = 42; // igual al que ya usa tu Excel en las columnas "Diferencia semana"
 
 function isHoliday2026(dateIso) { return COLOMBIA_HOLIDAYS_2026.includes(dateIso); }
 function isSundayOrHoliday(dateIso) {
@@ -565,33 +562,528 @@ function isSundayOrHoliday(dateIso) {
 }
 function scheduleKey(employeeId, dateIso) { return `${employeeId}::${dateIso}`; }
 
+/** Horas trabajadas ese día según la entrada/salida exactas (0 si es un código especial como VAC/LIBRE). */
+function hoursForEntry(entry) {
+  if (!entry || entry.code) return 0;
+  if (entry.entrada == null || entry.salida == null) return 0;
+  let h = entry.salida - entry.entrada;
+  if (h < 0) h += 24; // turno que cruza la medianoche (ej. 22 → 6)
+  return h;
+}
+function isWorkedDay(entry) { return !!entry && !entry.code && entry.entrada != null; }
+
+/** Agrupa una lista de fechas ISO en semanas lunes-domingo (para las columnas "Horas"/"Diferencia" del Excel). */
+function weeksInRange(daysIso) {
+  const weeks = [];
+  let current = [];
+  daysIso.forEach(d => {
+    const dow = new Date(d + "T00:00:00").getDay();
+    if (dow === 1 && current.length) { weeks.push(current); current = []; }
+    current.push(d);
+  });
+  if (current.length) weeks.push(current);
+  return weeks;
+}
+function weekTotalHours(week, entries) {
+  return week.reduce((sum, d) => sum + hoursForEntry(entries[d]), 0);
+}
+
 /**
  * Alertas (informativas, no un veredicto legal) para el horario de un empleado en un mes dado.
- * daysIso: lista de fechas ISO del mes. entries: { [dateIso]: { code, note } } de ESE empleado.
+ * daysIso: lista de fechas ISO del mes. entries: { [dateIso]: { entrada, salida, code, note } } de ESE empleado.
  */
 function computeScheduleWarnings(employee, daysIso, entries) {
   const warnings = [];
-  const sundaysHolidaysWorked = daysIso.filter(d => isSundayOrHoliday(d) && WORKED_CODES.includes(entries[d]?.code));
+  const sundaysHolidaysWorked = daysIso.filter(d => isSundayOrHoliday(d) && isWorkedDay(entries[d]));
   if (sundaysHolidaysWorked.length > 3) {
     warnings.push(`Trabajó ${sundaysHolidaysWorked.length} domingos/festivos este mes (máximo recomendado: 3).`);
   }
   if (employee.fixedRestDay !== null && employee.fixedRestDay !== undefined) {
-    const violated = daysIso.filter(d => new Date(d + "T00:00:00").getDay() === employee.fixedRestDay && WORKED_CODES.includes(entries[d]?.code));
+    const violated = daysIso.filter(d => new Date(d + "T00:00:00").getDay() === employee.fixedRestDay && isWorkedDay(entries[d]));
     if (violated.length > 0) {
       const dayName = DAY_NAMES[employee.fixedRestDay];
       warnings.push(`Tiene ${dayName} marcado como descanso fijo, pero aparece trabajando ${violated.length} ${dayName}(s) este mes.`);
     }
   }
-  // domingo/festivo trabajado seguido de otro domingo/festivo trabajado inmediatamente después
   for (let i = 0; i < daysIso.length - 1; i++) {
     const d1 = daysIso[i], d2 = daysIso[i + 1];
-    if (isSundayOrHoliday(d1) && isSundayOrHoliday(d2) && WORKED_CODES.includes(entries[d1]?.code) && WORKED_CODES.includes(entries[d2]?.code)) {
+    if (isSundayOrHoliday(d1) && isSundayOrHoliday(d2) && isWorkedDay(entries[d1]) && isWorkedDay(entries[d2])) {
       warnings.push(`Trabajó dos domingos/festivos seguidos (${fmtDayFull(new Date(d1 + "T00:00:00"))} y ${fmtDayFull(new Date(d2 + "T00:00:00"))}).`);
     }
   }
+  const weeks = weeksInRange(daysIso);
+  weeks.forEach(week => {
+    const total = weekTotalHours(week, entries);
+    const diff = total - WEEKLY_HOURS_TARGET;
+    if (Math.abs(diff) >= 4 && total > 0) {
+      const lbl = `${fmtDayShort(new Date(week[0] + "T00:00:00"))}–${fmtDayShort(new Date(week[week.length - 1] + "T00:00:00"))}`;
+      warnings.push(`Semana ${lbl}: ${total}h trabajadas (objetivo ${WEEKLY_HOURS_TARGET}h, ${diff > 0 ? "+" : ""}${diff}h de diferencia).`);
+    }
+  });
   return { sundaysHolidaysCount: sundaysHolidaysWorked.length, warnings };
 }
 
+/* ============================================================
+   HORARIOS — datos importados del Excel de julio 2026
+   ============================================================ */
+// Datos importados desde 11__Horario_Julio2_2026.xlsx (28 empleados, 16/07 - 02/08/2026)
+const JULY2026_IMPORT_NAMES = [
+  "Arias Jhon Fredis",
+  "Barrios Astrid",
+  "Bonfante Ilsa Corina",
+  "Calderon Edison Andres",
+  "Carcamo Oscar Alfonso",
+  "Carmona Edinson Jose",
+  "Cervantes Yair Jose",
+  "Chiquillo Juan",
+  "De la rosa Lenin Jose",
+  "Durant Zarith Elias",
+  "Esalas Felix Jose",
+  "Fontalvo Nilson Javier",
+  "Gomez Pedro Claver",
+  "Hurtado Jaime",
+  "Jimenez Jesus Daniel",
+  "Jimenez Jesus Maria",
+  "Martelo Diego Alfonso",
+  "Montalvo Gabriel",
+  "Quintana Jesus Daniel",
+  "Rodriguez Roiner",
+  "Salcedo Adel",
+  "Serpa Veronica Maria",
+  "Serrano Perez Pedro",
+  "Simancas Felipe",
+  "Taborda Roymar",
+  "Tapias Mauricio",
+  "Teran Tairo",
+  "Toro Carlos Eduardo",
+];
+const JULY2026_IMPORT_ENTRIES = [
+  {name:"Bonfante Ilsa Corina", date:"2026-07-16", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-17", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-21", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-22", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-23", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-24", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-25", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-27", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-28", code:"VAC"},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-29", entrada:8.0, salida:17.0},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-30", entrada:8.0, salida:17.5},
+  {name:"Bonfante Ilsa Corina", date:"2026-07-31", entrada:8.0, salida:17.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-16", entrada:8.5, salida:16.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-17", entrada:8.5, salida:17.0},
+  {name:"Serpa Veronica Maria", date:"2026-07-18", entrada:9.0, salida:13.0},
+  {name:"Serpa Veronica Maria", date:"2026-07-21", entrada:8.5, salida:17.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-22", entrada:8.5, salida:17.0},
+  {name:"Serpa Veronica Maria", date:"2026-07-23", entrada:8.5, salida:17.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-24", entrada:8.5, salida:17.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-27", entrada:8.5, salida:16.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-28", entrada:8.5, salida:16.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-29", entrada:8.5, salida:16.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-30", entrada:8.5, salida:16.5},
+  {name:"Serpa Veronica Maria", date:"2026-07-31", entrada:8.5, salida:17.0},
+  {name:"Serpa Veronica Maria", date:"2026-08-01", entrada:9.0, salida:13.5},
+  {name:"Tapias Mauricio", date:"2026-07-16", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-17", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-20", entrada:9.0, salida:17.5},
+  {name:"Tapias Mauricio", date:"2026-07-21", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-22", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-23", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-24", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-27", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-28", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-29", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-30", entrada:7.0, salida:17.0},
+  {name:"Tapias Mauricio", date:"2026-07-31", entrada:7.0, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-16", entrada:8.5, salida:16.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-17", entrada:8.5, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-18", entrada:9.0, salida:13.5},
+  {name:"Martelo Diego Alfonso", date:"2026-07-21", entrada:8.5, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-22", entrada:8.5, salida:16.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-23", entrada:8.5, salida:16.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-24", entrada:8.5, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-25", entrada:9.0, salida:13.5},
+  {name:"Martelo Diego Alfonso", date:"2026-07-27", entrada:8.5, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-28", entrada:8.5, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-29", entrada:8.5, salida:16.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-30", entrada:8.5, salida:16.0},
+  {name:"Martelo Diego Alfonso", date:"2026-07-31", entrada:8.5, salida:17.0},
+  {name:"Martelo Diego Alfonso", date:"2026-08-01", entrada:9.0, salida:13.5},
+  {name:"Esalas Felix Jose", date:"2026-07-16", entrada:13.5, salida:21.0},
+  {name:"Esalas Felix Jose", date:"2026-07-17", entrada:13.5, salida:21.0},
+  {name:"Esalas Felix Jose", date:"2026-07-18", entrada:13.5, salida:17.5},
+  {name:"Esalas Felix Jose", date:"2026-07-19", entrada:9.0, salida:17.5},
+  {name:"Esalas Felix Jose", date:"2026-07-21", entrada:8.0, salida:15.5},
+  {name:"Esalas Felix Jose", date:"2026-07-22", entrada:8.0, salida:15.5},
+  {name:"Esalas Felix Jose", date:"2026-07-23", entrada:8.0, salida:14.5},
+  {name:"Esalas Felix Jose", date:"2026-07-24", entrada:8.0, salida:16.5},
+  {name:"Esalas Felix Jose", date:"2026-07-27", entrada:13.5, salida:22.0},
+  {name:"Esalas Felix Jose", date:"2026-07-28", entrada:13.5, salida:22.0},
+  {name:"Esalas Felix Jose", date:"2026-07-29", entrada:13.5, salida:21.0},
+  {name:"Esalas Felix Jose", date:"2026-07-30", entrada:13.5, salida:21.0},
+  {name:"Esalas Felix Jose", date:"2026-07-31", entrada:13.5, salida:21.0},
+  {name:"Esalas Felix Jose", date:"2026-08-01", entrada:13.0, salida:17.5},
+  {name:"Esalas Felix Jose", date:"2026-08-02", entrada:9.0, salida:17.5},
+  {name:"Durant Zarith Elias", date:"2026-07-16", entrada:8.0, salida:14.5},
+  {name:"Durant Zarith Elias", date:"2026-07-17", entrada:8.0, salida:15.5},
+  {name:"Durant Zarith Elias", date:"2026-07-21", entrada:13.5, salida:22.0},
+  {name:"Durant Zarith Elias", date:"2026-07-22", entrada:13.5, salida:22.0},
+  {name:"Durant Zarith Elias", date:"2026-07-23", entrada:13.5, salida:21.0},
+  {name:"Durant Zarith Elias", date:"2026-07-24", entrada:13.5, salida:21.0},
+  {name:"Durant Zarith Elias", date:"2026-07-25", entrada:13.0, salida:17.5},
+  {name:"Durant Zarith Elias", date:"2026-07-26", entrada:9.0, salida:17.5},
+  {name:"Durant Zarith Elias", date:"2026-07-27", entrada:8.0, salida:15.5},
+  {name:"Durant Zarith Elias", date:"2026-07-28", entrada:8.0, salida:15.5},
+  {name:"Durant Zarith Elias", date:"2026-07-29", entrada:8.0, salida:15.5},
+  {name:"Durant Zarith Elias", date:"2026-07-30", entrada:8.0, salida:14.5},
+  {name:"Durant Zarith Elias", date:"2026-07-31", entrada:8.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-17", entrada:9.0, salida:15.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-18", entrada:9.0, salida:15.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-23", entrada:9.0, salida:17.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-25", entrada:9.0, salida:15.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-27", entrada:9.0, salida:17.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Serrano Perez Pedro", date:"2026-08-01", entrada:9.0, salida:15.5},
+  {name:"Teran Tairo", date:"2026-07-16", entrada:22.0, salida:5.5},
+  {name:"Teran Tairo", date:"2026-07-17", entrada:22.0, salida:5.5},
+  {name:"Teran Tairo", date:"2026-07-18", entrada:22.0, salida:5.5},
+  {name:"Teran Tairo", date:"2026-07-21", entrada:13.5, salida:21.0},
+  {name:"Teran Tairo", date:"2026-07-22", entrada:14.5, salida:22.0},
+  {name:"Teran Tairo", date:"2026-07-23", entrada:13.5, salida:21.0},
+  {name:"Teran Tairo", date:"2026-07-24", entrada:14.5, salida:22.0},
+  {name:"Teran Tairo", date:"2026-07-25", entrada:13.5, salida:21.0},
+  {name:"Teran Tairo", date:"2026-07-27", entrada:6.0, salida:13.5},
+  {name:"Teran Tairo", date:"2026-07-28", code:"VAC"},
+  {name:"Teran Tairo", date:"2026-07-29", code:"VAC"},
+  {name:"Teran Tairo", date:"2026-07-30", code:"VAC"},
+  {name:"Teran Tairo", date:"2026-07-31", code:"VAC"},
+  {name:"Teran Tairo", date:"2026-08-01", code:"VAC"},
+  {name:"Quintana Jesus Daniel", date:"2026-07-16", entrada:22.0, salida:6.6},
+  {name:"Quintana Jesus Daniel", date:"2026-07-17", entrada:22.0, salida:6.5},
+  {name:"Quintana Jesus Daniel", date:"2026-07-21", entrada:14.5, salida:22.0},
+  {name:"Quintana Jesus Daniel", date:"2026-07-22", entrada:13.5, salida:22.0},
+  {name:"Quintana Jesus Daniel", date:"2026-07-23", entrada:14.5, salida:22.0},
+  {name:"Quintana Jesus Daniel", date:"2026-07-24", entrada:13.5, salida:21.0},
+  {name:"Quintana Jesus Daniel", date:"2026-07-26", entrada:6.0, salida:14.5},
+  {name:"Quintana Jesus Daniel", date:"2026-07-27", entrada:6.0, salida:14.5},
+  {name:"Quintana Jesus Daniel", date:"2026-07-28", entrada:6.0, salida:14.5},
+  {name:"Quintana Jesus Daniel", date:"2026-07-29", entrada:6.0, salida:14.5},
+  {name:"Quintana Jesus Daniel", date:"2026-07-30", entrada:6.0, salida:14.5},
+  {name:"Quintana Jesus Daniel", date:"2026-07-31", entrada:6.0, salida:14.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-16", entrada:13.5, salida:20.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-17", entrada:14.5, salida:22.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-18", entrada:13.5, salida:21.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-19", entrada:13.5, salida:22.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-20", entrada:14.5, salida:22.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-22", entrada:6.0, salida:13.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-23", entrada:7.0, salida:14.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-24", entrada:6.0, salida:13.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-25", entrada:7.0, salida:14.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-27", entrada:22.5, salida:6.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-28", entrada:22.0, salida:5.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-29", entrada:22.5, salida:6.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-30", entrada:22.0, salida:5.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-07-31", entrada:22.5, salida:6.0},
+  {name:"Fontalvo Nilson Javier", date:"2026-08-01", entrada:22.0, salida:5.5},
+  {name:"Fontalvo Nilson Javier", date:"2026-08-02", entrada:22.5, salida:6.0},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-16", entrada:14.5, salida:22.0},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-17", entrada:13.5, salida:20.0},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-18", entrada:14.5, salida:22.0},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-21", entrada:6.0, salida:13.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-22", entrada:7.0, salida:14.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-23", entrada:6.0, salida:13.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-24", entrada:7.0, salida:14.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-25", entrada:6.0, salida:13.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-26", entrada:7.0, salida:14.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-28", entrada:22.5, salida:6.0},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-29", entrada:22.0, salida:5.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-30", entrada:22.5, salida:6.0},
+  {name:"Jimenez Jesus Daniel", date:"2026-07-31", entrada:22.0, salida:5.5},
+  {name:"Jimenez Jesus Daniel", date:"2026-08-01", entrada:22.5, salida:6.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-16", entrada:6.0, salida:14.5},
+  {name:"Carmona Edinson Jose", date:"2026-07-17", entrada:6.0, salida:13.5},
+  {name:"Carmona Edinson Jose", date:"2026-07-18", entrada:7.0, salida:14.5},
+  {name:"Carmona Edinson Jose", date:"2026-07-21", entrada:22.5, salida:6.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-22", entrada:22.0, salida:5.5},
+  {name:"Carmona Edinson Jose", date:"2026-07-23", entrada:22.5, salida:6.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-24", entrada:22.0, salida:5.5},
+  {name:"Carmona Edinson Jose", date:"2026-07-25", entrada:22.5, salida:6.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-26", entrada:22.5, salida:6.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-28", entrada:14.5, salida:22.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-29", entrada:13.5, salida:21.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-30", entrada:14.5, salida:22.0},
+  {name:"Carmona Edinson Jose", date:"2026-07-31", entrada:13.5, salida:21.0},
+  {name:"Carmona Edinson Jose", date:"2026-08-01", entrada:14.5, salida:22.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-16", entrada:7.0, salida:13.5},
+  {name:"Toro Carlos Eduardo", date:"2026-07-17", entrada:6.0, salida:13.5},
+  {name:"Toro Carlos Eduardo", date:"2026-07-18", entrada:6.0, salida:13.5},
+  {name:"Toro Carlos Eduardo", date:"2026-07-21", entrada:22.0, salida:5.5},
+  {name:"Toro Carlos Eduardo", date:"2026-07-22", entrada:22.5, salida:6.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-23", entrada:22.0, salida:5.5},
+  {name:"Toro Carlos Eduardo", date:"2026-07-24", entrada:22.5, salida:6.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-25", entrada:22.0, salida:5.5},
+  {name:"Toro Carlos Eduardo", date:"2026-07-27", entrada:14.5, salida:22.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-28", entrada:13.5, salida:21.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-29", entrada:14.5, salida:22.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-30", entrada:13.5, salida:21.0},
+  {name:"Toro Carlos Eduardo", date:"2026-07-31", entrada:14.5, salida:22.0},
+  {name:"Toro Carlos Eduardo", date:"2026-08-01", entrada:13.5, salida:21.0},
+  {name:"Toro Carlos Eduardo", date:"2026-08-02", entrada:14.5, salida:22.0},
+  {name:"Gomez Pedro Claver", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-17", entrada:13.5, salida:21.0},
+  {name:"Gomez Pedro Claver", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-19", entrada:22.0, salida:0.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-20", entrada:22.0, salida:5.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-25", entrada:13.5, salida:21.0},
+  {name:"Gomez Pedro Claver", date:"2026-07-27", entrada:13.5, salida:21.0},
+  {name:"Gomez Pedro Claver", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Gomez Pedro Claver", date:"2026-08-01", entrada:6.0, salida:13.5},
+  {name:"Gomez Pedro Claver", date:"2026-08-02", entrada:6.0, salida:13.5},
+  {name:"Chiquillo Juan", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-17", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-21", entrada:6.0, salida:13.5},
+  {name:"Chiquillo Juan", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-25", entrada:9.0, salida:16.5},
+  {name:"Chiquillo Juan", date:"2026-07-26", entrada:13.5, salida:21.0},
+  {name:"Chiquillo Juan", date:"2026-07-28", entrada:7.0, salida:14.5},
+  {name:"Chiquillo Juan", date:"2026-07-29", entrada:6.0, salida:13.5},
+  {name:"Chiquillo Juan", date:"2026-07-30", entrada:7.0, salida:14.5},
+  {name:"Chiquillo Juan", date:"2026-07-31", entrada:6.0, salida:13.5},
+  {name:"Chiquillo Juan", date:"2026-08-01", entrada:7.0, salida:14.5},
+  {name:"Chiquillo Juan", date:"2026-08-02", entrada:6.0, salida:13.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-16", entrada:8.0, salida:15.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-17", entrada:8.0, salida:15.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-18", entrada:6.0, salida:11.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-19", entrada:6.0, salida:13.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-20", entrada:6.0, salida:13.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-21", entrada:8.0, salida:16.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-23", entrada:8.0, salida:16.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-24", entrada:8.0, salida:15.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-25", entrada:6.0, salida:11.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-27", entrada:8.0, salida:16.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-28", entrada:8.0, salida:16.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-29", entrada:8.0, salida:15.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-30", entrada:8.0, salida:15.5},
+  {name:"Arias Jhon Fredis", date:"2026-07-31", entrada:8.0, salida:15.5},
+  {name:"Arias Jhon Fredis", date:"2026-08-01", entrada:6.0, salida:11.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-17", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-22", entrada:13.5, salida:21.0},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-23", entrada:13.5, salida:21.0},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-24", entrada:13.5, salida:21.0},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-25", entrada:22.0, salida:5.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-26", entrada:22.0, salida:5.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-27", entrada:22.0, salida:5.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Carcamo Oscar Alfonso", date:"2026-08-01", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-16", entrada:13.5, salida:21.0},
+  {name:"Rodriguez Roiner", date:"2026-07-17", entrada:13.5, salida:21.0},
+  {name:"Rodriguez Roiner", date:"2026-07-18", entrada:22.0, salida:5.5},
+  {name:"Rodriguez Roiner", date:"2026-07-19", entrada:22.0, salida:5.5},
+  {name:"Rodriguez Roiner", date:"2026-07-20", entrada:22.0, salida:5.5},
+  {name:"Rodriguez Roiner", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-25", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-27", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Rodriguez Roiner", date:"2026-07-29", entrada:13.5, salida:21.0},
+  {name:"Rodriguez Roiner", date:"2026-07-30", entrada:13.5, salida:21.0},
+  {name:"Rodriguez Roiner", date:"2026-07-31", entrada:13.5, salida:21.0},
+  {name:"Rodriguez Roiner", date:"2026-08-01", entrada:13.5, salida:21.0},
+  {name:"Rodriguez Roiner", date:"2026-08-02", entrada:22.0, salida:5.5},
+  {name:"Barrios Astrid", date:"2026-07-16", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-17", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-18", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-21", entrada:7.0, salida:15.5},
+  {name:"Barrios Astrid", date:"2026-07-22", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-23", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-24", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-25", entrada:7.0, salida:13.5},
+  {name:"Barrios Astrid", date:"2026-07-27", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-28", entrada:7.0, salida:15.5},
+  {name:"Barrios Astrid", date:"2026-07-29", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-30", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-07-31", entrada:7.0, salida:14.5},
+  {name:"Barrios Astrid", date:"2026-08-01", entrada:7.0, salida:13.5},
+  {name:"Taborda Roymar", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-17", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-25", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-27", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Taborda Roymar", date:"2026-08-01", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-17", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-25", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-27", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Cervantes Yair Jose", date:"2026-08-01", entrada:9.0, salida:16.5},
+  {name:"Hurtado Jaime", date:"2026-07-16", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-17", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-18", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-20", entrada:6.0, salida:13.5},
+  {name:"Hurtado Jaime", date:"2026-07-21", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-22", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-23", code:"ALT"},
+  {name:"Hurtado Jaime", date:"2026-07-24", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-25", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-27", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-28", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-29", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-30", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-07-31", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-08-01", entrada:7.0, salida:14.5},
+  {name:"Hurtado Jaime", date:"2026-08-02", entrada:13.5, salida:21.0},
+  {name:"Salcedo Adel", date:"2026-07-16", entrada:11.5, salida:19.0},
+  {name:"Salcedo Adel", date:"2026-07-17", entrada:11.5, salida:19.0},
+  {name:"Salcedo Adel", date:"2026-07-18", entrada:11.5, salida:19.0},
+  {name:"Salcedo Adel", date:"2026-07-19", entrada:6.0, salida:13.5},
+  {name:"Salcedo Adel", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"Salcedo Adel", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Salcedo Adel", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Salcedo Adel", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Salcedo Adel", date:"2026-07-27", entrada:7.0, salida:14.5},
+  {name:"Salcedo Adel", date:"2026-07-28", entrada:7.0, salida:14.5},
+  {name:"Salcedo Adel", date:"2026-07-29", entrada:7.0, salida:14.5},
+  {name:"Salcedo Adel", date:"2026-07-30", entrada:7.0, salida:14.5},
+  {name:"Salcedo Adel", date:"2026-07-31", entrada:7.0, salida:14.5},
+  {name:"Salcedo Adel", date:"2026-08-01", entrada:7.0, salida:14.5},
+  {name:"Calderon Edison Andres", date:"2026-07-16", entrada:7.0, salida:14.5},
+  {name:"Calderon Edison Andres", date:"2026-07-17", entrada:7.0, salida:14.5},
+  {name:"Calderon Edison Andres", date:"2026-07-21", entrada:11.5, salida:19.0},
+  {name:"Calderon Edison Andres", date:"2026-07-22", entrada:11.5, salida:19.0},
+  {name:"Calderon Edison Andres", date:"2026-07-23", entrada:11.5, salida:19.0},
+  {name:"Calderon Edison Andres", date:"2026-07-24", entrada:11.5, salida:19.0},
+  {name:"Calderon Edison Andres", date:"2026-07-25", entrada:11.5, salida:19.0},
+  {name:"Calderon Edison Andres", date:"2026-07-27", entrada:9.0, salida:16.5},
+  {name:"Calderon Edison Andres", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Calderon Edison Andres", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Calderon Edison Andres", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Calderon Edison Andres", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Calderon Edison Andres", date:"2026-08-01", entrada:9.0, salida:16.5},
+  {name:"Montalvo Gabriel", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Montalvo Gabriel", date:"2026-07-17", entrada:9.0, salida:16.5},
+  {name:"Montalvo Gabriel", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Montalvo Gabriel", date:"2026-07-20", entrada:7.0, salida:14.5},
+  {name:"Montalvo Gabriel", date:"2026-07-22", entrada:7.0, salida:14.5},
+  {name:"Montalvo Gabriel", date:"2026-07-23", entrada:7.0, salida:14.5},
+  {name:"Montalvo Gabriel", date:"2026-07-24", entrada:7.0, salida:14.5},
+  {name:"Montalvo Gabriel", date:"2026-07-25", entrada:7.0, salida:14.5},
+  {name:"Montalvo Gabriel", date:"2026-07-26", entrada:13.5, salida:21.0},
+  {name:"Montalvo Gabriel", date:"2026-07-27", entrada:11.5, salida:19.0},
+  {name:"Montalvo Gabriel", date:"2026-07-28", entrada:11.5, salida:19.0},
+  {name:"Montalvo Gabriel", date:"2026-07-29", entrada:11.5, salida:19.0},
+  {name:"Montalvo Gabriel", date:"2026-07-30", entrada:11.5, salida:19.0},
+  {name:"Montalvo Gabriel", date:"2026-07-31", entrada:11.5, salida:19.0},
+  {name:"Jimenez Jesus Maria", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-17", entrada:6.0, salida:13.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-25", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-27", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"Jimenez Jesus Maria", date:"2026-08-01", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-16", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-17", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-18", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-19", entrada:13.5, salida:21.0},
+  {name:"De la rosa Lenin Jose", date:"2026-07-20", entrada:13.5, salida:21.0},
+  {name:"De la rosa Lenin Jose", date:"2026-07-21", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-22", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-23", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-24", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-27", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-28", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-29", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-30", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-07-31", entrada:9.0, salida:16.5},
+  {name:"De la rosa Lenin Jose", date:"2026-08-01", entrada:9.0, salida:16.5},
+  {name:"Simancas Felipe", date:"2026-07-16", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-17", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-18", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-21", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-22", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-23", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-24", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-25", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-27", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-28", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-29", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-30", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-07-31", entrada:7.0, salida:10.5},
+  {name:"Simancas Felipe", date:"2026-08-01", entrada:7.0, salida:10.5},
+];const JULY2026_IMPORT_CARGOS = {
+  "Bonfante Ilsa Corina": "Administrativo",
+  "Serpa Veronica Maria": "Administrativo",
+  "Tapias Mauricio": "Administrativo",
+  "Martelo Diego Alfonso": "Administrativo",
+  "Esalas Felix Jose": "Administrativo",
+  "Durant Zarith Elias": "Administrativo",
+  "Serrano Perez Pedro": "Administrativo",
+  "Teran Tairo": "Turnista",
+  "Quintana Jesus Daniel": "Turnista",
+  "Fontalvo Nilson Javier": "Turnista",
+  "Jimenez Jesus Daniel": "Turnista",
+  "Carmona Edinson Jose": "Turnista",
+  "Toro Carlos Eduardo": "Turnista",
+  "Gomez Pedro Claver": "Apoyo",
+  "Chiquillo Juan": "Apoyo",
+  "Arias Jhon Fredis": "Apoyo",
+  "Carcamo Oscar Alfonso": "Mecánico",
+  "Rodriguez Roiner": "Mecánico",
+  "Barrios Astrid": "Practicante",
+  "Taborda Roymar": "Practicante",
+  "Cervantes Yair Jose": "Practicante",
+  "Hurtado Jaime": "Pintor",
+  "Salcedo Adel": "Pintor",
+  "Calderon Edison Andres": "Pintor",
+  "Montalvo Gabriel": "Pintor",
+  "Jimenez Jesus Maria": "Carpintero",
+  "De la rosa Lenin Jose": "Albañil",
+  "Simancas Felipe": "Jardinero",
+};
 /* ============================================================
    HELPERS
    (sGet/sSet ahora viven en ./lib/storage.js, respaldados por Supabase)
@@ -1260,22 +1752,31 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
   const weekLabel = `${fmtDayFull(weekStart)} — ${fmtDayFull(addDays(weekStart, 6))}`;
   const isCurrentWeek = isSameCalendarDay(startOfWeek(new Date()), weekStart);
 
-  const doDownload = async () => {
+  const doDownloadExcel = () => {
     setDownloading(true);
     try {
-      const doc = await generateMetersWeekPdf(grid, weekLabel, currentUser);
-      doc.save(`lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
-    } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+      const wb = buildMetersWeekWorkbook(grid, weekLabel);
+      XLSX.writeFile(wb, `lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.xlsx`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
     setDownloading(false);
   };
 
   const doSend = async () => {
     if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSending(true); setMsg(null);
-    const res = await sendMetersWeekEmailAuto(emailTo.trim(), grid, weekLabel, currentUser);
+    const res = await sendMetersWeekExcelEmailAuto(emailTo.trim(), grid, weekLabel);
     setMsg({ ok: res.ok, text: res.message });
-    onLogSent?.({ to: emailTo.trim(), method: "Lecturas de medidores (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    onLogSent?.({ to: emailTo.trim(), method: "Lecturas de medidores (semana, correo con Excel)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSending(false);
+  };
+
+  const doDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const doc = await generateMetersWeekPdf(grid, weekLabel, currentUser);
+      doc.save(`lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
+    setDownloading(false);
   };
 
   let lastGroupRendered = null;
@@ -1298,14 +1799,15 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
       </p>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar esta semana</div>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar esta semana (en Excel)</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
-          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadExcel}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
+          <Button size="sm" variant="ghost" onClick={doDownloadPdf}>o descargar en PDF</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
             className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
-          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
@@ -1909,21 +2411,27 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee }) 
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onSetScheduleEntry, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onSetScheduleEntry, onImportJuly, reportEmail, onLogSent }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
   const [editingCell, setEditingCell] = useState(null);
+  const [draftMode, setDraftMode] = useState("hours"); // "hours" | "special"
+  const [draftEntrada, setDraftEntrada] = useState("");
+  const [draftSalida, setDraftSalida] = useState("");
   const [draftCode, setDraftCode] = useState("");
   const [draftNote, setDraftNote] = useState("");
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
   const year = monthDate.getFullYear(), month = monthDate.getMonth();
   const daysIso = useMemo(() => daysInMonthIso(year, month), [year, month]);
+  const weeks = useMemo(() => weeksInRange(daysIso), [daysIso]);
   const monthLabel = monthDate.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
   const activeEmployees = employees.filter(e => e.active !== false);
 
@@ -1940,22 +2448,60 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees, scheduleEntries, daysIso]);
 
-  const openCell = (employeeId, dateIso) => {
-    const entry = entriesByEmployee[employeeId]?.[dateIso];
-    setEditingCell({ employeeId, dateIso });
-    setDraftCode(entry?.code || "");
-    setDraftNote(entry?.note || "");
-  };
-  const saveCell = () => {
-    onSetScheduleEntry(editingCell.employeeId, editingCell.dateIso, draftCode, draftNote);
-    setEditingCell(null);
-  };
-
   const sortedEmployees = useMemo(() => {
     const order = [...CARGOS, ""];
     return [...activeEmployees].sort((a, b) => order.indexOf(a.cargo || "") - order.indexOf(b.cargo || ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEmployees]);
+
+  const openCell = (employeeId, dateIso) => {
+    const entry = entriesByEmployee[employeeId]?.[dateIso];
+    setEditingCell({ employeeId, dateIso });
+    setDraftMode(entry?.code ? "special" : "hours");
+    setDraftEntrada(entry?.entrada != null ? String(entry.entrada) : "");
+    setDraftSalida(entry?.salida != null ? String(entry.salida) : "");
+    setDraftCode(entry?.code || "");
+    setDraftNote(entry?.note || "");
+  };
+  const saveCell = () => {
+    const patch = draftMode === "special"
+      ? { code: draftCode, note: draftNote }
+      : { entrada: draftEntrada === "" ? null : Number(draftEntrada), salida: draftSalida === "" ? null : Number(draftSalida), note: draftNote };
+    onSetScheduleEntry(editingCell.employeeId, editingCell.dateIso, patch);
+    setEditingCell(null);
+  };
+
+  // ---- Vista previa de impacto: recalcula la semana de la celda que se está editando, CON el cambio en borrador ----
+  const impact = useMemo(() => {
+    if (!editingCell) return null;
+    const week = weeks.find(w => w.includes(editingCell.dateIso));
+    if (!week) return null;
+    const entries = entriesByEmployee[editingCell.employeeId] || {};
+    const draftEntry = draftMode === "special"
+      ? { code: draftCode }
+      : { entrada: draftEntrada === "" ? null : Number(draftEntrada), salida: draftSalida === "" ? null : Number(draftSalida) };
+    const before = weekTotalHours(week, entries);
+    const afterEntries = { ...entries, [editingCell.dateIso]: draftEntry };
+    const after = weekTotalHours(week, afterEntries);
+    const diff = after - WEEKLY_HOURS_TARGET;
+    const emp = activeEmployees.find(e => e.id === editingCell.employeeId);
+    const label = `${fmtDayShort(new Date(week[0] + "T00:00:00"))}–${fmtDayShort(new Date(week[week.length - 1] + "T00:00:00"))}`;
+    const restDayHit = emp && emp.fixedRestDay !== null && emp.fixedRestDay !== undefined
+      && new Date(editingCell.dateIso + "T00:00:00").getDay() === emp.fixedRestDay && draftMode !== "special";
+    return { weekLabel: label, before, after, diff, restDayHit, isSundayHoliday: isSundayOrHoliday(editingCell.dateIso) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCell, draftMode, draftEntrada, draftSalida, draftCode, entriesByEmployee]);
+
+  const doImport = async () => {
+    setImporting(true); setImportMsg(null);
+    try {
+      const res = await onImportJuly();
+      setImportMsg({ ok: true, text: `Listo: ${res.newEmployeesCount} empleado(s) nuevo(s) creados, ${res.entriesCount} registros de horario cargados (16 jul – 2 ago 2026).` });
+    } catch {
+      setImportMsg({ ok: false, text: "No se pudo importar. Intenta de nuevo." });
+    }
+    setImporting(false);
+  };
 
   const doDownload = async () => {
     setDownloading(true);
@@ -1996,6 +2542,14 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
         </div>
       )}
 
+      {isAdmin && (
+        <div className="rounded-md p-2 mb-3 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, color: "#7a5405" }}>
+          <span>¿Primera vez usando esto? Importa de una vez el horario real de julio (16 jul – 2 ago 2026) desde el Excel que ya me diste.</span>
+          <Button size="sm" disabled={importing} onClick={doImport}>{importing ? "Importando…" : "Importar horario de julio 2026"}</Button>
+        </div>
+      )}
+      {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
+
       {isAdmin && showManage && <EmployeeManagePanel employees={employees} onCreateEmployee={onCreateEmployee} onUpdateEmployee={onUpdateEmployee} />}
 
       {isAdmin && editingCell && (
@@ -2003,14 +2557,52 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
           <div className="text-sm font-semibold mb-2" style={{ color: "#7a5405" }}>
             {activeEmployees.find(e => e.id === editingCell.employeeId)?.name} — {fmtDayFull(new Date(editingCell.dateIso + "T00:00:00"))}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <select value={draftCode} onChange={e => setDraftCode(e.target.value)}
-              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
-              <option value="">(vacío)</option>
-              {SHIFT_CODES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
-            </select>
-            <input value={draftNote} onChange={e => setDraftNote(e.target.value)} placeholder="Nota (opcional, ej. hora exacta de reducción)"
-              className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          <div className="flex items-center gap-3 flex-wrap mb-2 text-sm">
+            <label className="flex items-center gap-1" style={{ color: "#7a5405" }}>
+              <input type="radio" checked={draftMode === "hours"} onChange={() => setDraftMode("hours")} /> Horas exactas
+            </label>
+            <label className="flex items-center gap-1" style={{ color: "#7a5405" }}>
+              <input type="radio" checked={draftMode === "special"} onChange={() => setDraftMode("special")} /> Día especial
+            </label>
+          </div>
+
+          {draftMode === "hours" ? (
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <input type="number" step="0.5" value={draftEntrada} onChange={e => setDraftEntrada(e.target.value)} placeholder="Entrada (ej. 8.5)"
+                className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              <input type="number" step="0.5" value={draftSalida} onChange={e => setDraftSalida(e.target.value)} placeholder="Salida (ej. 16.5)"
+                className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              <span className="text-xs" style={{ color: C.gray }}>Formato decimal: 8.5 = 8:30, 16.5 = 4:30 p.m.</span>
+            </div>
+          ) : (
+            <div className="mb-2">
+              <select value={draftCode} onChange={e => setDraftCode(e.target.value)}
+                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+                <option value="">(elegir)</option>
+                {SPECIAL_CODES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
+              </select>
+            </div>
+          )}
+
+          <input value={draftNote} onChange={e => setDraftNote(e.target.value)} placeholder="Nota (opcional)"
+            className="text-sm border rounded-md px-2 py-1.5 outline-none w-full mb-2" style={{ borderColor: C.line }} />
+
+          {impact && (
+            <div className="text-xs rounded-md p-2 mb-2" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
+              <div style={{ color: C.ink }}>
+                Semana {impact.weekLabel}: <b>{impact.before}h</b> antes → <b style={{ color: Math.abs(impact.diff) >= 4 ? C.red : C.ink }}>{impact.after}h</b> con este cambio
+                (objetivo {WEEKLY_HOURS_TARGET}h, {impact.diff >= 0 ? "+" : ""}{Math.round(impact.diff * 10) / 10}h de diferencia).
+              </div>
+              {impact.isSundayHoliday && draftMode === "hours" && draftEntrada !== "" && (
+                <div style={{ color: C.red }} className="mt-1">⚠ Este día es domingo o festivo.</div>
+              )}
+              {impact.restDayHit && (
+                <div style={{ color: C.red }} className="mt-1">⚠ Este empleado tiene este día marcado como descanso fijo.</div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
             <Button size="sm" onClick={saveCell}>Guardar</Button>
             <Button size="sm" variant="ghost" onClick={() => setEditingCell(null)}>Cancelar</Button>
           </div>
@@ -2031,7 +2623,8 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       </div>
 
       <div className="text-xs mb-2" style={{ color: C.gray }}>
-        Encabezado en rojo = domingo o festivo. Las alertas (⚠) son una ayuda visual según las reglas que nos diste — no reemplazan la revisión de las normas laborales vigentes.
+        Encabezado en rojo = domingo o festivo. Cada celda muestra hora de entrada-salida (ej. 8.5-16.5). Las alertas (⚠) son una ayuda
+        visual según las reglas que nos diste — no reemplazan la revisión de las normas laborales vigentes.
       </div>
 
       <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
@@ -2042,12 +2635,13 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
               {daysIso.map(d => {
                 const dd = new Date(d + "T00:00:00");
                 return (
-                  <th key={d} className="px-1 py-2 text-center" style={{ minWidth: 30, background: isSundayOrHoliday(d) ? "#7a3535" : C.steelDark }}>
+                  <th key={d} className="px-1 py-2 text-center" style={{ minWidth: 46, background: isSundayOrHoliday(d) ? "#7a3535" : C.steelDark }}>
                     {dd.getDate()}
                   </th>
                 );
               })}
               <th className="px-2 py-2 text-center" style={{ minWidth: 46 }}>Dom/Fest</th>
+              <th className="px-2 py-2 text-center" style={{ minWidth: 50 }}>Total mes</th>
             </tr>
           </thead>
           <tbody>
@@ -2056,13 +2650,14 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
               return sortedEmployees.map((emp, i) => {
                 const entries = entriesByEmployee[emp.id] || {};
                 const { sundaysHolidaysCount, warnings } = computeScheduleWarnings(emp, daysIso, entries);
+                const monthTotal = weeks.reduce((sum, w) => sum + weekTotalHours(w, entries), 0);
                 const showGroupHeader = (emp.cargo || "") !== lastCargo;
                 lastCargo = emp.cargo || "";
                 return (
                   <React.Fragment key={emp.id}>
                     {showGroupHeader && (
                       <tr>
-                        <td colSpan={daysIso.length + 2} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                        <td colSpan={daysIso.length + 3} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
                           {emp.cargo || "Sin cargo asignado"}
                         </td>
                       </tr>
@@ -2074,27 +2669,28 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
                       </td>
                       {daysIso.map(d => {
                         const entry = entries[d];
-                        const colors = entry ? SHIFT_COLORS[entry.code] : null;
+                        const colors = entry?.code ? SPECIAL_CODE_COLORS[entry.code] : null;
                         return (
                           <td key={d} className="px-0.5 py-1 text-center" style={{ background: colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : "transparent") }}>
                             {isAdmin ? (
-                              <button onClick={() => openCell(emp.id, d)} className="w-full text-xs py-1" style={{ color: colors?.fg || C.gray }}>
-                                {entry?.code || "·"}
+                              <button onClick={() => openCell(emp.id, d)} className="w-full text-xs py-1" style={{ color: colors?.fg || C.ink }}>
+                                {fmtEntryShort(entry) || "·"}
                               </button>
                             ) : (
-                              <span className="text-xs" style={{ color: colors?.fg || C.gray }}>{entry?.code || ""}</span>
+                              <span className="text-xs" style={{ color: colors?.fg || C.ink }}>{fmtEntryShort(entry)}</span>
                             )}
                           </td>
                         );
                       })}
                       <td className="px-2 py-1.5 text-center font-semibold" style={{ color: sundaysHolidaysCount > 3 ? C.red : C.ink }}>{sundaysHolidaysCount}</td>
+                      <td className="px-2 py-1.5 text-center font-semibold" style={{ color: C.ink }}>{monthTotal || ""}</td>
                     </tr>
                   </React.Fragment>
                 );
               });
             })()}
             {activeEmployees.length === 0 && (
-              <tr><td className="px-2 py-6 text-center text-xs" colSpan={daysIso.length + 2} style={{ color: C.gray }}>
+              <tr><td className="px-2 py-6 text-center text-xs" colSpan={daysIso.length + 3} style={{ color: C.gray }}>
                 Sin empleados registrados todavía.
               </td></tr>
             )}
@@ -3246,36 +3842,44 @@ async function sendStockAlertsEmailAuto(to, low, generatedBy) {
 /* ============================================================
    PDF Y CORREO: HORARIO MENSUAL
    ============================================================ */
+function fmtEntryShort(entry) {
+  if (!entry) return "";
+  if (entry.code) return entry.code;
+  if (entry.entrada == null) return "";
+  return `${entry.entrada}${entry.salida != null ? `-${entry.salida}` : ""}`;
+}
+
 async function generateSchedulePdf(monthLabel, employees, daysIso, entriesByEmployee, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
   let y = pdfLetterhead(doc, "Horario Mensual", [monthLabel, `Generado por ${generatedBy || "—"}`]);
 
+  const weeks = weeksInRange(daysIso);
   const head = ["Empleado", ...daysIso.map(d => {
     const dd = new Date(d + "T00:00:00");
     return `${String(dd.getDate()).padStart(2, "0")}${isSundayOrHoliday(d) ? "*" : ""}`;
-  })];
+  }), ...weeks.map((w, i) => `Sem${i + 1}`), "Total"];
+
   const body = employees.map(emp => {
     const entries = entriesByEmployee[emp.id] || {};
-    return [emp.name, ...daysIso.map(d => entries[d]?.code || "")];
+    const weekTotals = weeks.map(w => weekTotalHours(w, entries));
+    const monthTotal = weekTotals.reduce((a, b) => a + b, 0);
+    return [emp.name, ...daysIso.map(d => fmtEntryShort(entries[d])), ...weekTotals.map(t => t || ""), monthTotal || ""];
   });
 
   pdfTable(doc, y, head, body, {
-    columnStyles: { 0: { cellWidth: 42 } },
+    columnStyles: { 0: { cellWidth: 38 } },
     didParseCell: (data) => {
       if (data.section !== "body" || data.column.index === 0) return;
-      const code = data.cell.raw;
-      const colors = SHIFT_COLORS[code];
-      if (colors) {
-        const rgb = hexToRgb(colors.bg);
-        data.cell.styles.fillColor = rgb;
-      }
+      const raw = String(data.cell.raw || "");
+      const colors = SPECIAL_CODE_COLORS[raw];
+      if (colors) data.cell.styles.fillColor = hexToRgb(colors.bg);
     },
   });
 
   doc.setFontSize(7.5);
   const finalY = doc.lastAutoTable.finalY + 6;
-  doc.text("* Domingo o festivo. Códigos: 06-14 / 14-22 / 22-06 = turno · HR = hora de reducción · LIBRE = descanso · VAC = vacaciones", 14, finalY);
+  doc.text(`* Domingo o festivo. Las celdas muestran hora de entrada-salida (ej. 8.5-16.5). Objetivo semanal: ${WEEKLY_HOURS_TARGET}h. VAC = vacaciones · LIBRE = descanso · INC = incapacidad · ALT = alterno/cambio.`, 14, finalY);
 
   pdfFooterAll(doc);
   return doc;
@@ -3601,6 +4205,61 @@ async function sendMetersWeekEmailAuto(to, grid, weekLabel, generatedBy) {
     return data;
   } catch (e) {
     return { ok: false, message: "No se pudo generar o enviar el PDF automáticamente. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+/** Convierte un ArrayBuffer/Uint8Array en base64 puro, para mandarlo al backend de correo. */
+function bufferToBase64(buf) {
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** Arma el archivo Excel del historial semanal de medidores (una hoja por grupo), listo para tomar datos. */
+function buildMetersWeekWorkbook(grid, weekLabel) {
+  const wb = XLSX.utils.book_new();
+  const groups = [...new Set(grid.rows.map(r => r.groupTitle))];
+  groups.forEach(groupTitle => {
+    const rows = grid.rows.filter(r => r.groupTitle === groupTitle);
+    const header = ["Medidor", "Unidad", "Antes", ...grid.days.map(d => fmtDayShort(d))];
+    const data = rows.map(r => [r.label, r.unit || "", r.before ?? "", ...r.days.map(v => v ?? "")]);
+    const ws = XLSX.utils.aoa_to_sheet([[weekLabel], header, ...data]);
+    ws["!cols"] = [{ wch: 42 }, { wch: 8 }, { wch: 10 }, ...grid.days.map(() => ({ wch: 10 }))];
+    const safeName = groupTitle.replace(/[\\/*?:\[\]]/g, "").slice(0, 31) || "Medidores";
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
+  });
+  return wb;
+}
+
+function generateMetersWeekExcelBase64(grid, weekLabel) {
+  const wb = buildMetersWeekWorkbook(grid, weekLabel);
+  const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  return bufferToBase64(out);
+}
+
+async function sendMetersWeekExcelEmailAuto(to, grid, weekLabel) {
+  try {
+    const base64 = generateMetersWeekExcelBase64(grid, weekLabel);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Lecturas de Medidores (Excel) — ${weekLabel}`,
+        text: `Lecturas de medidores de la semana: ${weekLabel}, en Excel para trabajar los datos directamente. Ver el archivo adjunto.`,
+        attachmentBase64: base64,
+        filename: `lecturas-medidores-${weekLabel.replace(/[\s\/]+/g, "-")}.xlsx`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch (e) {
+    return { ok: false, message: "No se pudo generar o enviar el Excel automáticamente. Revisa la conexión e intenta de nuevo." };
   }
 }
 
@@ -4136,13 +4795,55 @@ export default function App() {
     await sSet("employees", next, true);
   };
 
-  const setScheduleEntry = async (employeeId, dateIso, code, note) => {
+  const setScheduleEntry = async (employeeId, dateIso, patch) => {
     const key = scheduleKey(employeeId, dateIso);
     const next = { ...scheduleEntries };
-    if (!code) delete next[key];
-    else next[key] = { code, note: note || "", updatedBy: displayName, updatedAt: nowIso() };
+    const isEmpty = !patch || (!patch.code && patch.entrada == null && patch.salida == null);
+    if (isEmpty) delete next[key];
+    else next[key] = { entrada: patch.entrada ?? null, salida: patch.salida ?? null, code: patch.code || null, note: patch.note || "", updatedBy: displayName, updatedAt: nowIso() };
     setScheduleEntries(next);
     await sSet("schedule-entries", next, true);
+  };
+
+  /**
+   * Importa (una sola vez, o las veces que quieras — es seguro repetirlo) el horario real
+   * que se sacó del Excel "11__Horario_Julio2_2026.xlsx": crea los empleados que falten
+   * (ya con su cargo asignado) y carga las 396 lecturas de entrada/salida del 16/07 al 02/08/2026.
+   */
+  const importJulySchedule2026 = async () => {
+    const existingByName = {};
+    employees.forEach(e => { existingByName[e.name.trim().toLowerCase()] = e; });
+
+    const newEmployees = [];
+    JULY2026_IMPORT_NAMES.forEach(name => {
+      const key = name.trim().toLowerCase();
+      if (!existingByName[key]) {
+        const rec = {
+          id: uid("emp"), name, cargo: JULY2026_IMPORT_CARGOS[name] || "",
+          fixedRestDay: name === "Quintana Jesus Daniel" ? 6 : null,
+          active: true, createdBy: displayName, createdAt: nowIso(),
+        };
+        newEmployees.push(rec);
+        existingByName[key] = rec;
+      }
+    });
+    const allEmployees = [...employees, ...newEmployees];
+    if (newEmployees.length) { setEmployees(allEmployees); await sSet("employees", allEmployees, true); }
+
+    const nextEntries = { ...scheduleEntries };
+    JULY2026_IMPORT_ENTRIES.forEach(rec => {
+      const emp = existingByName[rec.name.trim().toLowerCase()];
+      if (!emp) return;
+      const key = scheduleKey(emp.id, rec.date);
+      nextEntries[key] = {
+        entrada: rec.entrada ?? null, salida: rec.salida ?? null, code: rec.code || null,
+        note: "", updatedBy: displayName, updatedAt: nowIso(),
+      };
+    });
+    setScheduleEntries(nextEntries);
+    await sSet("schedule-entries", nextEntries, true);
+
+    return { newEmployeesCount: newEmployees.length, entriesCount: JULY2026_IMPORT_ENTRIES.length };
   };
 
   const saveRound = async (floor, entries, notes) => {
@@ -4535,7 +5236,7 @@ export default function App() {
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onSetScheduleEntry={setScheduleEntry}
-              reportEmail={reportEmail} onLogSent={logSentReport} />
+              onImportJuly={importJulySchedule2026} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

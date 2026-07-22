@@ -1,7 +1,7 @@
 // Función serverless de Vercel. Corre en un servidor real (no en el navegador del técnico),
 // así que aquí SÍ se puede guardar de forma segura la clave secreta de Resend y disparar
-// el envío del correo automáticamente, con el PDF adjunto, sin que nadie tenga que
-// darle "Enviar" a mano.
+// el envío del correo automáticamente, con el archivo adjunto (PDF o Excel), sin que nadie
+// tenga que darle "Enviar" a mano.
 //
 // Configúrala en Vercel → tu proyecto → Settings → Environment Variables:
 //   RESEND_API_KEY     = tu clave secreta de resend.com
@@ -14,14 +14,15 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { to, subject, text, pdfBase64, filename } = req.body || {};
+  const { to, subject, text, pdfBase64, attachmentBase64, filename } = req.body || {};
+  const fileBase64 = attachmentBase64 || pdfBase64; // acepta cualquiera de los dos nombres, para no romper llamadas existentes
 
   if (!to || !String(to).trim()) {
     res.status(400).json({ ok: false, message: "Falta el correo destino." });
     return;
   }
-  if (!pdfBase64) {
-    res.status(400).json({ ok: false, message: "Falta el PDF a adjuntar." });
+  if (!fileBase64) {
+    res.status(400).json({ ok: false, message: "Falta el archivo a adjuntar." });
     return;
   }
 
@@ -46,12 +47,12 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         from,
         to: [to],
-        subject: subject || "Informe de equipos - Pisos Mecánicos",
-        text: text || "Se adjunta el informe en PDF.",
+        subject: subject || "Informe - Pisos Mecánicos",
+        text: text || "Se adjunta el informe.",
         attachments: [
           {
-            filename: filename || "informe-equipos.pdf",
-            content: pdfBase64, // base64 puro, sin el prefijo "data:application/pdf;base64,"
+            filename: filename || "informe.pdf",
+            content: fileBase64, // base64 puro, sin el prefijo "data:...;base64,"
           },
         ],
       }),
@@ -67,8 +68,9 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(200).json({ ok: true, message: `Correo enviado a ${to} con el PDF adjunto.`, id: data.id });
+    res.status(200).json({ ok: true, message: `Correo enviado a ${to} con el archivo adjunto.`, id: data.id });
   } catch (e) {
     res.status(500).json({ ok: false, message: "No se pudo conectar con el servicio de correo (Resend)." });
   }
 }
+

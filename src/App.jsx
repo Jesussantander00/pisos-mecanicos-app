@@ -7,7 +7,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -12049,6 +12049,77 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 /* ============================================================
    VISTA: EQUIPOS FUERA DE SERVICIO
    ============================================================ */
+/* ============================================================
+   VISTA: INICIO (pantalla de bienvenida según rol)
+   ============================================================ */
+function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
+  const canManageInv = isAdmin || isAlmacenista;
+  const modules = [
+    { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los 12 pisos mecánicos", access: true },
+    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange },
+    { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
+    { id: "meters", label: "Lecturas de Medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies },
+    { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
+    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock },
+    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock },
+    { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv },
+    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true },
+    { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin },
+    { id: "maintenance-log", label: "Mantenimientos Realizados", icon: History, desc: "Auditoría de lo registrado", access: isAdmin },
+    { id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin },
+    { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
+    { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
+    { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
+    { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
+    { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
+    { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin },
+    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin },
+  ];
+
+  return (
+    <div>
+      <div className="rounded-xl p-4 mb-5" style={{ background: C.steelDark }}>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div className="text-white text-lg font-semibold">Hola, {currentUser}</div>
+            <div className="text-sm" style={{ color: "#8fa3b8" }}>
+              {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : "Operador"} · {todayStr()}
+            </div>
+          </div>
+          <Gauge size={28} color={C.amber} />
+        </div>
+      </div>
+
+      <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
+        Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas.
+      </p>
+
+      <div className="grid grid-cols-2 gap-3">
+        {modules.map(m => (
+          <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
+            className="text-left rounded-lg border p-3 transition"
+            style={{
+              borderColor: C.line, background: m.access ? C.panel : "#f3f4f6",
+              opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
+            }}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex items-center gap-2">
+                <m.icon size={16} style={{ color: m.access ? C.amber : C.gray }} />
+                <div className="text-sm font-semibold" style={{ color: C.ink }}>{m.label}</div>
+              </div>
+              {!!m.badge && <span className="text-xs font-bold px-1.5 rounded-full" style={{ background: C.red, color: "#fff" }}>{m.badge}</span>}
+            </div>
+            <div className="text-xs" style={{ color: C.gray }}>{m.access ? m.desc : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA: EQUIPOS FUERA DE SERVICIO
+   ============================================================ */
 function IssuesView({ activeIssues, onResolve }) {
   const list = Object.values(activeIssues).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt));
   return (
@@ -14040,6 +14111,7 @@ export default function App() {
       await sSet("session", { username: key }, false);
       setAccounts(next);
       setCurrentUser(key);
+      setView("home");
     } catch (e) {
       console.error("Error creando cuenta:", e);
       setAuthError("No se pudo conectar con el servidor para crear la cuenta. Revisa tu conexión e intenta de nuevo.");
@@ -14062,6 +14134,7 @@ export default function App() {
       if (passwordHash !== acc.passwordHash) { setAuthError("Contraseña incorrecta."); setAuthBusy(false); return; }
       await sSet("session", { username: key }, false);
       setCurrentUser(key);
+      setView("home");
     } catch (e) {
       console.error("Error iniciando sesión:", e);
       setAuthError("No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.");
@@ -14656,6 +14729,7 @@ export default function App() {
   const activeCount = Object.keys(activeIssues).length;
 
   const NAV = [
+    { id: "home", label: "Inicio", icon: Home },
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
     { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, badge: coldOutOfRange.length },
     { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays },
@@ -14744,7 +14818,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
             <Clock size={14} /> {todayStr()}
-            {(view === "meters" || view === "coldrooms") ? (
+            {(view === "ronda" || view === "meters" || view === "coldrooms") ? (
               <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }}>
                 {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -14759,6 +14833,10 @@ export default function App() {
           </div>
         </header>
         <main className="flex-1 p-4 max-w-5xl w-full mx-auto">
+          {view === "home" && (
+            <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} onNavigate={setView}
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished }} />
+          )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
               latestValues={latestValues} floorIndex={FLOORS.findIndex(f => f.id === floorId)} floorCount={FLOORS.length}

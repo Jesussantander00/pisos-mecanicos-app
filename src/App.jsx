@@ -11264,6 +11264,134 @@ function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEqu
   );
 }
 
+function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, currentUser }) {
+  const [search, setSearch] = useState("");
+  const [filterTipo, setFilterTipo] = useState("");
+  const [emailTo, setEmailTo] = useState(reportEmail || "");
+  const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
+
+  const rows = useMemo(() => {
+    return [...mttoLog].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(r => {
+      const eq = equipos.find(e => e.id === r.equipoId);
+      return { ...r, equipoNombre: eq?.nombre || "(equipo eliminado)", sistema: eq?.sistema || "—" };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mttoLog, equipos]);
+
+  const filtered = rows.filter(r => {
+    if (filterTipo && r.tipo !== filterTipo) return false;
+    if (!search.trim()) return true;
+    return `${r.equipoNombre} ${r.sistema} ${r.tecnico} ${r.descripcion}`.toLowerCase().includes(search.toLowerCase());
+  });
+
+  const buildWorkbook = () => {
+    const wb = XLSX.utils.book_new();
+    const header = ["Fecha", "Sistema", "Equipo", "Tipo", "Estado", "Técnico", "Descripción", "Costo", "Fotos"];
+    const data = filtered.map(r => [fmtDT(r.fecha), r.sistema, r.equipoNombre, MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo,
+      MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado, r.tecnico, r.descripcion, r.costo || "", (r.fotos || []).join(" | ")]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    ws["!cols"] = [{ wch: 18 }, { wch: 20 }, { wch: 35 }, { wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 40 }, { wch: 10 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Mantenimientos");
+    return wb;
+  };
+
+  const doDownload = () => {
+    setDownloading(true);
+    try {
+      const wb = buildWorkbook();
+      XLSX.writeFile(wb, `mantenimientos-realizados-${todayStr().replace(/\//g, "-")}.xlsx`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
+    setDownloading(false);
+  };
+
+  const doSend = async () => {
+    if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setMsg(null);
+    try {
+      const wb = buildWorkbook();
+      const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+      const base64 = bufferToBase64(out);
+      const resp = await fetch("/api/send-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emailTo.trim(),
+          subject: `Mantenimientos Realizados (Excel) — ${todayStr()}`,
+          text: `Historial de mantenimientos realizados (${filtered.length} registros) en Excel.`,
+          attachmentBase64: base64,
+          filename: `mantenimientos-realizados-${todayStr().replace(/\//g, "-")}.xlsx`,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      setMsg({ ok: resp.ok, text: data?.message || (resp.ok ? "Enviado." : "El servidor rechazó el envío.") });
+      onLogSent?.({ to: emailTo.trim(), method: "Mantenimientos realizados (correo con Excel)", ok: resp.ok, message: data?.message, sentBy: currentUser, sentAt: nowIso() });
+    } catch {
+      setMsg({ ok: false, text: "No se pudo enviar. Revisa la conexión." });
+    }
+    setSending(false);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mantenimientos Realizados</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Todo lo que los técnicos han registrado, en un solo lugar — para revisar y verificar la información y las fotos que suben.
+      </p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar en Excel</div>
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
+        </div>
+        {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por equipo, sistema, técnico o descripción…"
+          className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 200 }} />
+        <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line }}>
+          <option value="">Todos los tipos</option>
+          {MTTO_TIPOS.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin mantenimientos registrados todavía.</p>
+      ) : filtered.slice(0, 200).map(r => (
+        <div key={r.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-sm font-medium" style={{ color: C.ink }}>{r.equipoNombre} <span style={{ color: C.gray, fontWeight: 400 }}>· {r.sistema}</span></div>
+            <Pill tone={r.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>
+            {MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo} · {fmtDT(r.fecha)} · Por {r.tecnico}{r.costo ? ` · $${Number(r.costo).toLocaleString("es-CO")}` : ""}
+          </div>
+          <div className="text-sm mt-1" style={{ color: C.ink }}>{r.descripcion}</div>
+          {r.fotos && r.fotos.length > 0 && (
+            <div className="flex items-center gap-2 mt-2">
+              {r.fotos.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noreferrer">
+                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {filtered.length > 200 && <div className="text-xs mt-2" style={{ color: C.gray }}>Mostrando los 200 más recientes — descarga el Excel para ver todos ({filtered.length}).</div>}
+    </div>
+  );
+}
+
 function MaintenanceAnalyticsView({ equipos, mttoLog }) {
   const activeEquipos = equipos.filter(e => e.active !== false);
 
@@ -13804,7 +13932,16 @@ export default function App() {
   const [sentReports, setSentReports] = useState([]);
   const [printMode, setPrintMode] = useState(false);
   const [shift, setShift] = useState(SHIFTS[0]);
-  const [view, setView] = useState("ronda");
+  const [view, setViewRaw] = useState(() => localStorage.getItem("pm-local:last-view") || "ronda");
+  const setView = useCallback((v) => {
+    setViewRaw(v);
+    try { localStorage.setItem("pm-local:last-view", v); } catch { /* noop */ }
+  }, []);
+  const [nowClock, setNowClock] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNowClock(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
   const [floorId, setFloorId] = useState(FLOORS[0].id);
   const [activeIssues, setActiveIssues] = useState({});
   const [issueHistory, setIssueHistory] = useState([]);
@@ -14529,6 +14666,7 @@ export default function App() {
     ...((isAdmin || isAlmacenista) ? [{ id: "inventory-movements", label: "Movimientos de Inventario", icon: History }] : []),
     { id: "maintenance", label: "Mantenimiento", icon: Wrench },
     ...(isAdmin ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
+    ...(isAdmin ? [{ id: "maintenance-log", label: "Mantenimientos Realizados", icon: History }] : []),
     ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
     { id: "schedules", label: "Horario Mensual", icon: Users },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
@@ -14606,9 +14744,13 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
             <Clock size={14} /> {todayStr()}
-            <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }}>
-              {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            {(view === "meters" || view === "coldrooms") ? (
+              <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }}>
+                {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <span className="ml-2">{nowClock.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && <Pill tone="amber">Admin</Pill>}
@@ -14675,6 +14817,10 @@ export default function App() {
           )}
           {view === "maintenance-analytics" && isAdmin && (
             <MaintenanceAnalyticsView equipos={mttoEquipos} mttoLog={mttoLog} />
+          )}
+          {view === "maintenance-log" && isAdmin && (
+            <MaintenanceLogAuditView equipos={mttoEquipos} mttoLog={mttoLog}
+              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "maintenance-schedule" && isAdmin && (
             <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma}

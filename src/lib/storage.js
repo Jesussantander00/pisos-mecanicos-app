@@ -57,3 +57,25 @@ export async function sSet(key, value, shared) {
     throw new Error(`No se pudo guardar "${key}" en la base de datos: ${error.message || "error de conexión"}`);
   }
 }
+
+/**
+ * Sube una foto al bucket "maintenance-photos" de Supabase Storage y devuelve su URL pública.
+ * El bucket lo tiene que crear un administrador UNA sola vez desde el panel de Supabase
+ * (Storage → New bucket → nombre exacto "maintenance-photos" → marcarlo como público).
+ */
+export async function uploadPhoto(file, pathPrefix = "mtto") {
+  const ext = (file.name && file.name.includes(".")) ? file.name.split(".").pop() : "jpg";
+  const path = `${pathPrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from("maintenance-photos").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || "image/jpeg",
+  });
+  if (error) {
+    console.error("uploadPhoto error:", error);
+    throw new Error(`No se pudo subir la foto: ${error.message || "error de conexión"}. ¿Ya creaste el bucket "maintenance-photos" en Supabase Storage?`);
+  }
+  const { data } = supabase.storage.from("maintenance-photos").getPublicUrl(path);
+  return data.publicUrl;
+}
+

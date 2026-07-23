@@ -11122,7 +11122,7 @@ function PhotoPicker({ photos, onChange, max = 2 }) {
           </button>
         )}
       </div>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onFiles} />
+      <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={onFiles} />
     </div>
   );
 }

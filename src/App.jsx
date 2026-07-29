@@ -12401,24 +12401,30 @@ function NotificationBell({ alerts, onNavigate }) {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-lg border shadow-lg z-50" style={{ background: "#fff", borderColor: C.line }}>
-          <div className="p-3 text-xs font-semibold uppercase tracking-wide border-b" style={{ color: C.inkSoft, borderColor: C.line }}>
-            Recorridos pendientes de hoy
-          </div>
-          {alerts.length === 0 ? (
-            <div className="p-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
-          ) : alerts.map((a, i) => (
-            <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line }}>
-              <div className="text-xs font-semibold mb-1" style={{ color: C.red }}>{a.turno}</div>
-              {a.missing.map((m, j) => (
-                <button key={j} onClick={() => { onNavigate(shortcuts[m] || "home"); setOpen(false); }}
-                  className="block text-xs text-left w-full py-0.5" style={{ color: C.ink }}>
-                  · {m} — sin registrar
-                </button>
-              ))}
+        <>
+          {/* fondo invisible: tocar en cualquier parte fuera del panel lo cierra */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-72 rounded-lg border shadow-lg z-50"
+            style={{ background: "#fff", borderColor: C.line }}>
+            <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: C.line }}>
+              <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Recorridos pendientes de hoy</div>
+              <button onClick={() => setOpen(false)} className="p-0.5"><X size={14} color={C.gray} /></button>
             </div>
-          ))}
-        </div>
+            {alerts.length === 0 ? (
+              <div className="p-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
+            ) : alerts.map((a, i) => (
+              <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: C.red }}>{a.turno}</div>
+                {a.missing.map((m, j) => (
+                  <button key={j} onClick={() => { onNavigate(shortcuts[m] || "home"); setOpen(false); }}
+                    className="block text-xs text-left w-full py-0.5" style={{ color: C.ink }}>
+                    · {m} — sin registrar
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

@@ -63,13 +63,44 @@ export async function sSet(key, value, shared) {
  * El bucket lo tiene que crear un administrador UNA sola vez desde el panel de Supabase
  * (Storage → New bucket → nombre exacto "maintenance-photos" → marcarlo como público).
  */
+/**
+ * Comprime una foto en el navegador antes de subirla: la reduce a máximo 1280px de ancho
+ * y la guarda como JPEG de calidad media. Una foto de celular de 3-5 MB queda normalmente
+ * en 150-300 KB, sin que se note mucho a simple vista — así el espacio gratis de Supabase
+ * Storage (1 GB) alcanza para miles de fotos en vez de unos cientos.
+ */
+function compressImage(file, maxWidth = 1280, quality = 0.7) {
+  return new Promise((resolve) => {
+    if (!file.type || !file.type.startsWith("image/")) { resolve(file); return; }
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxWidth / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(file); return; }
+        resolve(new File([blob], (file.name || "foto").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }));
+      }, "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); }; // si algo falla, sube la original sin comprimir
+    img.src = url;
+  });
+}
+
 export async function uploadPhoto(file, pathPrefix = "mtto") {
-  const ext = (file.name && file.name.includes(".")) ? file.name.split(".").pop() : "jpg";
+  const compressed = await compressImage(file);
+  const ext = "jpg";
   const path = `${pathPrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from("maintenance-photos").upload(path, file, {
+  const { error } = await supabase.storage.from("maintenance-photos").upload(path, compressed, {
     cacheControl: "3600",
     upsert: false,
-    contentType: file.type || "image/jpeg",
+    contentType: "image/jpeg",
   });
   if (error) {
     console.error("uploadPhoto error:", error);

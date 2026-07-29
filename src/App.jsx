@@ -7,7 +7,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -464,6 +464,53 @@ function equipoUrl(equipoId) {
 /** Repuestos cuya cantidad actual está en o por debajo de su mínimo configurado. */
 function computeLowStock(invItems) {
   return invItems.filter(it => it.minThreshold > 0 && it.quantity <= it.minThreshold);
+}
+
+/** Revisa una ronda antes de guardar: qué ítems faltan por llenar, y cuáles están dañados sin comentario. */
+function validateRoundEntries(items, entries) {
+  const missing = [];
+  const missingComment = [];
+  items.forEach(item => {
+    const e = entries[item.id];
+    const hasValue = e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged);
+    if (!hasValue) missing.push(item.n);
+    if (e?.damaged && !(e.observation || "").trim()) missingComment.push(item.n);
+  });
+  return { missing, missingComment, ok: missing.length === 0 && missingComment.length === 0 };
+}
+
+/**
+ * Revisa, para HOY, si cada turno ya cumplió con las rondas que le corresponden según lo estipulado:
+ * Mañana (termina 14:00) = Lecturas + Ronda + Cuartos Fríos. Tarde (termina 22:00) = Ronda.
+ * Noche (termina 6:00 del día siguiente) = Ronda + Gimnasio. Solo avisa después de que el turno ya terminó.
+ */
+function computeShiftCompletionAlerts(now, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex) {
+  const todayD = todayStr();
+  const yesterdayD = (() => { const d = new Date(now); d.setDate(d.getDate() - 1); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })();
+  const hour = now.getHours() + now.getMinutes() / 60;
+  const hasRound = (index, date, shiftLabel) => (index || []).some(r => r.date === date && r.shift === shiftLabel);
+
+  const alerts = [];
+  if (hour >= 14) {
+    const missing = [];
+    if (!hasRound(meterRoundsIndex, todayD, "06:00 – 14:00")) missing.push("Lecturas de Medidores");
+    if (!hasRound(roundsIndex, todayD, "06:00 – 14:00")) missing.push("Ronda de revisión");
+    if (!hasRound(coldRoundsIndex, todayD, "06:00 – 14:00")) missing.push("Cuartos Fríos");
+    if (missing.length) alerts.push({ turno: "Turno mañana (6:00-14:00) de hoy", missing });
+  }
+  if (hour >= 22) {
+    const missing = [];
+    if (!hasRound(roundsIndex, todayD, "14:00 – 22:00")) missing.push("Ronda de revisión");
+    if (missing.length) alerts.push({ turno: "Turno tarde (14:00-22:00) de hoy", missing });
+  }
+  if (hour >= 6) {
+    const missing = [];
+    const nightDone = (idx) => hasRound(idx, todayD, "22:00 – 06:00") || hasRound(idx, yesterdayD, "22:00 – 06:00");
+    if (!nightDone(roundsIndex)) missing.push("Ronda de revisión");
+    if (!nightDone(gymRoundsIndex)) missing.push("Equipos de Gimnasio");
+    if (missing.length) alerts.push({ turno: "Turno noche (22:00-6:00) más reciente", missing });
+  }
+  return alerts;
 }
 
 /* ============================================================
@@ -8892,6 +8939,82 @@ const MTTO_CRONOGRAMA = [
 [919,2,0,0,"","",1],
 ];
 /* ============================================================
+   DATOS: LAVANDERÍA, GIMNASIO Y CALDERA
+   (según "formato_revision_de_equipos_de_lavanderia.xlsx",
+   "2_check_list_de_equipos_de_gimnasio.xlsx" y "Check_list_Caldera.xlsx")
+   ============================================================ */
+const LAVANDERIA_ITEMS = [
+  { id: "lv1", c: 1, n: "Lavadora Fagor 70kg #1", k: "statusNumeric", u: "A" },
+  { id: "lv2", c: 2, n: "Lavadora Fagor 70kg #2", k: "statusNumeric", u: "A" },
+  { id: "lv3", c: 3, n: "Lavadora Fagor 40kg #3", k: "statusNumeric", u: "A" },
+  { id: "lv4", c: 4, n: "Lavadora Milnor 27kg #4", k: "statusNumeric", u: "A" },
+  { id: "lv5", c: 5, n: "Lavadora Milnor 27kg #5", k: "statusNumeric", u: "A" },
+  { id: "lv6", c: 6, n: "Lavadora Fagor 18kg #6", k: "statusNumeric", u: "A" },
+  { id: "lv7", c: 7, n: "Secadora Fagor 45kg #1", k: "statusNumeric", u: "A" },
+  { id: "lv8", c: 8, n: "Secadora Fagor 35kg #2", k: "statusNumeric", u: "A" },
+  { id: "lv9", c: 9, n: "Secadora Fagor 60kg #3", k: "statusNumeric", u: "A" },
+  { id: "lv10", c: 10, n: "Secadora Milnor 60kg #4", k: "statusNumeric", u: "A" },
+  { id: "lv11", c: 11, n: "Secadora Milnor 35kg #6", k: "statusNumeric", u: "A" },
+  { id: "lv12", c: 12, n: "Lavaseco", k: "status" },
+  { id: "lv13", c: 13, n: "Compresor de Aire", k: "status" },
+  { id: "lv14", c: 14, n: "Rodillo", k: "status" },
+  { id: "lv15", c: 15, n: "Prensa + Planchado de Acabado", k: "status" },
+  { id: "lv16", c: 16, n: "Prensa de Cuello", k: "status" },
+  { id: "lv17", c: 17, n: "Prensa de Planchado", k: "status" },
+  { id: "lv18", c: 18, n: "Maniquí de Planchado", k: "status" },
+  { id: "lv19", c: 19, n: "Mesa de Repaso #1", k: "status" },
+  { id: "lv20", c: 20, n: "Mesa de Repaso #2", k: "status" },
+  { id: "lv21", c: 21, n: "Caldera", k: "status" },
+  { id: "lv22", c: 22, n: "Suavizador", k: "status" },
+  { id: "lv23", c: 23, n: "Unidad de Extracción 401", k: "status" },
+  { id: "lv24", c: 24, n: "Drenajes de Pisos", k: "status" },
+  { id: "lv25", c: 25, n: "Luces", k: "status" },
+];
+const LAVANDERIA_STATUS_OPTS = ["OK", "Fallo"];
+
+const GYM_CARDIO_ITEMS = [
+  { id: "gy1", c: 1, n: "Trotador Precor TRM600 #1", sku: "AF37G1724D001", k: "status" },
+  { id: "gy2", c: 2, n: "Trotador Precor TRM600 #2", sku: "AF37G1824D021", k: "status" },
+  { id: "gy3", c: 3, n: "Trotador Precor TRM600 #3", sku: "AF37G1824D028", k: "status" },
+  { id: "gy4", c: 4, n: "Trotador Precor TRM600 #4", sku: "AF37G1824D020", k: "status" },
+  { id: "gy5", c: 5, n: "Trotador Precor TRM600 #5", sku: "AF37G1824D029", k: "status" },
+  { id: "gy6", c: 6, n: "Elíptico Precor EFX600 #1", sku: "A485F14240075", k: "status" },
+  { id: "gy7", c: 7, n: "Elíptico Precor EFX600 #2", sku: "A485F27240035", k: "status" },
+  { id: "gy8", c: 8, n: "Elíptico Precor EFX600 #3", sku: "A485F27240032", k: "status" },
+  { id: "gy9", c: 9, n: "Remo ARW865", sku: "F2104BL0680", k: "status" },
+  { id: "gy10", c: 10, n: "Air Bike ABK865 #1", sku: "F2212BJ0303", k: "status" },
+  { id: "gy11", c: 11, n: "Air Bike ABK865 #2", sku: "E2212BJ0324", k: "status" },
+];
+const GYM_FUERZA_ITEMS = [
+  { id: "gy12", c: 12, n: "Pull Down", sku: "BDSC09160006", k: "status" },
+  { id: "gy13", c: 13, n: "Multi Press", sku: "BDS1A27160014", k: "status" },
+  { id: "gy14", c: 14, n: "Chest Press", sku: "BDS6H07150010", k: "status" },
+  { id: "gy15", c: 15, n: "Prone Leg Curl", sku: "BA74D03160001", k: "status" },
+  { id: "gy16", c: 16, n: "Vertical", sku: "BBMF26150023", k: "status" },
+  { id: "gy17", c: 17, n: "Leg Press", sku: "BDS1A41360008", k: "status" },
+  { id: "gy18", c: 18, n: "Angled Leg Press", sku: "B136I16220025", k: "status" },
+  { id: "gy19", c: 19, n: "FTS Glide", sku: "ANCDA29160030", k: "status" },
+  { id: "gy20", c: 20, n: "Smith Machine", k: "status" },
+  { id: "gy21", c: 21, n: "Banco VBR 6117 #1", sku: "B12ML30227064", k: "status" },
+  { id: "gy22", c: 22, n: "Banco VBR 6117 #2", sku: "B12ML30227060", k: "status" },
+  { id: "gy23", c: 23, n: "Banco Lumbar", k: "status" },
+  { id: "gy24", c: 24, n: "Spinning Studio Cycle II #1", k: "status" },
+  { id: "gy25", c: 25, n: "Spinning Studio Cycle II #2", k: "status" },
+];
+const GYM_AREA_ITEMS = [
+  { id: "gy26", c: 26, n: "TV", k: "status" },
+  { id: "gy27", c: 27, n: "Dispensador de agua", k: "status" },
+  { id: "gy28", c: 28, n: "Luces", k: "status" },
+  { id: "gy29", c: 29, n: "Aire acondicionado", k: "status" },
+  { id: "gy30", c: 30, n: "Teléfono", k: "status" },
+  { id: "gy31", c: 31, n: "Sonido ambiente", k: "status" },
+];
+const GYM_ALL_ITEMS = [...GYM_CARDIO_ITEMS, ...GYM_FUERZA_ITEMS, ...GYM_AREA_ITEMS];
+const GYM_STATUS_OPTS = ["OK", "No OK"];
+const LAVANDERIA_FLOOR = { id: "lavanderia", name: "Lavandería — Piso 4" };
+const GYM_FLOOR = { id: "gimnasio", name: "Gimnasio — Piso 14" };
+
+/* ============================================================
    DATOS: LECTURAS DE MEDIDORES
    (según "consumo_de_servicios_publicos_hyatt_2026.xlsx": hojas
    SP [mes], Resc [mes] y Agua torres [mes] — mismos medidores cada mes)
@@ -9831,8 +9954,19 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
   const damagedCount = Object.values(entries).filter(e => e?.damaged).length;
 
   const isLast = floorIndex === floorCount - 1;
+  const [validationMsg, setValidationMsg] = useState(null);
 
   const handleSave = () => {
+    const { missing, missingComment } = validateRoundEntries(floor.items, entries);
+    if (missingComment.length > 0) {
+      setValidationMsg(`Falta el comentario de qué pasó en: ${missingComment.join(", ")}. Los equipos marcados como dañados necesitan una observación antes de guardar.`);
+      return;
+    }
+    if (missing.length > 0) {
+      setValidationMsg(`Todavía faltan estos equipos por registrar: ${missing.join(", ")}.`);
+      return;
+    }
+    setValidationMsg(null);
     onSaveRound(floor, entries, notes);
     setSaved(true);
     if (!isLast) {
@@ -9875,6 +10009,10 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
           placeholder="Observaciones generales del piso, pendientes para el próximo turno, etc."
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
       </div>
+
+      {validationMsg && (
+        <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
+      )}
 
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Vo.Bo. pendiente de supervisor</div>
@@ -9932,6 +10070,15 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const weekLabel = `${fmtDayFull(weekStart)} — ${fmtDayFull(addDays(weekStart, 6))}`;
 
   const handleSave = () => {
+    const { missing, missingComment } = validateRoundEntries(ALL_COLD_ROOM_ITEMS, entries);
+    if (missingComment.length > 0) {
+      setSendMsg({ ok: false, text: `Falta el comentario de qué pasó en: ${missingComment.join(", ")}. Los equipos marcados como dañados necesitan una observación antes de guardar.` });
+      return;
+    }
+    if (missing.length > 0) {
+      setSendMsg({ ok: false, text: `Todavía faltan estos por registrar: ${missing.join(", ")}.` });
+      return;
+    }
     onSaveColdRound(entries, notes, supervisor, ingeniero);
     setSaved(true);
     setSendMsg(null);
@@ -10026,6 +10173,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1 mb-3" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
+      {sendMsg && !sendMsg.ok && <div className="rounded-md p-2 mt-1 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {sendMsg.text}</div>}
 
       {lastColdRound && !todayIsSunday && (
         <div className="rounded-md p-2 text-xs" style={{ background: "#eef1f4", color: C.inkSoft }}>
@@ -10162,6 +10310,188 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
     </div>
   );
 }
+
+/* ============================================================
+   VISTA: CHECKLIST DE ÁREA (Lavandería / Gimnasio — mismo patrón)
+   ============================================================ */
+function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUser, shift, activeIssues, latestValues, onResolveIssue, onSaveRound }) {
+  const allItems = useMemo(() => sections.flatMap(s => s.items), [sections]);
+  const [entries, setEntries] = useState({});
+  const [notes, setNotes] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [validationMsg, setValidationMsg] = useState(null);
+
+  useEffect(() => {
+    const seeded = {};
+    allItems.forEach(item => {
+      const lv = latestValues[item.id];
+      if (lv) seeded[item.id] = { status: lv.status, value: lv.value, observation: lv.observation, damaged: !!activeIssues[item.id] };
+      else if (activeIssues[item.id]) seeded[item.id] = { damaged: true, observation: activeIssues[item.id].observation };
+    });
+    setEntries(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title]);
+
+  const onChange = useCallback((id, val) => { setEntries(prev => ({ ...prev, [id]: val })); setSaved(false); }, []);
+
+  const filledCount = allItems.filter(item => {
+    const e = entries[item.id];
+    return e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged);
+  }).length;
+
+  const handleSave = () => {
+    const { missing, missingComment } = validateRoundEntries(allItems, entries);
+    if (missingComment.length > 0) {
+      setValidationMsg(`Falta el comentario de qué pasó en: ${missingComment.join(", ")}. Los equipos marcados como dañados necesitan una observación antes de guardar.`);
+      return;
+    }
+    if (missing.length > 0) {
+      setValidationMsg(`Todavía faltan estos equipos por registrar: ${missing.join(", ")}.`);
+      return;
+    }
+    setValidationMsg(null);
+    onSaveRound(entries, notes);
+    setSaved(true);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{title}</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>{subtitle} · Turno {shift} · {todayStr()}</p>
+        </div>
+        <Pill tone="gray">{filledCount}/{allItems.length} registrados</Pill>
+      </div>
+
+      <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
+        Los campos ya vienen con lo último registrado — revisa, corrige lo que cambió y guarda. Marca "Dañado / Fuera de servicio" si algo no funciona; te va a pedir un comentario obligatorio.
+      </div>
+
+      {sections.map(sec => (
+        <div key={sec.title || "unica"}>
+          {sec.title && <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>{sec.title} ({sec.items.length})</div>}
+          {sec.items.map(item => (
+            <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+              activeIssue={activeIssues[item.id]} previous={latestValues[item.id]} statusOptions={statusOptions}
+              onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+          ))}
+        </div>
+      ))}
+
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas importantes</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          placeholder="Observaciones generales, pendientes para el próximo turno, etc."
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+      </div>
+
+      {validationMsg && (
+        <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
+      )}
+
+      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+        <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
+        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
+      </div>
+      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA: CHECK LIST CALDERA
+   ============================================================ */
+function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
+  const blank = { horaManometro: "", horaMcDonell: "", horaFondo: "", horaTqDistribucion: "", presionVaporPsi: "", observaciones: "" };
+  const [form, setForm] = useState(blank);
+  const [saved, setSaved] = useState(false);
+  const [validationMsg, setValidationMsg] = useState(null);
+
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setSaved(false); };
+
+  const handleSave = () => {
+    const required = ["horaManometro", "horaMcDonell", "horaFondo", "horaTqDistribucion", "presionVaporPsi"];
+    const missing = required.filter(k => !form[k]);
+    if (missing.length > 0) {
+      setValidationMsg("Faltan campos por llenar: purgas y presión son obligatorias antes de guardar.");
+      return;
+    }
+    setValidationMsg(null);
+    onSaveCaldera(form);
+    setSaved(true);
+    setForm(blank);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Check List Caldera</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Equipo: Caldera Piso 4 Lavandería · Turno {shift} · {todayStr()}</p>
+
+      <div className="rounded-lg border p-4 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Purgas (hora)</div>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="text-xs" style={{ color: C.gray }}>Manómetro</label>
+            <input type="time" value={form.horaManometro} onChange={e => set("horaManometro", e.target.value)}
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+          </div>
+          <div>
+            <label className="text-xs" style={{ color: C.gray }}>Mc Donell</label>
+            <input type="time" value={form.horaMcDonell} onChange={e => set("horaMcDonell", e.target.value)}
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+          </div>
+          <div>
+            <label className="text-xs" style={{ color: C.gray }}>Fondo</label>
+            <input type="time" value={form.horaFondo} onChange={e => set("horaFondo", e.target.value)}
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+          </div>
+          <div>
+            <label className="text-xs" style={{ color: C.gray }}>Tanque de distribución</label>
+            <input type="time" value={form.horaTqDistribucion} onChange={e => set("horaTqDistribucion", e.target.value)}
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+          </div>
+        </div>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Presión</div>
+        <div className="mb-1">
+          <label className="text-xs" style={{ color: C.gray }}>Vapor (PSI)</label>
+          <input type="number" value={form.presionVaporPsi} onChange={e => set("presionVaporPsi", e.target.value)}
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+        </div>
+      </div>
+
+      <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones (opcional)</div>
+        <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} rows={2}
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+      </div>
+
+      {validationMsg && (
+        <div className="rounded-md p-2 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
+        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar check list</Button>
+      </div>
+      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Check list guardado correctamente</div>}
+
+      {lastCalderaRound && (
+        <div className="rounded-lg border p-3 mt-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Último registro</div>
+          <div className="text-xs" style={{ color: C.inkSoft }}>
+            {fmtDT(lastCalderaRound.savedAt)} · Turno {lastCalderaRound.shift} · Por {lastCalderaRound.user}
+          </div>
+          <div className="text-sm mt-1" style={{ color: C.ink }}>
+            Purgas: {lastCalderaRound.horaManometro}, {lastCalderaRound.horaMcDonell}, {lastCalderaRound.horaFondo}, {lastCalderaRound.horaTqDistribucion} · Vapor: {lastCalderaRound.presionVaporPsi} PSI
+          </div>
+          {lastCalderaRound.observaciones && <div className="text-xs italic mt-1" style={{ color: C.gray }}>"{lastCalderaRound.observaciones}"</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 /* ============================================================
    VISTA: HISTORIAL SEMANAL DE MEDIDORES
@@ -12052,6 +12382,48 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 /* ============================================================
    VISTA: INICIO (pantalla de bienvenida según rol)
    ============================================================ */
+/* ============================================================
+   CAMPANA DE NOTIFICACIONES (admin) — turnos que no hicieron su recorrido
+   ============================================================ */
+function NotificationBell({ alerts, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const shortcuts = {
+    "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
+  };
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
+        <Bell size={16} color={C.ink} />
+        {alerts.length > 0 && (
+          <span className="absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" style={{ background: C.red, color: "#fff" }}>
+            {alerts.length}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-72 rounded-lg border shadow-lg z-50" style={{ background: "#fff", borderColor: C.line }}>
+          <div className="p-3 text-xs font-semibold uppercase tracking-wide border-b" style={{ color: C.inkSoft, borderColor: C.line }}>
+            Recorridos pendientes de hoy
+          </div>
+          {alerts.length === 0 ? (
+            <div className="p-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
+          ) : alerts.map((a, i) => (
+            <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line }}>
+              <div className="text-xs font-semibold mb-1" style={{ color: C.red }}>{a.turno}</div>
+              {a.missing.map((m, j) => (
+                <button key={j} onClick={() => { onNavigate(shortcuts[m] || "home"); setOpen(false); }}
+                  className="block text-xs text-left w-full py-0.5" style={{ color: C.ink }}>
+                  · {m} — sin registrar
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
   const canManageInv = isAdmin || isAlmacenista;
   const modules = [
@@ -12067,6 +12439,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
     { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin },
     { id: "maintenance-log", label: "Mantenimientos Realizados", icon: History, desc: "Auditoría de lo registrado", access: isAdmin },
     { id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin },
+    { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true },
+    { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true },
+    { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
@@ -14033,6 +14408,12 @@ export default function App() {
   const [pendingShelfId, setPendingShelfId] = useState(() => new URLSearchParams(window.location.search).get("shelf"));
   const [pendingEquipoId, setPendingEquipoId] = useState(() => new URLSearchParams(window.location.search).get("equipo"));
   const [mttoEquipos, setMttoEquipos] = useState([]);
+  const [latestLavanderiaValues, setLatestLavanderiaValues] = useState({});
+  const [lavanderiaRoundsIndex, setLavanderiaRoundsIndex] = useState([]);
+  const [latestGymValues, setLatestGymValues] = useState({});
+  const [gymRoundsIndex, setGymRoundsIndex] = useState([]);
+  const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
+  const [lastCalderaRound, setLastCalderaRound] = useState(null);
   const [mttoLog, setMttoLog] = useState([]);
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -14048,7 +14429,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -14060,6 +14441,9 @@ export default function App() {
         sGet("inventory-items", true), sGet("inventory-movements", true),
         sGet("employees", true), sGet("schedule-entries", true),
         sGet("mtto-equipos", true), sGet("mtto-log", true), sGet("mtto-cronograma", true),
+        sGet("latest-lavanderia-values", true), sGet("lavanderia-rounds-index", true),
+        sGet("latest-gym-values", true), sGet("gym-rounds-index", true),
+        sGet("caldera-rounds-index", true), sGet("last-caldera-round", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -14088,6 +14472,12 @@ export default function App() {
       setMttoEquipos(mte || []);
       setMttoLog(mtl || []);
       setMttoCronograma(mtc || []);
+      setLatestLavanderiaValues(llv || {});
+      setLavanderiaRoundsIndex(lri || []);
+      setLatestGymValues(lgv || {});
+      setGymRoundsIndex(gri || []);
+      setCalderaRoundsIndex(cari || []);
+      setLastCalderaRound(lcar || null);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -14649,6 +15039,70 @@ export default function App() {
     return record;
   };
 
+  /** Guarda una ronda de un "área" genérica (lavandería o gimnasio): mismo patrón que Cuartos Fríos. */
+  const saveAreaRound = async (allItems, syntheticFloor, entries, notes, latestVals, setLatestVals, roundsIdx, setRoundsIdx, latestKey, indexKey) => {
+    const ts = nowIso();
+    const id = `${syntheticFloor.id}-${Date.now()}`;
+    const cleanEntries = {};
+    let itemCount = 0, damagedCount = 0;
+    const newLatest = { ...latestVals };
+    const newActive = { ...activeIssues };
+
+    for (const item of allItems) {
+      const e = entries[item.id];
+      const hasContent = e && (e.status || (e.value !== undefined && e.value !== "") || e.observation || e.damaged);
+      if (!hasContent) continue;
+      itemCount++;
+      cleanEntries[item.id] = { ...e, code: item.c, name: item.n };
+      newLatest[item.id] = { ...e, code: item.c, name: item.n, updatedAt: ts, updatedBy: displayName, shift };
+
+      if (e.damaged) {
+        damagedCount++;
+        if (!newActive[item.id]) {
+          newActive[item.id] = {
+            equipmentId: item.id, code: item.c, name: item.n, floorName: syntheticFloor.name, floorId: syntheticFloor.id,
+            openedAt: ts, openedBy: displayName, shift, observation: e.observation || "(sin observación)",
+          };
+        } else {
+          newActive[item.id] = { ...newActive[item.id], observation: e.observation || newActive[item.id].observation };
+        }
+      }
+    }
+
+    const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, itemCount, damagedCount, notes };
+    const newIndex = [idxRec, ...roundsIdx].slice(0, 500);
+
+    setLatestVals(newLatest); setActiveIssues(newActive); setRoundsIdx(newIndex);
+    await Promise.all([
+      sSet(`${syntheticFloor.id}-round-${id}`, cleanEntries, true),
+      sSet(indexKey, newIndex, true),
+      sSet(latestKey, newLatest, true),
+      sSet("active-issues", newActive, true),
+    ]);
+    return idxRec;
+  };
+
+  const saveLavanderiaRound = (entries, notes) =>
+    saveAreaRound(LAVANDERIA_ITEMS, LAVANDERIA_FLOOR, entries, notes, latestLavanderiaValues, setLatestLavanderiaValues,
+      lavanderiaRoundsIndex, setLavanderiaRoundsIndex, "latest-lavanderia-values", "lavanderia-rounds-index");
+
+  const saveGymRound = (entries, notes) =>
+    saveAreaRound(GYM_ALL_ITEMS, GYM_FLOOR, entries, notes, latestGymValues, setLatestGymValues,
+      gymRoundsIndex, setGymRoundsIndex, "latest-gym-values", "gym-rounds-index");
+
+  const saveCalderaRound = async (form) => {
+    const ts = nowIso();
+    const record = { id: `cald-${Date.now()}`, date: todayStr(), shift, user: displayName, savedAt: ts, ...form };
+    const newIndex = [record, ...calderaRoundsIndex].slice(0, 500);
+    setCalderaRoundsIndex(newIndex);
+    setLastCalderaRound(record);
+    await Promise.all([
+      sSet("caldera-rounds-index", newIndex, true),
+      sSet("last-caldera-round", record, true),
+    ]);
+    return record;
+  };
+
   const saveMetersRound = async (entries, notes) => {
     const ts = nowIso();
     const id = `mt-${Date.now()}`;
@@ -14695,6 +15149,10 @@ export default function App() {
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
+  const shiftAlerts = useMemo(
+    () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex),
+    [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex]
+  );
 
   useEffect(() => {
     if (currentUser && pendingShelfId) setView("inventory");
@@ -14742,6 +15200,9 @@ export default function App() {
     ...(isAdmin ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
     ...(isAdmin ? [{ id: "maintenance-log", label: "Mantenimientos Realizados", icon: History }] : []),
     ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
+    { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
+    { id: "boiler", label: "Check List Caldera", icon: Gauge },
+    { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
     { id: "schedules", label: "Horario Mensual", icon: Users },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
@@ -14818,7 +15279,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
             <Clock size={14} /> {todayStr()}
-            {(view === "ronda" || view === "meters" || view === "coldrooms") ? (
+            {["ronda", "meters", "coldrooms", "laundry", "boiler", "gym"].includes(view) ? (
               <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }}>
                 {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -14827,12 +15288,20 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {isAdmin && <NotificationBell alerts={shiftAlerts} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
           </div>
         </header>
         <main className="flex-1 p-4 max-w-5xl w-full mx-auto">
+          {view !== "home" && (
+            <button onClick={() => setView("home")}
+              className="flex items-center gap-1 text-sm mb-3 px-2 py-1 rounded-md lg:hidden"
+              style={{ color: C.inkSoft, background: C.panel, border: `1px solid ${C.line}` }}>
+              <ArrowLeft size={14} /> Volver a Inicio
+            </button>
+          )}
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} onNavigate={setView}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished }} />
@@ -14903,6 +15372,25 @@ export default function App() {
           {view === "maintenance-schedule" && isAdmin && (
             <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+          )}
+          {view === "laundry" && (
+            <AreaChecklistView title="Equipos de Lavandería" subtitle="Piso 4"
+              sections={[{ title: null, items: LAVANDERIA_ITEMS }]} statusOptions={LAVANDERIA_STATUS_OPTS}
+              currentUser={displayName} shift={shift} activeIssues={activeIssues} latestValues={latestLavanderiaValues}
+              onResolveIssue={resolveIssue} onSaveRound={saveLavanderiaRound} />
+          )}
+          {view === "boiler" && (
+            <CalderaView currentUser={displayName} shift={shift} onSaveCaldera={saveCalderaRound} lastCalderaRound={lastCalderaRound} />
+          )}
+          {view === "gym" && (
+            <AreaChecklistView title="Equipos de Gimnasio" subtitle="Piso 14"
+              sections={[
+                { title: "Equipos de Cardio", items: GYM_CARDIO_ITEMS },
+                { title: "Máquinas de Fuerza", items: GYM_FUERZA_ITEMS },
+                { title: "Equipo / Área", items: GYM_AREA_ITEMS },
+              ]} statusOptions={GYM_STATUS_OPTS}
+              currentUser={displayName} shift={shift} activeIssues={activeIssues} latestValues={latestGymValues}
+              onResolveIssue={resolveIssue} onSaveRound={saveGymRound} />
           )}
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}

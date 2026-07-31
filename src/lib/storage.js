@@ -1,21 +1,32 @@
 import { supabase } from "./supabaseClient";
 
+const QUEUE_KEY = "pm-local:offline-queue";
+
+function readQueue() {
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function writeQueue(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch { /* noop */ }
+  try { window.dispatchEvent(new CustomEvent("pm-queue-changed")); } catch { /* noop */ }
+}
+/** Cuántos cambios quedaron guardados solo en este celular, esperando poder subirse. */
+export function getPendingCount() {
+  return readQueue().length;
+}
+
+async function writeToSupabase(key, value) {
+  const { error } = await supabase
+    .from("app_storage")
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+  if (error) throw error;
+}
+
 /**
- * Reemplaza el window.storage que solo existe dentro de los artifacts de Claude.
- * Misma firma que antes: sGet(key, shared) / sSet(key, value, shared).
- *
- * - shared = true  -> se guarda en Supabase (visible para TODOS los técnicos, en cualquier
- *                      teléfono/computador). Así es como debe guardarse casi todo en esta app:
- *                      cuentas, rondas, equipos dañados, tanques, entregas de turno, etc.
- * - shared = false -> se guarda solo en este dispositivo (localStorage). Se usa únicamente
- *                      para la sesión de login local de este teléfono/computador.
- *
- * IMPORTANTE: un error real de conexión (sin internet, Supabase caído, etc.) SIEMPRE se
- * relanza (throw), nunca se convierte en null. Si lo convirtiéramos en null, la app no
- * podría distinguir "esta cuenta no existe" de "no me pude conectar a la base de datos" —
- * y eso llevaba a mensajes como "Usuario no encontrado" cuando en realidad el problema era
- * de red, no de la cuenta. Quien llame a sGet/sSet debe envolver la llamada en try/catch si
- * quiere manejar el fallo de conexión explícitamente (la pantalla de carga inicial ya lo hace).
+ * Lee un valor guardado. shared=true -> Supabase (visible para todos los usuarios).
+ * shared=false -> localStorage (solo este navegador/dispositivo).
  */
 export async function sGet(key, shared) {
   if (!shared) {
@@ -24,7 +35,7 @@ export async function sGet(key, shared) {
       return raw ? JSON.parse(raw) : null;
     } catch (e) {
       console.error("sGet (local) error:", e);
-      return null; // localStorage no tiene "errores de red", un fallo aquí sí es seguro tratarlo como vacío
+      return null;
     }
   }
   const { data, error } = await supabase
@@ -34,35 +45,59 @@ export async function sGet(key, shared) {
     .maybeSingle();
   if (error) {
     console.error("sGet error:", error);
-    throw new Error(`No se pudo leer "${key}" de la base de datos: ${error.message || "error de conexión"}`);
+    throw new Error(`No se pudo cargar "${key}" desde la base de datos: ${error.message || "error de conexión"}`);
   }
   return data ? data.value : null;
 }
 
+/**
+ * Guarda un valor. Si es compartido (shared=true) e intenta subirlo pero no hay señal (o falla la
+ * conexión), NO se pierde: se deja guardado en este celular en una "cola de espera" y se reintenta
+ * solo apenas vuelva la señal (ver flushOfflineQueue). Mientras tanto la pantalla ya muestra el
+ * cambio con normalidad, porque React ya actualizó su propio estado antes de llamar aquí.
+ *
+ * Importante: si dos personas cambian lo MISMO mientras ambas están sin señal, al reconectar gana
+ * quien sincronice de último — no hay forma de "mezclar" ambos cambios. Es poco común en el uso
+ * normal (cada quien trabaja su propio piso/turno), pero vale la pena saberlo.
+ */
 export async function sSet(key, value, shared) {
   if (!shared) {
     try {
       localStorage.setItem(`pm-local:${key}`, JSON.stringify(value));
-      return;
     } catch (e) {
       console.error("sSet (local) error:", e);
-      return;
     }
+    return;
   }
-  const { error } = await supabase
-    .from("app_storage")
-    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
-  if (error) {
-    console.error("sSet error:", error);
-    throw new Error(`No se pudo guardar "${key}" en la base de datos: ${error.message || "error de conexión"}`);
+  try {
+    await writeToSupabase(key, value);
+    writeQueue(readQueue().filter(item => item.key !== key));
+  } catch (e) {
+    console.warn(`Sin conexión guardando "${key}" — se deja en espera local hasta que vuelva la señal.`);
+    const q = readQueue().filter(item => item.key !== key);
+    q.push({ key, value, at: new Date().toISOString() });
+    writeQueue(q);
   }
 }
 
-/**
- * Sube una foto al bucket "maintenance-photos" de Supabase Storage y devuelve su URL pública.
- * El bucket lo tiene que crear un administrador UNA sola vez desde el panel de Supabase
- * (Storage → New bucket → nombre exacto "maintenance-photos" → marcarlo como público).
- */
+/** Reintenta subir todo lo que quedó pendiente por falta de señal. Se llama sola al reconectar. */
+export async function flushOfflineQueue() {
+  const q = readQueue();
+  if (q.length === 0) return { synced: 0, remaining: 0 };
+  let synced = 0;
+  const stillPending = [];
+  for (const item of q) {
+    try {
+      await writeToSupabase(item.key, item.value);
+      synced++;
+    } catch {
+      stillPending.push(item);
+    }
+  }
+  writeQueue(stillPending);
+  return { synced, remaining: stillPending.length };
+}
+
 /**
  * Comprime una foto en el navegador antes de subirla: la reduce a máximo 1280px de ancho
  * y la guarda como JPEG de calidad media. Una foto de celular de 3-5 MB queda normalmente
@@ -93,6 +128,11 @@ function compressImage(file, maxWidth = 1280, quality = 0.7) {
   });
 }
 
+/**
+ * Sube una foto al bucket "maintenance-photos" de Supabase Storage y devuelve su URL pública.
+ * El bucket lo tiene que crear un administrador UNA sola vez desde el panel de Supabase
+ * (Storage → New bucket → nombre exacto "maintenance-photos" → marcarlo como público).
+ */
 export async function uploadPhoto(file, pathPrefix = "mtto") {
   const compressed = await compressImage(file);
   const ext = "jpg";
@@ -109,4 +149,3 @@ export async function uploadPhoto(file, pathPrefix = "mtto") {
   const { data } = supabase.storage.from("maintenance-photos").getPublicUrl(path);
   return data.publicUrl;
 }
-

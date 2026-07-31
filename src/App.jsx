@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
-import { sGet, sSet, uploadPhoto } from "./lib/storage";
+import { sGet, sSet, uploadPhoto, getPendingCount, flushOfflineQueue } from "./lib/storage";
 
 /* ============================================================
    PALETA / TOKENS
@@ -511,6 +511,29 @@ function computeShiftCompletionAlerts(now, roundsIndex, meterRoundsIndex, coldRo
     if (missing.length) alerts.push({ turno: "Turno noche (22:00-6:00) más reciente", missing });
   }
   return alerts;
+}
+
+/**
+ * Equipos programados para ESTE mes en el Cronograma Anual que siguen pendientes o atrasados,
+ * a partir de que quedan 10 días o menos del mes — para avisar ANTES de que se venza, no solo
+ * después. (No calcula por día exacto porque el cronograma solo maneja mes, no día puntual.)
+ */
+function computeUpcomingMaintenance(now, equipos, mttoCronograma) {
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = daysInMonth - now.getDate();
+  if (daysLeft > 10) return { daysLeft, items: [] };
+
+  const activeEquipos = (equipos || []).filter(e => e.active !== false);
+  const currentMonth = now.getMonth() + 1;
+  const items = [];
+  (mttoCronograma || []).forEach(c => {
+    if (c.mesNum !== currentMonth) return;
+    if (c.estado !== "pendiente" && c.estado !== "atrasado") return;
+    const eq = activeEquipos.find(e => e.id === c.equipoId);
+    if (!eq) return;
+    items.push({ equipo: eq.nombre, sistema: eq.sistema, estado: c.estado });
+  });
+  return { daysLeft, items };
 }
 
 /* ============================================================
@@ -12385,18 +12408,19 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 /* ============================================================
    CAMPANA DE NOTIFICACIONES (admin) — turnos que no hicieron su recorrido
    ============================================================ */
-function NotificationBell({ alerts, onNavigate }) {
+function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
   };
+  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0);
   return (
     <div className="relative">
       <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
         <Bell size={16} color={C.ink} />
-        {alerts.length > 0 && (
+        {totalCount > 0 && (
           <span className="absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" style={{ background: C.red, color: "#fff" }}>
-            {alerts.length}
+            {totalCount}
           </span>
         )}
       </button>
@@ -12404,14 +12428,16 @@ function NotificationBell({ alerts, onNavigate }) {
         <>
           {/* fondo invisible: tocar en cualquier parte fuera del panel lo cierra */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-72 rounded-lg border shadow-lg z-50"
+          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 rounded-lg border shadow-lg z-50 max-h-[70vh] overflow-y-auto"
             style={{ background: "#fff", borderColor: C.line }}>
-            <div className="flex items-center justify-between p-3 border-b" style={{ borderColor: C.line }}>
-              <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Recorridos pendientes de hoy</div>
+            <div className="flex items-center justify-between p-3 border-b sticky top-0" style={{ borderColor: C.line, background: "#fff" }}>
+              <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Notificaciones</div>
               <button onClick={() => setOpen(false)} className="p-0.5"><X size={14} color={C.gray} /></button>
             </div>
+
+            <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Recorridos pendientes de hoy</div>
             {alerts.length === 0 ? (
-              <div className="p-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
+              <div className="px-3 pb-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
             ) : alerts.map((a, i) => (
               <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line }}>
                 <div className="text-xs font-semibold mb-1" style={{ color: C.red }}>{a.turno}</div>
@@ -12423,6 +12449,26 @@ function NotificationBell({ alerts, onNavigate }) {
                 ))}
               </div>
             ))}
+
+            {maintenanceDue && (
+              <>
+                <div className="p-3 pb-1 border-t text-xs font-semibold uppercase tracking-wide" style={{ borderColor: C.line, color: C.inkSoft }}>
+                  Mantenimiento por vencer este mes {maintenanceDue.daysLeft <= 10 ? `(quedan ${maintenanceDue.daysLeft} días)` : ""}
+                </div>
+                {maintenanceDue.items.length === 0 ? (
+                  <div className="px-3 pb-3 text-xs" style={{ color: C.gray }}>Nada urgente por ahora.</div>
+                ) : (
+                  <div className="px-3 pb-3">
+                    {maintenanceDue.items.map((it, i) => (
+                      <button key={i} onClick={() => { onNavigate("maintenance-schedule"); setOpen(false); }}
+                        className="block text-xs text-left w-full py-1" style={{ color: it.estado === "atrasado" ? C.red : C.ink }}>
+                        · {it.equipo} <span style={{ color: C.gray }}>({it.sistema})</span> — {it.estado === "atrasado" ? "atrasado" : "pendiente"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </>
       )}
@@ -14394,6 +14440,27 @@ export default function App() {
     const id = setInterval(() => setNowClock(new Date()), 30000);
     return () => clearInterval(id);
   }, []);
+  const [pendingSync, setPendingSync] = useState(() => getPendingCount());
+  const [justSynced, setJustSynced] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const tryFlush = async () => {
+      const res = await flushOfflineQueue();
+      if (cancelled) return;
+      const remaining = getPendingCount();
+      setPendingSync(remaining);
+      if (res.synced > 0 && remaining === 0) {
+        setJustSynced(true);
+        setTimeout(() => setJustSynced(false), 4000);
+      }
+    };
+    tryFlush(); // por si quedó algo pendiente de una sesión anterior sin señal
+    window.addEventListener("online", tryFlush);
+    const onQueueChanged = () => setPendingSync(getPendingCount());
+    window.addEventListener("pm-queue-changed", onQueueChanged);
+    const id = setInterval(tryFlush, 20000); // reintento silencioso, por si "online" no se dispara bien
+    return () => { cancelled = true; window.removeEventListener("online", tryFlush); window.removeEventListener("pm-queue-changed", onQueueChanged); clearInterval(id); };
+  }, []);
   const [floorId, setFloorId] = useState(FLOORS[0].id);
   const [activeIssues, setActiveIssues] = useState({});
   const [issueHistory, setIssueHistory] = useState([]);
@@ -15159,6 +15226,10 @@ export default function App() {
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex),
     [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex]
   );
+  const maintenanceDue = useMemo(
+    () => computeUpcomingMaintenance(nowClock, mttoEquipos, mttoCronograma),
+    [nowClock, mttoEquipos, mttoCronograma]
+  );
 
   useEffect(() => {
     if (currentUser && pendingShelfId) setView("inventory");
@@ -15294,7 +15365,17 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin && <NotificationBell alerts={shiftAlerts} onNavigate={setView} />}
+            {pendingSync > 0 && (
+              <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }}>
+                <AlertTriangle size={12} /> {pendingSync} sin subir
+              </span>
+            )}
+            {justSynced && pendingSync === 0 && (
+              <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ background: "#dff5e3", color: C.green }}>
+                <CheckCircle2 size={12} /> Sincronizado
+              </span>
+            )}
+            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>

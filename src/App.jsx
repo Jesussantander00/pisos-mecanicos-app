@@ -7,7 +7,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -9081,6 +9081,28 @@ const LAVANDERIA_FLOOR = { id: "lavanderia", name: "Lavandería — Piso 4" };
 const GYM_FLOOR = { id: "gimnasio", name: "Gimnasio — Piso 14" };
 
 /* ============================================================
+   DATOS: TAREAS / PENDIENTES
+   ============================================================ */
+const TASK_STATES = [
+  { code: "pendiente", label: "Pendiente" },
+  { code: "en-progreso", label: "En progreso" },
+  { code: "espera-repuesto", label: "En espera de repuesto" },
+  { code: "hecho", label: "Hecho" },
+];
+const TASK_STATE_COLORS = {
+  "pendiente": { bg: "#eef1f4", fg: "#5c6b7a" },
+  "en-progreso": { bg: "#e3f0ff", fg: "#1a4f8a" },
+  "espera-repuesto": { bg: "#fff3d6", fg: "#8a5a00" },
+  "hecho": { bg: "#dff5e3", fg: "#1c7a34" },
+};
+const TASK_PRIORITIES = [
+  { code: "alta", label: "Alta" },
+  { code: "media", label: "Media" },
+  { code: "baja", label: "Baja" },
+];
+const TASK_PRIORITY_COLORS = { alta: "D93025", media: "D97706", baja: "5C6B7A" };
+
+/* ============================================================
    DATOS: LECTURAS DE MEDIDORES
    (según "consumo_de_servicios_publicos_hyatt_2026.xlsx": hojas
    SP [mes], Resc [mes] y Agua torres [mes] — mismos medidores cada mes)
@@ -11215,6 +11237,112 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
   );
 }
 
+/* ============================================================
+   VISTA: TAREAS / PENDIENTES
+   ============================================================ */
+function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
+  const [filterEstado, setFilterEstado] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "" });
+  const [saving, setSaving] = useState(false);
+
+  const usernames = Object.keys(accounts || {});
+
+  const doCreate = async () => {
+    if (!form.titulo.trim()) return;
+    setSaving(true);
+    await onCreateTask(form);
+    setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "" });
+    setShowNew(false);
+    setSaving(false);
+  };
+
+  const priorityOrder = { alta: 0, media: 1, baja: 2 };
+  const filtered = tasks
+    .filter(t => !filterEstado || t.estado === filterEstado)
+    .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt)));
+
+  const counts = TASK_STATES.reduce((acc, s) => { acc[s.code] = tasks.filter(t => t.estado === s.code).length; return acc; }, {});
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Tareas / Pendientes</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento.</p>
+        </div>
+        <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>
+      </div>
+
+      {showNew && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line }} />
+          <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line }} />
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <select value={form.prioridad} onChange={e => setForm(f => ({ ...f, prioridad: e.target.value }))}
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+              {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>Prioridad {p.label}</option>)}
+            </select>
+            <select value={form.asignadoA} onChange={e => setForm(f => ({ ...f, asignadoA: e.target.value }))}
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+              <option value="">Sin asignar</option>
+              {usernames.map(u => <option key={u} value={u}>{accounts[u]?.displayName || u}</option>)}
+            </select>
+          </div>
+          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear tarea"}</Button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <button onClick={() => setFilterEstado("")} className="text-xs font-medium px-2.5 py-1.5 rounded-full"
+          style={{ background: !filterEstado ? C.steelDark : C.panel, color: !filterEstado ? "#fff" : C.inkSoft }}>
+          Todas ({tasks.length})
+        </button>
+        {TASK_STATES.map(s => (
+          <button key={s.code} onClick={() => setFilterEstado(s.code)} className="text-xs font-medium px-2.5 py-1.5 rounded-full"
+            style={{ background: filterEstado === s.code ? C.steelDark : C.panel, color: filterEstado === s.code ? "#fff" : C.inkSoft }}>
+            {s.label} ({counts[s.code] || 0})
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Nada por aquí — todo al día.</p>
+      ) : filtered.map(t => {
+        const stateColors = TASK_STATE_COLORS[t.estado];
+        const canDelete = isAdmin || t.createdBy === currentUser;
+        return (
+          <div key={t.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <span className="text-xs font-bold" style={{ color: TASK_PRIORITY_COLORS[t.prioridad] }}>● {TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</span>
+                  <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.titulo}</div>
+                </div>
+                {t.descripcion && <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{t.descripcion}</div>}
+                <div className="text-xs mt-1" style={{ color: C.gray }}>
+                  Por {t.createdBy} · {fmtDT(t.createdAt)}{t.asignadoA ? ` · Asignado a ${accounts[t.asignadoA]?.displayName || t.asignadoA}` : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={t.estado} onChange={e => onUpdateTask(t.id, { estado: e.target.value })}
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: stateColors.bg, color: stateColors.fg }}>
+                  {TASK_STATES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
+                </select>
+                {canDelete && (
+                  <button onClick={() => onDeleteTask(t.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, reportEmail, onLogSent, currentUser }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
@@ -12568,6 +12696,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
     { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
+    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
@@ -14561,6 +14690,7 @@ export default function App() {
   const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
   const [lastCalderaRound, setLastCalderaRound] = useState(null);
   const [pushSubscriptions, setPushSubscriptions] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [mttoLog, setMttoLog] = useState([]);
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -14576,7 +14706,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -14592,6 +14722,7 @@ export default function App() {
         sGet("latest-gym-values", true), sGet("gym-rounds-index", true),
         sGet("caldera-rounds-index", true), sGet("last-caldera-round", true),
         sGet("push-subscriptions", true),
+        sGet("tasks", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -14627,6 +14758,7 @@ export default function App() {
       setCalderaRoundsIndex(cari || []);
       setLastCalderaRound(lcar || null);
       setPushSubscriptions(psub || []);
+      setTasks(tsk || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -15036,6 +15168,34 @@ export default function App() {
     return { ok: true, message: "✓ Notificaciones activadas en este dispositivo." };
   };
 
+  /* ---- Tareas / Pendientes ---- */
+  const createTask = async (form) => {
+    const rec = {
+      id: uid("task"), titulo: form.titulo.trim(), descripcion: (form.descripcion || "").trim(),
+      estado: "pendiente", prioridad: form.prioridad || "media", asignadoA: form.asignadoA || "",
+      createdBy: displayName, createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    const next = [rec, ...tasks];
+    setTasks(next);
+    await sSet("tasks", next, true);
+    if (rec.prioridad === "alta" && pushSubscriptions.length > 0) {
+      sendPushToSubscriptions(pushSubscriptions, "🔴 Tarea de prioridad alta", rec.titulo, "/");
+    }
+    return rec;
+  };
+
+  const updateTask = async (id, patch) => {
+    const next = tasks.map(t => t.id === id ? { ...t, ...patch, updatedAt: nowIso() } : t);
+    setTasks(next);
+    await sSet("tasks", next, true);
+  };
+
+  const deleteTask = async (id) => {
+    const next = tasks.filter(t => t.id !== id);
+    setTasks(next);
+    await sSet("tasks", next, true);
+  };
+
   const saveRound = async (floor, entries, notes) => {
     const ts = nowIso();
     const id = `${floor.id}-${Date.now()}`;
@@ -15398,6 +15558,7 @@ export default function App() {
     { id: "boiler", label: "Check List Caldera", icon: Gauge },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
     { id: "schedules", label: "Horario Mensual", icon: Users },
+    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -15509,7 +15670,7 @@ export default function App() {
           )}
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} onNavigate={setView}
-              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished }} />
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
@@ -15601,6 +15762,10 @@ export default function App() {
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onSetScheduleEntry={setScheduleEntry}
               onImportJuly={importJulySchedule2026} reportEmail={reportEmail} onLogSent={logSentReport} />
+          )}
+          {view === "tasks" && (
+            <TasksView tasks={tasks} accounts={accounts} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
+              onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

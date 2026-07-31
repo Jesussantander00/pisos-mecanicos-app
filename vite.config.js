@@ -6,7 +6,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
       registerType: "autoUpdate",
+      injectRegister: "auto",
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
         name: "Pisos Mecánicos — Hyatt Regency Cartagena",
@@ -22,15 +26,8 @@ export default defineConfig({
           { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
-      workbox: {
-        // No cachear las llamadas a Supabase/API: siempre deben ir a la red para traer datos frescos.
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.hostname.endsWith("supabase.co"),
-            handler: "NetworkOnly",
-          },
-        ],
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
       },
     }),
   ],

@@ -537,6 +537,49 @@ function computeUpcomingMaintenance(now, equipos, mttoCronograma) {
 }
 
 /* ============================================================
+   NOTIFICACIONES PUSH — helpers
+   ============================================================ */
+// Llave pública VAPID — es segura de mostrar en el navegador, solo la privada es secreta (esa vive
+// únicamente en Vercel, dentro de api/send-push.js).
+const VAPID_PUBLIC_KEY = "BEe7p1TzsxOCqH4RTh88jgs0fDzryslTfZ9I5IhvkVF4LO_p9MnlmO22NqeIJSMV_xwY_Bnoy9m4OGl8p_-6yHU";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+/** Pide permiso y suscribe este dispositivo a notificaciones push. Devuelve la suscripción o null. */
+async function subscribeToPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return null;
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) return existing.toJSON();
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+  return sub.toJSON();
+}
+
+/** Manda una notificación push real a la lista de suscripciones guardadas (los administradores que la activaron). */
+async function sendPushToSubscriptions(subscriptions, title, body, url) {
+  if (!subscriptions || subscriptions.length === 0) return;
+  try {
+    await fetch("/api/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscriptions, title, body, url }),
+    });
+  } catch (e) {
+    console.warn("No se pudo enviar la notificación push:", e?.message);
+  }
+}
+
+/* ============================================================
    MANTENIMIENTO — helpers
    ============================================================ */
 /** Último registro de mantenimiento de un equipo (el más reciente por fecha). */
@@ -12476,6 +12519,36 @@ function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
   );
 }
 
+function PushEnableButton({ onEnable }) {
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+  if (!supported) return null;
+
+  const click = async () => {
+    setBusy(true); setMsg(null);
+    const res = await onEnable();
+    setMsg(res);
+    setBusy(false);
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  return (
+    <div className="relative">
+      <button onClick={click} disabled={busy} title="Activar notificaciones en este dispositivo"
+        className="p-1.5 rounded-md" style={{ background: C.bg }}>
+        <Bell size={16} color={busy ? C.gray : C.amber} />
+      </button>
+      {msg && (
+        <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-64 rounded-lg border shadow-lg z-50 p-3 text-xs"
+          style={{ background: "#fff", borderColor: C.line, color: msg.ok ? C.green : C.red }}>
+          {msg.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
   const canManageInv = isAdmin || isAlmacenista;
   const modules = [
@@ -14487,6 +14560,7 @@ export default function App() {
   const [gymRoundsIndex, setGymRoundsIndex] = useState([]);
   const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
   const [lastCalderaRound, setLastCalderaRound] = useState(null);
+  const [pushSubscriptions, setPushSubscriptions] = useState([]);
   const [mttoLog, setMttoLog] = useState([]);
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -14502,7 +14576,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -14517,6 +14591,7 @@ export default function App() {
         sGet("latest-lavanderia-values", true), sGet("lavanderia-rounds-index", true),
         sGet("latest-gym-values", true), sGet("gym-rounds-index", true),
         sGet("caldera-rounds-index", true), sGet("last-caldera-round", true),
+        sGet("push-subscriptions", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -14551,6 +14626,7 @@ export default function App() {
       setGymRoundsIndex(gri || []);
       setCalderaRoundsIndex(cari || []);
       setLastCalderaRound(lcar || null);
+      setPushSubscriptions(psub || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -14942,6 +15018,24 @@ export default function App() {
     return { newEmployeesCount: newEmployees.length, entriesCount: JULY2026_IMPORT_ENTRIES.length };
   };
 
+  /** Manda push a los administradores suscritos cuando aparece un equipo dañado NUEVO (no repite si ya estaba). */
+  const notifyNewDamagedEquipment = (prevActive, newActiveObj) => {
+    if (pushSubscriptions.length === 0) return;
+    Object.keys(newActiveObj).filter(k => !prevActive[k]).forEach(k => {
+      const issue = newActiveObj[k];
+      sendPushToSubscriptions(pushSubscriptions, "⚠ Equipo fuera de servicio", `${issue.name} — ${issue.floorName}`, "/");
+    });
+  };
+
+  const enablePushNotifications = async () => {
+    const sub = await subscribeToPush();
+    if (!sub) return { ok: false, message: "No se pudo activar. ¿Le diste permiso a las notificaciones cuando te lo pidió el navegador?" };
+    const next = [...pushSubscriptions.filter(s => s.endpoint !== sub.endpoint), sub];
+    setPushSubscriptions(next);
+    await sSet("push-subscriptions", next, true);
+    return { ok: true, message: "✓ Notificaciones activadas en este dispositivo." };
+  };
+
   const saveRound = async (floor, entries, notes) => {
     const ts = nowIso();
     const id = `${floor.id}-${Date.now()}`;
@@ -14981,6 +15075,7 @@ export default function App() {
     const newIndex = [idxRec, ...roundsIndex].slice(0, 1000);
 
     setRoundsIndex(newIndex); setLatestValues(newLatest); setActiveIssues(newActive); setTankHistory(newTankHist);
+    notifyNewDamagedEquipment(activeIssues, newActive);
     await Promise.all([
       sSet(`round-${id}`, cleanEntries, true),
       sSet("rounds-index", newIndex, true),
@@ -15100,6 +15195,7 @@ export default function App() {
     });
 
     setLatestColdValues(newLatest); setActiveIssues(newActive); setColdRoundsIndex(newIndex);
+    notifyNewDamagedEquipment(activeIssues, newActive);
     setLastColdRound(record); setColdHistory(newColdHistory);
     await Promise.all([
       sSet(`cold-round-${id}`, cleanEntries, true),
@@ -15146,6 +15242,7 @@ export default function App() {
     const newIndex = [idxRec, ...roundsIdx].slice(0, 500);
 
     setLatestVals(newLatest); setActiveIssues(newActive); setRoundsIdx(newIndex);
+    notifyNewDamagedEquipment(activeIssues, newActive);
     await Promise.all([
       sSet(`${syntheticFloor.id}-round-${id}`, cleanEntries, true),
       sSet(indexKey, newIndex, true),
@@ -15219,6 +15316,11 @@ export default function App() {
   };
 
 
+  const account = accounts[currentUser] || {};
+  const displayName = account.displayName || currentUser;
+  const isAdmin = !!account.isAdmin;
+  const isAlmacenista = !!account.isAlmacenista;
+
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
@@ -15230,6 +15332,26 @@ export default function App() {
     () => computeUpcomingMaintenance(nowClock, mttoEquipos, mttoCronograma),
     [nowClock, mttoEquipos, mttoCronograma]
   );
+
+  useEffect(() => {
+    if (!isAdmin || pushSubscriptions.length === 0) return;
+    const dedupKey = `pm-local:pushed-alerts-${todayStr()}`;
+    let already = [];
+    try { already = JSON.parse(localStorage.getItem(dedupKey) || "[]"); } catch { /* noop */ }
+    const toSend = [];
+    shiftAlerts.forEach(a => {
+      const tag = `turno:${a.turno}`;
+      if (!already.includes(tag)) toSend.push({ tag, title: "⏰ Recorrido pendiente", body: `${a.turno}: ${a.missing.join(", ")}` });
+    });
+    if (maintenanceDue.items.length > 0) {
+      const tag = `mtto:${todayStr()}`;
+      if (!already.includes(tag)) toSend.push({ tag, title: "🔧 Mantenimiento por vencer", body: `${maintenanceDue.items.length} equipo(s) del cronograma, quedan ${maintenanceDue.daysLeft} días del mes.` });
+    }
+    if (toSend.length === 0) return;
+    toSend.forEach(t => sendPushToSubscriptions(pushSubscriptions, t.title, t.body, "/"));
+    try { localStorage.setItem(dedupKey, JSON.stringify([...already, ...toSend.map(t => t.tag)])); } catch { /* noop */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftAlerts, maintenanceDue, isAdmin, pushSubscriptions]);
 
   useEffect(() => {
     if (currentUser && pendingShelfId) setView("inventory");
@@ -15250,11 +15372,6 @@ export default function App() {
     </div>
   );
   if (!currentUser) return <AuthScreen accounts={accounts} onLogin={login} onRegister={register} error={authError} busy={authBusy} />;
-
-  const account = accounts[currentUser] || {};
-  const displayName = account.displayName || currentUser;
-  const isAdmin = !!account.isAdmin;
-  const isAlmacenista = !!account.isAlmacenista;
 
   if (printMode) {
     return <PrintableReport activeIssues={activeIssues} issueHistory={issueHistory} roundsIndex={roundsIndex} onClose={() => setPrintMode(false)} />;
@@ -15375,6 +15492,7 @@ export default function App() {
                 <CheckCircle2 size={12} /> Sincronizado
               </span>
             )}
+            {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
             {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>

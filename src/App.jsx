@@ -1029,7 +1029,7 @@ function daysInMonthIso(year, month) {
    ============================================================ */
 function Pill({ children, tone = "gray" }) {
   const map = {
-    gray: { bg: "#eef1f4", fg: C.inkSoft },
+    gray: { bg: C.bg, fg: C.inkSoft },
     green: { bg: C.greenSoft, fg: C.green },
     amber: { bg: C.amberSoft, fg: C.amber },
     red: { bg: C.redSoft, fg: C.red },
@@ -1050,7 +1050,7 @@ function Button({ children, onClick, variant = "primary", size = "md", disabled,
     primary: { background: C.steel, color: "#fff" },
     amber: { background: C.amber, color: "#fff" },
     red: { background: C.red, color: "#fff" },
-    ghost: { background: "transparent", color: C.steel, border: `1px solid ${C.line}` },
+    ghost: { background: "transparent", color: C.ink, border: `1px solid ${C.line}` },
     subtle: { background: C.bg, color: C.ink },
   }[variant];
   return (
@@ -1097,7 +1097,7 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
           <p className="text-sm" style={{ color: "#8fa3b8" }}>Pisos Mecánicos · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu usuario de operador"}</p>
         </div>
         <div className="rounded-xl p-5" style={{ background: C.panel }}>
-          <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: C.line }}>
+          <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <button onClick={() => setMode("login")} className="flex-1 py-2 text-sm font-medium"
               style={{ background: mode === "login" ? C.steel : C.bg, color: mode === "login" ? "#fff" : C.inkSoft }}>Iniciar sesión</button>
             <button onClick={() => setMode("register")} className="flex-1 py-2 text-sm font-medium"
@@ -1107,11 +1107,11 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
           <div className="space-y-2.5">
             <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuario"
               autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username"
-              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line }} />
+              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             <div className="relative">
               <input value={password} onChange={e => setPassword(e.target.value)} type={showPw ? "text" : "password"} placeholder="Contraseña"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
-                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: C.line }}
+                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}
                 onKeyDown={e => { if (e.key === "Enter" && mode === "login") submit(); }} />
               <button type="button" onClick={() => setShowPw(v => !v)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium px-1.5 py-1" style={{ color: C.gray }}>
@@ -1121,7 +1121,7 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
             {mode === "register" && (
               <input value={password2} onChange={e => setPassword2(e.target.value)} type={showPw ? "text" : "password"} placeholder="Confirmar contraseña"
                 autoComplete="new-password"
-                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line }}
+                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}
                 onKeyDown={e => { if (e.key === "Enter") submit(); }} />
             )}
             {mode === "register" && password2 && password !== password2 && (
@@ -1191,7 +1191,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
         <div className="flex items-center gap-2 flex-wrap">
           {(item.k === "status" || item.k === "statusNumeric") && (
             <select value={entry?.status || ""} onChange={e => update({ status: e.target.value })}
-              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, color: C.ink }}>
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <option value="">Estado…</option>
               {opts.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
@@ -1199,15 +1199,15 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
           {(item.k === "numeric" || item.k === "statusNumeric") && (
             <div className="flex items-center gap-1">
               <input type="number" step="any" value={entry?.value ?? ""} onChange={e => update({ value: e.target.value })}
-                placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               {item.u && <span className="text-xs" style={{ color: C.gray }}>{item.u}</span>}
             </div>
           )}
           {item.k === "sample" && (
             <div className="flex items-center gap-1.5">
-              <input value={entry?.ph ?? ""} onChange={e => update({ ph: e.target.value })} placeholder="PH" className="w-16 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
-              <input value={entry?.cloro ?? ""} onChange={e => update({ cloro: e.target.value })} placeholder="Cloro" className="w-16 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
-              <input value={entry?.operador ?? ""} onChange={e => update({ operador: e.target.value })} placeholder="Operador" className="w-28 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              <input value={entry?.ph ?? ""} onChange={e => update({ ph: e.target.value })} placeholder="PH" className="w-16 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <input value={entry?.cloro ?? ""} onChange={e => update({ cloro: e.target.value })} placeholder="Cloro" className="w-16 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <input value={entry?.operador ?? ""} onChange={e => update({ operador: e.target.value })} placeholder="Operador" className="w-28 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             </div>
           )}
           <label className="flex items-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer select-none"
@@ -1220,7 +1220,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
 
       <textarea value={entry?.observation ?? ""} onChange={e => update({ observation: e.target.value })}
         placeholder="Observaciones…" rows={1}
-        className="w-full mt-2 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+        className="w-full mt-2 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
 
       {activeIssue && (
         <div className="mt-2 rounded-md p-2 flex items-start justify-between gap-2" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
@@ -1238,7 +1238,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
       {resolving && (
         <div className="mt-2 flex items-center gap-2">
           <input value={solution} onChange={e => setSolution(e.target.value)} placeholder="¿Qué solución se aplicó?"
-            className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+            className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <Button size="sm" variant="primary" icon={CheckCircle2}
             disabled={!solution.trim()}
             onClick={() => { onResolve(activeIssue, solution.trim()); setResolving(false); setSolution(""); update({ damaged: false }); }}>
@@ -1334,11 +1334,11 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
           onResolve={(it, solution) => onResolveIssue(it, solution)} />
       ))}
 
-      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas importantes del recorrido</div>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones generales del piso, pendientes para el próximo turno, etc."
-          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
       {validationMsg && (
@@ -1480,21 +1480,21 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
           onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
       ))}
 
-      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones generales de la ronda…"
-          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-3" style={{ borderColor: C.line }} />
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
         <div className="grid grid-cols-2 gap-2">
           <div>
             <div className="text-xs mb-1" style={{ color: C.gray }}>Supervisor (opcional)</div>
             <input value={supervisor} onChange={e => setSupervisor(e.target.value)} placeholder="Nombre del supervisor"
-              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           <div>
             <div className="text-xs mb-1" style={{ color: C.gray }}>Ingeniero (opcional)</div>
             <input value={ingeniero} onChange={e => setIngeniero(e.target.value)} placeholder="Nombre del ingeniero"
-              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
         </div>
       </div>
@@ -1507,7 +1507,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
       {sendMsg && !sendMsg.ok && <div className="rounded-md p-2 mt-1 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {sendMsg.text}</div>}
 
       {lastColdRound && !todayIsSunday && (
-        <div className="rounded-md p-2 text-xs" style={{ background: "#eef1f4", color: C.inkSoft }}>
+        <div className="rounded-md p-2 text-xs" style={{ background: C.bg, color: C.inkSoft }}>
           El envío por correo de Cuartos Fríos se hace cada 7 días — el domingo, aquí mismo, va a aparecer el botón
           para enviar la semana completa. Si necesitas enviarla antes, ve a "Historial de Cuartos Fríos" en el menú.
         </div>
@@ -1523,7 +1523,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
             <Button icon={Mail} disabled={sending} onClick={doSendEmail}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
           </div>
           {sendMsg && <div className="text-xs mt-2" style={{ color: sendMsg.ok ? C.green : C.red }}>{sendMsg.text}</div>}
@@ -1541,7 +1541,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
   const update = (sub, v) => onChange(meter.id, { ...entry, [sub]: v });
 
   return (
-    <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+    <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
       <div className="text-sm font-medium mb-2" style={{ color: C.ink }}>{meter.n}</div>
       <div className="flex flex-wrap gap-4">
         {subs.map(sub => {
@@ -1555,7 +1555,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
                 {meter.subs ? sub : "Lectura"}{meter.u ? ` (${meter.u})` : ""}
               </label>
               <input type="number" step="any" value={val ?? ""} onChange={e => update(sub, e.target.value)}
-                placeholder="valor" className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                placeholder="valor" className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               {consumo !== null ? (
                 <span className="text-xs mt-1" style={{ color: consumo < 0 ? C.red : C.green }}>
                   Consumo: {consumo.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{meter.u ? ` ${meter.u}` : ""}
@@ -1626,11 +1626,11 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
         </div>
       ))}
 
-      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones sobre las lecturas de hoy…"
-          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
@@ -1710,11 +1710,11 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
         </div>
       ))}
 
-      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas importantes</div>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones generales, pendientes para el próximo turno, etc."
-          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
       {validationMsg && (
@@ -1759,42 +1759,42 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Check List Caldera</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Equipo: Caldera Piso 4 Lavandería · Turno {shift} · {todayStr()}</p>
 
-      <div className="rounded-lg border p-4 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-4 mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Purgas (hora)</div>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="text-xs" style={{ color: C.gray }}>Manómetro</label>
             <input type="time" value={form.horaManometro} onChange={e => set("horaManometro", e.target.value)}
-              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           <div>
             <label className="text-xs" style={{ color: C.gray }}>Mc Donell</label>
             <input type="time" value={form.horaMcDonell} onChange={e => set("horaMcDonell", e.target.value)}
-              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           <div>
             <label className="text-xs" style={{ color: C.gray }}>Fondo</label>
             <input type="time" value={form.horaFondo} onChange={e => set("horaFondo", e.target.value)}
-              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           <div>
             <label className="text-xs" style={{ color: C.gray }}>Tanque de distribución</label>
             <input type="time" value={form.horaTqDistribucion} onChange={e => set("horaTqDistribucion", e.target.value)}
-              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+              className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
         </div>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Presión</div>
         <div className="mb-1">
           <label className="text-xs" style={{ color: C.gray }}>Vapor (PSI)</label>
           <input type="number" value={form.presionVaporPsi} onChange={e => set("presionVaporPsi", e.target.value)}
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
         </div>
       </div>
 
-      <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones (opcional)</div>
         <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} rows={2}
-          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line }} />
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
       {validationMsg && (
@@ -1808,7 +1808,7 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
       {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Check list guardado correctamente</div>}
 
       {lastCalderaRound && (
-        <div className="rounded-lg border p-3 mt-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3 mt-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Último registro</div>
           <div className="text-xs" style={{ color: C.inkSoft }}>
             {fmtDT(lastCalderaRound.savedAt)} · Turno {lastCalderaRound.shift} · Por {lastCalderaRound.user}
@@ -1889,7 +1889,7 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
         día de la semana y seguir la misma secuencia sin cortes — igual que pasa entre meses en el Excel.
       </p>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar esta semana (en Excel)</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadExcel}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
@@ -1897,13 +1897,13 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <table className="min-w-full text-xs" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
@@ -1920,12 +1920,12 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
                 <React.Fragment key={i}>
                   {showGroupHeader && (
                     <tr>
-                      <td colSpan={grid.days.length + 2} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                      <td colSpan={grid.days.length + 2} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: C.bg, color: C.inkSoft }}>
                         {row.groupTitle}
                       </td>
                     </tr>
                   )}
-                  <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+                  <tr style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                     <td className="px-2 py-1.5" style={{ color: C.ink }}>{row.label}{row.unit ? ` (${row.unit})` : ""}</td>
                     <td className="px-2 py-1.5 text-right" style={{ color: C.gray }}>{row.before ?? "—"}</td>
                     {row.days.map((v, di) => {
@@ -2003,7 +2003,7 @@ function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser 
         semana que quieras, cuando quieras.
       </p>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
           Descargar / enviar esta semana {weekComplete ? "" : "(semana en curso, aún no termina)"}
         </div>
@@ -2012,13 +2012,13 @@ function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser 
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <table className="min-w-full text-xs" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
@@ -2034,12 +2034,12 @@ function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser 
                 <React.Fragment key={i}>
                   {showGroupHeader && (
                     <tr>
-                      <td colSpan={grid.days.length + 1} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                      <td colSpan={grid.days.length + 1} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: C.bg, color: C.inkSoft }}>
                         {row.groupTitle}
                       </td>
                     </tr>
                   )}
-                  <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+                  <tr style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                     <td className="px-2 py-1.5" style={{ color: C.ink }}>{row.label}</td>
                     {row.days.map((v, di) => {
                       const bad = row.item.k !== "status" ? isColdRoomOutOfRange(row.item, v) : v === "Fuera de servicio";
@@ -2082,7 +2082,7 @@ function QrCodeBox({ url, label, filename }) {
   };
 
   return (
-    <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel }}>
+    <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
       {dataUrl
         ? <img src={dataUrl} alt="Código QR" width={140} height={140} />
         : <div className="w-[140px] h-[140px] flex items-center justify-center text-xs" style={{ color: C.gray }}>Generando…</div>}
@@ -2147,9 +2147,9 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
 
       {canManage && (
-        <div className="rounded-lg border p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nombre de la bodega nueva"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 200 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 200 }} />
           <Button icon={PlusCircle} disabled={creating} onClick={doCreate}>Crear bodega</Button>
         </div>
       )}
@@ -2166,7 +2166,7 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
             const low = computeLowStock(myItems).length;
             return (
               <button key={b.id} onClick={() => onSelectBodega(b.id)}
-                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel }}>
+                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-semibold" style={{ color: C.ink }}>{b.name}</div>
                   {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
@@ -2205,13 +2205,13 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Elige una estantería para ver o retirar repuestos.</p>
 
       {canManage && (
-        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Crear estantería nueva</div>
           <div className="flex items-center gap-2 flex-wrap">
             <input value={code} onChange={e => setCode(e.target.value)} placeholder="Código, ej. A-01"
-              className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, width: 140 }} />
+              className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, width: 140 }} />
             <input value={name} onChange={e => setName(e.target.value)} placeholder="Descripción (opcional)"
-              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 160 }} />
+              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 160 }} />
             <Button icon={PlusCircle} disabled={creating} onClick={doCreate}>Crear</Button>
           </div>
           {newShelf && (
@@ -2235,7 +2235,7 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
             const low = computeLowStock(myItems).length;
             return (
               <button key={s.id} onClick={() => onSelectShelf(s.id)}
-                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel }}>
+                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-semibold" style={{ color: C.ink }}>Estantería {s.code}</div>
                   {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
@@ -2294,18 +2294,18 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
               {showNewItem ? "Cancelar" : "Agregar repuesto a esta estantería"}
             </Button>
             {showNewItem && (
-              <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del repuesto"
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none col-span-2" style={{ borderColor: C.line }} />
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none col-span-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   <input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="Código / SKU (opcional)"
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   <input value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="Unidad (ej. unidad, caja)"
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   <input type="number" min={0} value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="Cantidad inicial"
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   <input type="number" min={0} value={form.minThreshold} onChange={e => setForm(f => ({ ...f, minThreshold: e.target.value }))} placeholder="Mínimo para alertar"
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 </div>
                 <Button size="sm" onClick={doCreateItem}>Guardar repuesto</Button>
               </div>
@@ -2344,9 +2344,9 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span className="text-xs font-medium" style={{ color: C.inkSoft }}>{draft.mode === "retiro" ? "Retirar" : "Entrada de"} cantidad:</span>
                 <input type="number" min={1} autoFocus value={draft.qty} onChange={e => setQtyDraft(prev => ({ ...prev, [item.id]: { ...draft, qty: e.target.value } }))}
-                  className="w-20 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }} />
+                  className="w-20 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <input value={draft.note} onChange={e => setQtyDraft(prev => ({ ...prev, [item.id]: { ...draft, note: e.target.value } }))} placeholder="Motivo (opcional)"
-                  className="text-sm border rounded-md px-2 py-1 outline-none flex-1" style={{ borderColor: C.line, minWidth: 140 }} />
+                  className="text-sm border rounded-md px-2 py-1 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 140 }} />
                 <Button size="sm" disabled={busyId === item.id} onClick={() => doMove(item)}>{busyId === item.id ? "Guardando…" : "Confirmar"}</Button>
                 <Button size="sm" variant="ghost" onClick={() => closeMove(item.id)}>Cancelar</Button>
               </div>
@@ -2449,7 +2449,7 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todo el inventario está por encima de su mínimo. Nada que reponer por ahora.</p>
       ) : (
         <>
-          <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Lista de compras</div>
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadExcel}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
@@ -2457,7 +2457,7 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-                className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+                className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
               <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
             </div>
             {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
@@ -2518,23 +2518,23 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
       </div>
 
       {showNew && (
-        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line }} />
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line }} />
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <select value={form.prioridad} onChange={e => setForm(f => ({ ...f, prioridad: e.target.value }))}
-              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>Prioridad {p.label}</option>)}
             </select>
             <select value={form.asignadoA} onChange={e => setForm(f => ({ ...f, asignadoA: e.target.value }))}
-              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <option value="">Sin asignar</option>
               {usernames.map(u => <option key={u} value={u}>{accounts[u]?.displayName || u}</option>)}
             </select>
             <select value={form.recurrencia} onChange={e => setForm(f => ({ ...f, recurrencia: e.target.value }))}
-              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {TASK_RECURRENCES.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
             </select>
           </div>
@@ -2561,7 +2561,7 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
         const stateColors = TASK_STATE_COLORS[t.estado];
         const canDelete = isAdmin || t.createdBy === currentUser;
         return (
-          <div key={t.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+          <div key={t.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div className="flex-1 min-w-[200px]">
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
@@ -2671,23 +2671,23 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
         Cada retiro y entrada queda registrado aquí — quién lo hizo, cuánto, de dónde, y cuánto quedó después. En tiempo real, apenas alguien escanea una estantería y confirma.
       </p>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar en Excel</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por repuesto, bodega, estantería o quién lo hizo…"
-        className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-3" style={{ borderColor: C.line }} />
+        className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
 
-      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
@@ -2702,7 +2702,7 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
           </thead>
           <tbody>
             {filtered.slice(0, 300).map((r, i) => (
-              <tr key={i} style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+              <tr key={i} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                 <td className="px-2 py-1.5" style={{ color: C.inkSoft }}>{fmtDT(r.fecha)}</td>
                 <td className="px-2 py-1.5" style={{ color: r.tipo === "Retiro" ? C.red : C.green, fontWeight: 600 }}>{r.tipo}</td>
                 <td className="px-2 py-1.5" style={{ color: C.ink }}>{r.repuesto}</td>
@@ -2800,13 +2800,13 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onCrea
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
 
       {canManage && (
-        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Agregar equipo nuevo</div>
           <div className="flex items-center gap-2 flex-wrap">
             <input value={sistema} onChange={e => setSistema(e.target.value)} placeholder="Sistema (ej. HVAC)"
-              className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, minWidth: 160 }} />
+              className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 160 }} />
             <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre del equipo"
-              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 200 }} />
+              className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 200 }} />
             <Button icon={PlusCircle} disabled={creating} onClick={doCreate}>Agregar</Button>
           </div>
         </div>
@@ -2822,7 +2822,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onCrea
             const outCount = eqs.filter(e => currentEquipoStatus(e.id, mttoLog).outOfService).length;
             return (
               <button key={sistemaName} onClick={() => onSelectSistema(sistemaName)}
-                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel }}>
+                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-semibold" style={{ color: C.ink }}>{sistemaName}</div>
                   {outCount > 0 && <Pill tone="red">{outCount} fuera de servicio</Pill>}
@@ -2889,14 +2889,14 @@ function PhotoPicker({ photos, onChange, max = 2 }) {
       <div className="flex items-center gap-2 flex-wrap mb-2">
         {photos.map((f, i) => (
           <div key={i} className="relative">
-            <img src={typeof f === "string" ? f : URL.createObjectURL(f)} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
+            <img src={typeof f === "string" ? f : URL.createObjectURL(f)} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             <button type="button" onClick={() => removeAt(i)} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 flex items-center justify-center text-xs"
               style={{ background: C.red, color: "#fff" }}>×</button>
           </div>
         ))}
         {photos.length < max && (
           <button type="button" onClick={() => inputRef.current?.click()}
-            className="w-16 h-16 rounded-md border-2 border-dashed flex items-center justify-center text-xs" style={{ borderColor: C.line, color: C.gray }}>
+            className="w-16 h-16 rounded-md border-2 border-dashed flex items-center justify-center text-xs" style={{ borderColor: C.line, background: C.panel, color: C.gray }}>
             + Foto
           </button>
         )}
@@ -2957,24 +2957,24 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
 
       <div className="flex items-start gap-3 flex-wrap mb-4">
-        <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <Button size="sm" variant="ghost" icon={Download} disabled={downloadingQr} onClick={doDownloadQr}>{downloadingQr ? "Generando…" : "Descargar QR"}</Button>
         </div>
 
-        <div className="flex-1 min-w-[260px] rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="flex-1 min-w-[260px] rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Registrar mantenimiento</div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <select value={tipo} onChange={e => setTipo(e.target.value)} className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+            <select value={tipo} onChange={e => setTipo(e.target.value)} className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {MTTO_TIPOS.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
-            <select value={estado} onChange={e => setEstado(e.target.value)} className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+            <select value={estado} onChange={e => setEstado(e.target.value)} className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {MTTO_ESTADOS.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
             </select>
             <input type="number" min="0" value={costo} onChange={e => setCosto(e.target.value)} placeholder="Costo (opcional)"
-              className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line }} />
+              className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={3} placeholder="¿Qué se hizo?"
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line }} />
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <div className="text-xs mb-1" style={{ color: C.gray }}>Fotos (opcional, hasta 2)</div>
           <PhotoPicker photos={photos} onChange={setPhotos} />
           <div className="mt-2">
@@ -3001,7 +3001,7 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
             <div className="flex items-center gap-2 mt-2">
               {r.fotos.map((url, i) => (
                 <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 </a>
               ))}
             </div>
@@ -3121,14 +3121,14 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
         Todo lo que los técnicos han registrado, en un solo lugar — para revisar y verificar la información y las fotos que suben.
       </p>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar en Excel</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
@@ -3136,8 +3136,8 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por equipo, sistema, técnico o descripción…"
-          className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 200 }} />
-        <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line }}>
+          className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 200 }} />
+        <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <option value="">Todos los tipos</option>
           {MTTO_TIPOS.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
         </select>
@@ -3159,7 +3159,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
             <div className="flex items-center gap-2 mt-2">
               {r.fotos.map((url, i) => (
                 <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 </a>
               ))}
             </div>
@@ -3207,24 +3207,24 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
 
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Disponibilidad promedio</div>
           <div className="text-3xl font-bold mt-1" style={{ color: avgUptime >= 90 ? C.green : C.red }}>{avgUptime}%</div>
         </div>
-        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento de rondas</div>
           <div className="text-3xl font-bold mt-1" style={{ color: compliance.ronda.pct >= 90 ? C.green : C.red }}>{compliance.ronda.pct}%</div>
         </div>
-        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Costo de mantenimiento (mes)</div>
           <div className="text-2xl font-bold mt-1" style={{ color: C.ink }}>{cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}</div>
         </div>
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Disponibilidad de equipos por sistema</div>
-      <div className="rounded-lg border mb-5 overflow-hidden" style={{ borderColor: C.line }}>
+      <div className="rounded-lg border mb-5 overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         {uptime.map((u, i) => (
-          <div key={u.sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+          <div key={u.sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink }}>{u.sistema}</span>
             <span className="flex items-center gap-2">
               {u.fuera > 0 && <span style={{ color: C.red }}>{u.fuera} fuera de servicio</span>}
@@ -3235,13 +3235,13 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento de rondas este mes</div>
-      <div className="rounded-lg border mb-5 overflow-hidden" style={{ borderColor: C.line }}>
+      <div className="rounded-lg border mb-5 overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         {[
           { label: "Ronda de revisión", c: compliance.ronda },
           { label: "Cuartos Fríos", c: compliance.cuartosFrios },
           { label: "Lecturas de Medidores", c: compliance.medidores },
         ].map((row, i) => (
-          <div key={row.label} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+          <div key={row.label} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink }}>{row.label}</span>
             <span>
               <span style={{ color: C.gray }}>{row.c.actual}/{row.c.expected}</span>{" "}
@@ -3254,9 +3254,9 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       {cost.bySistema.length > 0 && (
         <>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema</div>
-          <div className="rounded-lg border overflow-hidden" style={{ borderColor: C.line }}>
+          <div className="rounded-lg border overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             {cost.bySistema.slice(0, 10).map(([sistema, c], i) => (
-              <div key={sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <div key={sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
                 <span style={{ color: C.ink }}>{sistema}</span>
                 <span className="font-semibold" style={{ color: C.ink }}>${c.toLocaleString("es-CO")}</span>
               </div>
@@ -3319,15 +3319,15 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
       </p>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Fuera de servicio ahora</div>
           <div className="text-2xl font-semibold mt-1" style={{ color: outOfService.length ? C.red : C.ink }}>{outOfService.length}</div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Mantenimientos registrados</div>
           <div className="text-2xl font-semibold mt-1" style={{ color: C.ink }}>{totalMantenimientos}</div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Costo acumulado registrado</div>
           <div className="text-lg font-semibold mt-1" style={{ color: C.ink }}>{totalCosto ? `$${totalCosto.toLocaleString("es-CO")}` : "—"}</div>
         </div>
@@ -3338,7 +3338,7 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
       ) : (
         <>
           {bySistema.length > 0 && (
-            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Mantenimientos por sistema</div>
               <ResponsiveContainer width="100%" height={Math.max(180, bySistema.length * 30)}>
                 <BarChart data={bySistema} layout="vertical" margin={{ left: 8, right: 16 }}>
@@ -3353,7 +3353,7 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
           )}
 
           {topCorrectivos.length > 0 && (
-            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos con más fallas (correctivos)</div>
               <ResponsiveContainer width="100%" height={Math.max(180, topCorrectivos.length * 30)}>
                 <BarChart data={topCorrectivos} layout="vertical" margin={{ left: 8, right: 16 }}>
@@ -3383,10 +3383,10 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
           )}
 
           {outOfService.length > 0 && (
-            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Fuera de servicio ahora mismo</div>
               {outOfService.map(({ eq, status }) => (
-                <div key={eq.id} className="text-xs py-1.5 border-b last:border-0 flex items-center justify-between" style={{ borderColor: C.line }}>
+                <div key={eq.id} className="text-xs py-1.5 border-b last:border-0 flex items-center justify-between" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                   <span style={{ color: C.ink }}>{eq.nombre} <span style={{ color: C.gray }}>({eq.sistema})</span></span>
                   <span style={{ color: C.red }}>Desde {fmtDT(status.since)} · {elapsed(status.since)}</span>
                 </div>
@@ -3491,7 +3491,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <select value={sistemaFilter} onChange={e => setSistemaFilter(e.target.value)}
-          className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line }}>
+          className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           {sistemas.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="text-xs" style={{ color: C.gray }}>
@@ -3501,20 +3501,20 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
         </span>
       </div>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar este sistema (Excel)</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
@@ -3524,7 +3524,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
           </thead>
           <tbody>
             {eqInSistema.map((eq, i) => (
-              <tr key={eq.id} style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+              <tr key={eq.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                 <td className="px-2 py-1.5" style={{ color: C.ink }}>{eq.nombre}</td>
                 {Array.from({ length: 12 }, (_, idx) => idx + 1).map(m => {
                   const c = cronoByEquipo[eq.id]?.[m];
@@ -3571,18 +3571,18 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
     .filter(g => g.list.length > 0);
 
   return (
-    <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+    <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Agregar empleado</div>
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre completo"
-          className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+          className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
         <select value={cargo} onChange={e => setCargo(e.target.value)}
-          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <option value="">Cargo…</option>
           {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={restDay} onChange={e => setRestDay(e.target.value)}
-          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <option value="">Sin descanso fijo</option>
           {DAY_NAMES.map((d, i) => <option key={i} value={i}>Descanso fijo: {d}</option>)}
         </select>
@@ -3594,19 +3594,19 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
         <div key={g.cargo} className="mb-2">
           <div className="text-xs font-semibold mt-2 mb-1" style={{ color: C.blue }}>{g.cargo} ({g.list.length})</div>
           {g.list.map(emp => (
-            <div key={emp.id} className="flex items-center justify-between py-1.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: C.line }}>
+            <div key={emp.id} className="flex items-center justify-between py-1.5 border-b last:border-0 flex-wrap gap-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-sm" style={{ color: C.ink }}>
                 {emp.name}
                 {!emp.active && <span className="text-xs" style={{ color: C.gray }}> · Inactivo</span>}
               </div>
               <div className="flex items-center gap-2">
                 <select value={emp.cargo || ""} onChange={e => onUpdateEmployee(emp.id, { cargo: e.target.value })}
-                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line }}>
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                   <option value="">Cargo…</option>
                   {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select value={emp.fixedRestDay ?? ""} onChange={e => onUpdateEmployee(emp.id, { fixedRestDay: e.target.value === "" ? null : Number(e.target.value) })}
-                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line }}>
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                   <option value="">Sin descanso fijo</option>
                   {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
                 </select>
@@ -3779,15 +3779,15 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
           {draftMode === "hours" ? (
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <input type="number" step="0.5" value={draftEntrada} onChange={e => setDraftEntrada(e.target.value)} placeholder="Entrada (ej. 8.5)"
-                className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               <input type="number" step="0.5" value={draftSalida} onChange={e => setDraftSalida(e.target.value)} placeholder="Salida (ej. 16.5)"
-                className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               <span className="text-xs" style={{ color: C.gray }}>Formato decimal: 8.5 = 8:30, 16.5 = 4:30 p.m.</span>
             </div>
           ) : (
             <div className="mb-2">
               <select value={draftCode} onChange={e => setDraftCode(e.target.value)}
-                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <option value="">(elegir)</option>
                 {SPECIAL_CODES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
               </select>
@@ -3795,7 +3795,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
           )}
 
           <input value={draftNote} onChange={e => setDraftNote(e.target.value)} placeholder="Nota (opcional)"
-            className="text-sm border rounded-md px-2 py-1.5 outline-none w-full mb-2" style={{ borderColor: C.line }} />
+            className="text-sm border rounded-md px-2 py-1.5 outline-none w-full mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
 
           {impact && (
             <div className="text-xs rounded-md p-2 mb-2" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
@@ -3819,14 +3819,14 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
         </div>
       )}
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar este mes</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
@@ -3837,7 +3837,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
         visual según las reglas que nos diste — no reemplazan la revisión de las normas laborales vigentes.
       </div>
 
-      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line }}>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <table className="text-xs" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
@@ -3867,12 +3867,12 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
                   <React.Fragment key={emp.id}>
                     {showGroupHeader && (
                       <tr>
-                        <td colSpan={daysIso.length + 3} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: "#eef1f4", color: C.inkSoft }}>
+                        <td colSpan={daysIso.length + 3} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide" style={{ background: C.bg, color: C.inkSoft }}>
                           {emp.cargo || "Sin cargo asignado"}
                         </td>
                       </tr>
                     )}
-                    <tr style={{ background: i % 2 ? "#fafbfc" : "#fff", borderTop: `1px solid ${C.line}` }}>
+                    <tr style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                       <td className="px-2 py-1.5" style={{ color: C.ink, fontWeight: 500 }}>
                         {emp.name}
                         {warnings.length > 0 && <AlertTriangle size={12} style={{ display: "inline", color: C.red, marginLeft: 4, verticalAlign: "-1px" }} />}
@@ -3963,7 +3963,7 @@ function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
             {alerts.length === 0 ? (
               <div className="px-3 pb-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
             ) : alerts.map((a, i) => (
-              <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line }}>
+              <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <div className="text-xs font-semibold mb-1" style={{ color: C.red }}>{a.turno}</div>
                 {a.missing.map((m, j) => (
                   <button key={j} onClick={() => { onNavigate(shortcuts[m] || "home"); setOpen(false); }}
@@ -3976,7 +3976,7 @@ function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
 
             {maintenanceDue && (
               <>
-                <div className="p-3 pb-1 border-t text-xs font-semibold uppercase tracking-wide" style={{ borderColor: C.line, color: C.inkSoft }}>
+                <div className="p-3 pb-1 border-t text-xs font-semibold uppercase tracking-wide" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
                   Mantenimiento por vencer este mes {maintenanceDue.daysLeft <= 10 ? `(quedan ${maintenanceDue.daysLeft} días)` : ""}
                 </div>
                 {maintenanceDue.items.length === 0 ? (
@@ -4086,7 +4086,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
             className="text-left rounded-lg border p-3 transition"
             style={{
-              borderColor: C.line, background: m.access ? C.panel : "#f3f4f6",
+              borderColor: C.line, background: m.access ? C.panel : C.bg,
               opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
             }}>
             <div className="flex items-center justify-between gap-2 mb-1">
@@ -4146,7 +4146,7 @@ function IssueResolveCard({ iss, onResolve }) {
       {open && (
         <div className="flex items-center gap-2 mt-2">
           <input value={solution} onChange={e => setSolution(e.target.value)} placeholder="Solución aplicada…"
-            className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+            className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <Button size="sm" icon={CheckCircle2} disabled={!solution.trim()}
             onClick={() => { onResolve(iss, solution.trim()); setOpen(false); setSolution(""); }}>Confirmar</Button>
           <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
@@ -4229,7 +4229,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Reportes</h2>
       <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Genera el informe completo en PDF, o comparte un resumen por correo/WhatsApp.</p>
 
-      <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF completo (los 12 pisos, todos los equipos)</div>
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <Button variant="amber" icon={Download} disabled={generatingPdf} onClick={doDownloadPdf}>
@@ -4242,7 +4242,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
         <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Correo — envío automático con el PDF adjunto</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sendingAutoFull} onClick={doSendAutoFull}>{sendingAutoFull ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -4252,7 +4252,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
         <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>WhatsApp (envía un resumen en texto, no el PDF adjunto)</div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={waTo} onChange={e => setWaTo(e.target.value)} placeholder="Número con indicativo, ej. 573001234567"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button variant="ghost" icon={MessageCircle} onClick={doOpenWhatsapp}>Enviar por WhatsApp</Button>
         </div>
 
@@ -4269,7 +4269,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
         <Button size="sm" variant={tab === "incidentes" ? "primary" : "ghost"} onClick={() => setTab("incidentes")}>Historial de incidentes</Button>
         <Button size="sm" variant={tab === "rondas" ? "primary" : "ghost"} onClick={() => setTab("rondas")}>Rondas registradas</Button>
         <Button size="sm" variant={tab === "enviados" ? "primary" : "ghost"} onClick={() => setTab("enviados")}>Informes enviados</Button>
-        <div className="ml-auto flex items-center gap-1.5 border rounded-md px-2 py-1" style={{ borderColor: C.line }}>
+        <div className="ml-auto flex items-center gap-1.5 border rounded-md px-2 py-1" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <Search size={13} color={C.gray} />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar…" className="text-sm outline-none" />
         </div>
@@ -4279,7 +4279,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
         <div>
           {filteredIssues.length === 0 && <div className="text-sm py-6 text-center" style={{ color: C.gray }}>Sin incidentes resueltos registrados aún.</div>}
           {filteredIssues.map((h, i) => (
-            <div key={i} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+            <div key={i} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <Pill tone="gray"><Building2 size={11} /> {h.floorName}</Pill>
                 <Pill tone="green"><CheckCircle2 size={12} /> Resuelto</Pill>
@@ -4299,7 +4299,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
         <div>
           {filteredRounds.length === 0 && <div className="text-sm py-6 text-center" style={{ color: C.gray }}>Aún no se han guardado rondas.</div>}
           {filteredRounds.map((r, i) => (
-            <div key={i} className="rounded-lg border p-3 mb-2 flex items-center justify-between flex-wrap gap-2" style={{ borderColor: C.line, background: C.panel }}>
+            <div key={i} className="rounded-lg border p-3 mb-2 flex items-center justify-between flex-wrap gap-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div>
                 <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.floorName}</div>
                 <div className="text-xs" style={{ color: C.inkSoft }}>{fmtDT(r.savedAt)} · Turno {r.shift} · {r.user}</div>
@@ -4320,7 +4320,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
           </p>
           {(!sentReports || sentReports.length === 0) && <div className="text-sm py-6 text-center" style={{ color: C.gray }}>Aún no se ha intentado enviar ningún informe.</div>}
           {(sentReports || []).map((s, i) => (
-            <div key={i} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+            <div key={i} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 {s.ok ? <Pill tone="green"><CheckCircle2 size={12} /> {s.method}</Pill> : <Pill tone="red"><AlertTriangle size={12} /> Falló · {s.method}</Pill>}
                 <span className="text-xs" style={{ color: C.gray }}>{fmtDT(s.sentAt)} · por {s.sentBy}</span>
@@ -4370,7 +4370,7 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
         necesitas revisar y dejar registrado el porcentaje sin esperar a la próxima ronda completa del piso.
       </p>
 
-      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
@@ -4394,7 +4394,7 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
         {data.map(d => {
           const hist = (tankHistory[d.id] || []).slice(-12).map(h => ({ t: fmtDT(h.at).slice(0, 11), v: Number(h.value) }));
           return (
-            <div key={d.id} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div key={d.id} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="flex items-center justify-between mb-1">
                 <div>
                   <div className="text-sm font-semibold" style={{ color: C.ink }}>{d.name}</div>
@@ -4407,7 +4407,7 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
                 <div className="flex items-center gap-2 my-2">
                   <input type="number" min={0} max={100} autoFocus value={draft} onChange={e => setDraft(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") doSave(d); if (e.key === "Escape") setEditing(null); }}
-                    placeholder="0-100" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }} />
+                    placeholder="0-100" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   <span className="text-xs" style={{ color: C.gray }}>%</span>
                   <Button size="sm" onClick={() => doSave(d)}>Guardar</Button>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
@@ -5005,7 +5005,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         {lastTour.itemCount} equipos revisados{lastTour.damagedCount ? `, ${lastTour.damagedCount} dañados` : ", todo en orden"}
       </p>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF de este recorrido</div>
         <Button variant="ghost" icon={Download} disabled={downloadingPdf} onClick={doDownloadPdf}>
           {downloadingPdf ? "Generando…" : "Descargar PDF"}
@@ -5014,7 +5014,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Correo — envío automático con el PDF adjunto</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sendingAuto} onClick={doSendAutoEmail}>{sendingAuto ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -5024,7 +5024,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>WhatsApp — resumen en texto (el PDF se adjunta a mano)</div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={waTo} onChange={e => setWaTo(e.target.value)} placeholder="Número WhatsApp, ej. 573001234567"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button variant="ghost" icon={MessageCircle} onClick={sendWa}>Enviar por WhatsApp</Button>
         </div>
         <div className="text-xs mt-1" style={{ color: C.gray }}>
@@ -5036,11 +5036,11 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
       </div>
 
       {lastTour.floors.map(f => (
-        <div key={f.floorId} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+        <div key={f.floorId} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-sm font-semibold mb-1.5" style={{ color: C.ink }}>{f.floorName}</div>
           {f.items.length === 0 && <div className="text-xs" style={{ color: C.gray }}>Sin equipos registrados en este piso.</div>}
           {f.items.map((it, i) => (
-            <div key={i} className="text-xs py-1 flex items-start justify-between gap-2 border-b last:border-0" style={{ borderColor: C.line }}>
+            <div key={i} className="text-xs py-1 flex items-start justify-between gap-2 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <span style={{ color: C.inkSoft }}>
                 #{it.code} {it.name}
                 {it.observation && <span className="italic"> — {it.observation}</span>}
@@ -5061,7 +5061,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
           </summary>
           <div className="mt-2">
             {tourHistory.slice(1, 20).map(t => (
-              <div key={t.id} className="text-xs py-1.5 border-b flex items-center justify-between" style={{ borderColor: C.line }}>
+              <div key={t.id} className="text-xs py-1.5 border-b flex items-center justify-between" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <span>{t.date} · Turno {t.shift} · {t.user}</span>
                 <span style={{ color: C.gray }}>{t.itemCount} equipos{t.damagedCount ? `, ${t.damagedCount} dañados` : ""}</span>
               </div>
@@ -5810,7 +5810,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Análisis de fallas</h2>
         <select value={range} onChange={e => setRange(e.target.value)}
-          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line }}>
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <option value="30">Últimos 30 días</option>
           <option value="90">Últimos 90 días</option>
           <option value="365">Último año</option>
@@ -5822,15 +5822,15 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
       </p>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Fuera de servicio ahora</div>
           <div className="text-2xl font-semibold mt-1" style={{ color: totalCurrentlyDown ? C.red : C.ink }}>{totalCurrentlyDown}</div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Incidentes en el período</div>
           <div className="text-2xl font-semibold mt-1" style={{ color: C.ink }}>{totalIncidents}</div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Falla activa más larga</div>
           <div className="text-sm font-semibold mt-1" style={{ color: C.ink }}>
             {longestActive ? `${longestActive.name} · ${fmtHours(longestActive.totalHours)}` : "Ninguna"}
@@ -5838,7 +5838,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         </div>
       </div>
 
-      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF de este reporte ({rangeLabel})</div>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadPdf}>
@@ -5848,7 +5848,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Correo — envío automático con el PDF adjunto</div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, minWidth: 180 }} />
+            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
           <Button icon={Mail} disabled={sending} onClick={doSendEmail}>{sending ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
         </div>
         {sendMsg && <div className="text-xs mt-2" style={{ color: sendMsg.ok ? C.green : C.red }}>{sendMsg.text}</div>}
@@ -5858,7 +5858,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>No hay incidentes registrados en este período.</p>
       ) : (
         <>
-          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Tiempo total fuera de servicio (horas)</div>
             <ResponsiveContainer width="100%" height={Math.max(180, byDowntime.length * 34)}>
               <BarChart data={byDowntime} layout="vertical" margin={{ left: 8, right: 16 }}>
@@ -5871,7 +5871,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
             </ResponsiveContainer>
           </div>
 
-          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos que más veces han fallado</div>
             <ResponsiveContainer width="100%" height={Math.max(180, byFrequency.length * 34)}>
               <BarChart data={byFrequency} layout="vertical" margin={{ left: 8, right: 16 }}>
@@ -5884,10 +5884,10 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
             </ResponsiveContainer>
           </div>
 
-          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Detalle por equipo</div>
             {stats.map(eq => (
-              <div key={eq.equipmentId} className="border-b last:border-0 py-2" style={{ borderColor: C.line }}>
+              <div key={eq.equipmentId} className="border-b last:border-0 py-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <button onClick={() => setExpanded(expanded === eq.equipmentId ? null : eq.equipmentId)}
                   className="w-full flex items-center justify-between text-left">
                   <div>
@@ -5904,7 +5904,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
                 {expanded === eq.equipmentId && (
                   <div className="mt-2 pl-1">
                     {eq.incidents.map((inc, i) => (
-                      <div key={i} className="text-xs py-1.5 border-b last:border-0" style={{ borderColor: C.line }}>
+                      <div key={i} className="text-xs py-1.5 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                         <div style={{ color: C.ink }}>
                           Desde {fmtDT(inc.from)} — {inc.ongoing ? <b style={{ color: C.red }}>sigue fuera de servicio</b> : `hasta ${fmtDT(inc.to)}`}
                           <span style={{ color: C.gray }}> · {fmtHours(inc.hours)}</span>
@@ -5941,7 +5941,7 @@ function TrashView({ trash, onRestore, onPurge }) {
       {sorted.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>La papelera está vacía.</p>
       ) : sorted.map(t => (
-        <div key={t.id} className="rounded-lg border p-3 mb-2 flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+        <div key={t.id} className="rounded-lg border p-3 mb-2 flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div>
             <div className="text-sm font-medium" style={{ color: C.ink }}>{t.label}</div>
             <div className="text-xs" style={{ color: C.gray }}>
@@ -6023,11 +6023,11 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
         <BackupButton />
       </div>
 
-      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Correo para envío de informes</div>
         <div className="flex gap-2 flex-wrap">
           <input value={email} onChange={e => { setEmail(e.target.value); setSaved(false); }} placeholder="correo@hotel.com"
-            className="flex-1 text-sm border rounded-md px-3 py-2 outline-none" style={{ borderColor: C.line, minWidth: 220 }} />
+            className="flex-1 text-sm border rounded-md px-3 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 220 }} />
           <Button onClick={() => { onSaveEmail(email.trim()); setSaved(true); }}>Guardar</Button>
         </div>
         {saved && <div className="text-xs mt-1" style={{ color: C.green }}>✓ Correo guardado</div>}
@@ -6036,17 +6036,17 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
         <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Número de WhatsApp para envío de informes</div>
         <div className="flex gap-2 flex-wrap">
           <input value={wa} onChange={e => { setWa(e.target.value); setWaSaved(false); }} placeholder="573001234567 (con indicativo de país, sin + ni espacios)"
-            className="flex-1 text-sm border rounded-md px-3 py-2 outline-none" style={{ borderColor: C.line, minWidth: 220 }} />
+            className="flex-1 text-sm border rounded-md px-3 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 220 }} />
           <Button onClick={() => { onSaveWhatsapp(wa.trim()); setWaSaved(true); }}>Guardar</Button>
         </div>
         {waSaved && <div className="text-xs mt-1" style={{ color: C.green }}>✓ Número guardado</div>}
         <div className="text-xs mt-1" style={{ color: C.gray }}>Al enviar por WhatsApp se abre una conversación con el informe ya escrito; el usuario debe darle enviar manualmente (no hay envío automático real sin una integración de WhatsApp Business).</div>
       </div>
 
-      <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Usuarios ({list.length})</div>
         {list.map(([uname, acc]) => (
-          <div key={uname} className="py-2 border-b last:border-0" style={{ borderColor: C.line }}>
+          <div key={uname} className="py-2 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <div className="text-sm font-medium" style={{ color: C.ink }}>{uname} {uname === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}</div>
@@ -6074,7 +6074,7 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
             {resettingUser === uname && (
               <div className="mt-2 flex items-center gap-2 flex-wrap">
                 <input value={newPw} onChange={e => setNewPw(e.target.value)} type="text" placeholder="Nueva contraseña (mínimo 4 caracteres)"
-                  className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, minWidth: 220 }}
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 220 }}
                   onKeyDown={e => { if (e.key === "Enter") doReset(uname); }} />
                 <Button size="sm" onClick={() => doReset(uname)}>Guardar nueva contraseña</Button>
                 {resetMsg && <span className="text-xs" style={{ color: resetMsg.startsWith("✓") ? C.green : C.red }}>{resetMsg}</span>}
@@ -7219,7 +7219,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
             <Clock size={14} /> {todayStr()}
             {["ronda", "meters", "coldrooms", "laundry", "boiler", "gym"].includes(view) ? (
-              <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line }}>
+              <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             ) : (

@@ -1,9 +1,21 @@
 import { precacheAndRoute } from "workbox-precaching";
 import { registerRoute } from "workbox-routing";
-import { NetworkOnly } from "workbox-strategies";
+import { NetworkOnly, NetworkFirst } from "workbox-strategies";
 
-// Precarga los archivos de la app (lo que ya hacía el service worker generado automáticamente).
+// Precarga los archivos de la app (JS, CSS, imágenes) — estos sí son seguros de guardar de forma
+// agresiva, porque cada vez que cambian, Vite les pone un nombre nuevo (un "hash" en el nombre del
+// archivo). El HTML principal NO se precarga aquí a propósito (ver más abajo por qué).
 precacheAndRoute(self.__WB_MANIFEST);
+
+// El HTML principal (index.html) SIEMPRE se pide primero a la red, con un límite corto de espera,
+// y solo si no hay señal usa la última copia guardada. Esto es lo que evita el error de "pantalla
+// en blanco" después de subir una actualización: así el HTML que carga el navegador siempre apunta
+// a los archivos JS/CSS que SÍ existen en el servidor en este momento, nunca a una versión vieja
+// que ya se borró al desplegar de nuevo.
+registerRoute(
+  ({ request }) => request.mode === "navigate",
+  new NetworkFirst({ cacheName: "html-cache", networkTimeoutSeconds: 4 })
+);
 
 // Nunca cachear las llamadas a Supabase ni a las funciones /api — siempre deben ir a la red,
 // para traer datos frescos y no mostrar información vieja guardada.

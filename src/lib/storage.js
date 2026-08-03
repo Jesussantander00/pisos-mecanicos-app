@@ -98,6 +98,13 @@ export async function flushOfflineQueue() {
   return { synced, remaining: stillPending.length };
 }
 
+/** Trae TODA la información guardada en la base de datos compartida, para hacer un respaldo completo. */
+export async function exportFullBackup() {
+  const { data, error } = await supabase.from("app_storage").select("*");
+  if (error) throw new Error(`No se pudo generar el respaldo: ${error.message || "error de conexión"}`);
+  return data; // [{ key, value, updated_at }, ...]
+}
+
 /**
  * Comprime una foto en el navegador antes de subirla: la reduce a máximo 1280px de ancho
  * y la guarda como JPEG de calidad media. Una foto de celular de 3-5 MB queda normalmente

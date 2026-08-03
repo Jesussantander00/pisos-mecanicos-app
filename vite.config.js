@@ -35,4 +35,19 @@ export default defineConfig({
     host: true, // permite abrir desde el teléfono en la red local durante pruebas (npm run dev -- --host)
     port: 5173,
   },
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        // Separa las librerías pesadas en su propio archivo, aparte del código de la app.
+        // Así el navegador los puede guardar en caché por separado (cambian mucho menos seguido
+        // que el código de la app) y la primera carga se siente más rápida, sobre todo con mala señal.
+        manualChunks: {
+          recharts: ["recharts"],
+          xlsx: ["xlsx"],
+          "supabase-qrcode": ["@supabase/supabase-js", "qrcode"],
+        },
+      },
+    },
+  },
 });

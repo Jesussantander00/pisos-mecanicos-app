@@ -7,7 +7,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -17,7 +17,7 @@ import { sGet, sSet, uploadPhoto, getPendingCount, flushOfflineQueue, exportFull
    PALETA / TOKENS
    Panel de control industrial: azul acero oscuro + ámbar de alerta.
    ============================================================ */
-const C = {
+const LIGHT_COLORS = {
   bg: "#eef1f4",
   panel: "#ffffff",
   ink: "#16212e",
@@ -34,9 +34,43 @@ const C = {
   blue: "#3b6fa0",
   blueSoft: "#e4edf5",
   gray: "#8a97a3",
+  cardAlt: "#fafbfc",
+  white: "#ffffff",
 };
+const DARK_COLORS = {
+  bg: "#0f1720",
+  panel: "#1a2531",
+  ink: "#e7edf3",
+  inkSoft: "#a7b6c4",
+  steel: "#0c1a28",
+  steelDark: "#0a1521",
+  line: "#2b3947",
+  amber: "#e8a53a",
+  amberSoft: "#3a2e14",
+  green: "#4cb765",
+  greenSoft: "#173622",
+  red: "#e2604a",
+  redSoft: "#3a1c17",
+  blue: "#6ea3d8",
+  blueSoft: "#182634",
+  gray: "#8695a3",
+  cardAlt: "#1f2b38",
+  white: "#1a2531",
+};
+// C es un objeto MUTABLE compartido por toda la app (todos los componentes leen C.xxx al dibujarse).
+// Cambiar de tema es simplemente sobrescribir sus valores y forzar un redibujado — así no hay que
+// tocar cada componente uno por uno para que reaccionen al modo oscuro.
+const C = { ...LIGHT_COLORS };
+try {
+  if (localStorage.getItem("pm-local:theme") === "dark") Object.assign(C, DARK_COLORS);
+} catch { /* noop */ }
+function applyTheme(dark) {
+  Object.assign(C, dark ? DARK_COLORS : LIGHT_COLORS);
+}
 
 const STATUS_OPTS = ["Automático", "Manual", "Apagado"];
+// Vistas a las que SÍ puede entrar una cuenta marcada como "Gerencia" pura (sin admin/almacenista) — todo lo demás queda bloqueado.
+const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics"];
 
 /* ============================================================
    DATOS: PISOS Y EQUIPOS (según formato original, verificado
@@ -2803,7 +2837,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onCrea
   );
 }
 
-function SistemaEquiposView({ sistema, equipos, mttoLog, onBack, onSelectEquipo }) {
+function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSelectEquipo, onDeleteEquipo }) {
   return (
     <div>
       <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a sistemas</Button>
@@ -2818,14 +2852,21 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, onBack, onSelectEquipo 
             const status = currentEquipoStatus(eq.id, mttoLog);
             const stats = computeEquipoStats(eq, mttoLog);
             return (
-              <button key={eq.id} onClick={() => onSelectEquipo(eq.id)}
-                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: status.outOfService ? C.red : C.line, background: status.outOfService ? C.redSoft : C.panel }}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold" style={{ color: C.ink }}>{eq.nombre}</div>
-                  {status.outOfService && <Pill tone="red">Fuera de servicio</Pill>}
-                </div>
-                <div className="text-xs mt-1" style={{ color: C.gray }}>{stats.total} mantenimiento{stats.total !== 1 ? "s" : ""} registrado{stats.total !== 1 ? "s" : ""}</div>
-              </button>
+              <div key={eq.id} className="relative">
+                <button onClick={() => onSelectEquipo(eq.id)}
+                  className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: status.outOfService ? C.red : C.line, background: status.outOfService ? C.redSoft : C.panel }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold pr-5" style={{ color: C.ink }}>{eq.nombre}</div>
+                    {status.outOfService && <Pill tone="red">Fuera de servicio</Pill>}
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: C.gray }}>{stats.total} mantenimiento{stats.total !== 1 ? "s" : ""} registrado{stats.total !== 1 ? "s" : ""}</div>
+                </button>
+                {canManage && (
+                  <button onClick={(e) => { e.stopPropagation(); onDeleteEquipo(eq.id); }} className="absolute top-2 right-2 p-1">
+                    <Trash2 size={13} color={C.gray} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -2971,7 +3012,7 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, initialEquipoId, onConsumedInitialEquipo }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -2993,7 +3034,7 @@ function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEqu
 
   if (selectedSistema) {
     const eqs = equipos.filter(e => e.sistema === selectedSistema && e.active !== false);
-    return <SistemaEquiposView sistema={selectedSistema} equipos={eqs} mttoLog={mttoLog} onBack={() => setSelectedSistema(null)} onSelectEquipo={setSelectedEquipoId} />;
+    return <SistemaEquiposView sistema={selectedSistema} equipos={eqs} mttoLog={mttoLog} canManage={canManage} onBack={() => setSelectedSistema(null)} onSelectEquipo={setSelectedEquipoId} onDeleteEquipo={onDeleteEquipo} />;
   }
 
   return (
@@ -3511,7 +3552,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
    ============================================================ */
 const CARGOS = ["Administrativo", "Turnista", "Apoyo", "Mecánico", "Practicante", "Pintor", "Carpintero", "Albañil", "Jardinero"];
 
-function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee }) {
+function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, onDeleteEmployee }) {
   const [name, setName] = useState("");
   const [cargo, setCargo] = useState("");
   const [restDay, setRestDay] = useState("");
@@ -3570,6 +3611,7 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee }) 
                   {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
                 </select>
                 <Button size="sm" variant="ghost" onClick={() => onUpdateEmployee(emp.id, { active: !emp.active })}>{emp.active ? "Desactivar" : "Activar"}</Button>
+                <button onClick={() => onDeleteEmployee(emp.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
               </div>
             </div>
           ))}
@@ -3579,7 +3621,7 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee }) 
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onSetScheduleEntry, onImportJuly, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, reportEmail, onLogSent }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
   const [editingCell, setEditingCell] = useState(null);
@@ -3718,7 +3760,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       )}
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
 
-      {isAdmin && showManage && <EmployeeManagePanel employees={employees} onCreateEmployee={onCreateEmployee} onUpdateEmployee={onUpdateEmployee} />}
+      {isAdmin && showManage && <EmployeeManagePanel employees={employees} onCreateEmployee={onCreateEmployee} onUpdateEmployee={onUpdateEmployee} onDeleteEmployee={onDeleteEmployee} />}
 
       {isAdmin && editingCell && (
         <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.amber, background: C.amberSoft }}>
@@ -3988,8 +4030,9 @@ function PushEnableButton({ onEnable }) {
   );
 }
 
-function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
+function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, counts }) {
   const canManageInv = isAdmin || isAlmacenista;
+  const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
   const modules = [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los 12 pisos mecánicos", access: true },
     { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange },
@@ -4000,8 +4043,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
     { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock },
     { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv },
     { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true },
-    { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin },
-    { id: "executive", label: "Panel Ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin },
+    { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia },
+    { id: "executive", label: "Panel Ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia },
     { id: "maintenance-log", label: "Mantenimientos Realizados", icon: History, desc: "Auditoría de lo registrado", access: isAdmin },
     { id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin },
     { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true },
@@ -4013,9 +4056,10 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
-    { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin },
+    { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin },
-  ];
+    { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
+  ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
   return (
     <div>
@@ -4024,7 +4068,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
           <div>
             <div className="text-white text-lg font-semibold">Hola, {currentUser}</div>
             <div className="text-sm" style={{ color: "#8fa3b8" }}>
-              {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : "Operador"} · {todayStr()}
+              {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"} · {todayStr()}
             </div>
           </div>
           <Gauge size={28} color={C.amber} />
@@ -4032,7 +4076,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
       </div>
 
       <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
-        Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas.
+        {gerenciaLocked
+          ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
+          : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
       </p>
 
       <div className="grid grid-cols-2 gap-3">
@@ -4050,7 +4096,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, onNavigate, counts }) {
               </div>
               {!!m.badge && <span className="text-xs font-bold px-1.5 rounded-full" style={{ background: C.red, color: "#fff" }}>{m.badge}</span>}
             </div>
-            <div className="text-xs" style={{ color: C.gray }}>{m.access ? m.desc : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}</div>
+            <div className="text-xs" style={{ color: C.gray }}>
+              {m.access ? m.desc : gerenciaLocked ? "No disponible para cuentas de gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
+            </div>
           </button>
         ))}
       </div>
@@ -5878,6 +5926,38 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
 /* ============================================================
    VISTA: PANEL DE ADMINISTRADOR
    ============================================================ */
+/* ============================================================
+   VISTA: PAPELERA
+   ============================================================ */
+const TRASH_TYPE_LABELS = { task: "Tarea", account: "Usuario", employee: "Empleado", mttoEquipo: "Equipo de mantenimiento" };
+function TrashView({ trash, onRestore, onPurge }) {
+  const sorted = [...trash].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Papelera</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Lo que se ha borrado queda aquí, por si fue un error — puedes restaurarlo o eliminarlo para siempre.
+      </p>
+      {sorted.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>La papelera está vacía.</p>
+      ) : sorted.map(t => (
+        <div key={t.id} className="rounded-lg border p-3 mb-2 flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+          <div>
+            <div className="text-sm font-medium" style={{ color: C.ink }}>{t.label}</div>
+            <div className="text-xs" style={{ color: C.gray }}>
+              {TRASH_TYPE_LABELS[t.tipo] || t.tipo} · Borrado por {t.deletedBy} · {fmtDT(t.deletedAt)}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => onRestore(t.id)}>Restaurar</Button>
+            <Button size="sm" variant="red" onClick={() => onPurge(t.id)}>Eliminar definitivamente</Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BackupButton() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -5910,7 +5990,7 @@ function BackupButton() {
   );
 }
 
-function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onDeleteAccount, onResetPassword, currentUsername }) {
+function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, currentUsername }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -5975,6 +6055,7 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
               <div className="flex items-center gap-2">
                 {acc.isAdmin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
                 {acc.isAlmacenista && <Pill tone="blue">Almacenista</Pill>}
+                {acc.isGerencia && <Pill tone="green">Gerencia</Pill>}
                 <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uname ? null : uname); setNewPw(""); setResetMsg(""); }}>
                   Restablecer contraseña
                 </Button>
@@ -5983,6 +6064,9 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => onToggleAlmacenista(uname)}>
                   {acc.isAlmacenista ? "Quitar almacenista" : "Hacer almacenista"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onToggleGerencia(uname)}>
+                  {acc.isGerencia ? "Quitar gerencia" : "Hacer gerencia (solo consulta)"}
                 </Button>
                 <Button size="sm" variant="red" disabled={uname === currentUsername} onClick={() => onDeleteAccount(uname)}>Eliminar</Button>
               </div>
@@ -6024,6 +6108,13 @@ export default function App() {
     try { localStorage.setItem("pm-local:last-view", v); } catch { /* noop */ }
   }, []);
   const [nowClock, setNowClock] = useState(() => new Date());
+  const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem("pm-local:theme") === "dark"; } catch { return false; } });
+  const toggleTheme = () => {
+    const next = !darkMode;
+    applyTheme(next); // muta el objeto C compartido ANTES de redibujar, para que no haya parpadeo
+    setDarkMode(next);
+    try { localStorage.setItem("pm-local:theme", next ? "dark" : "light"); } catch { /* noop */ }
+  };
   useEffect(() => {
     const id = setInterval(() => setNowClock(new Date()), 30000);
     return () => clearInterval(id);
@@ -6077,6 +6168,7 @@ export default function App() {
   const [lastCalderaRound, setLastCalderaRound] = useState(null);
   const [pushSubscriptions, setPushSubscriptions] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [trash, setTrash] = useState([]);
   const [mttoLog, setMttoLog] = useState([]);
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -6092,7 +6184,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -6109,6 +6201,7 @@ export default function App() {
         sGet("caldera-rounds-index", true), sGet("last-caldera-round", true),
         sGet("push-subscriptions", true),
         sGet("tasks", true),
+        sGet("trash", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -6145,6 +6238,7 @@ export default function App() {
       setLastCalderaRound(lcar || null);
       setPushSubscriptions(psub || []);
       setTasks(tsk || []);
+      setTrash(trs || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -6229,13 +6323,53 @@ export default function App() {
     await sSet("accounts", next, true);
   };
 
+  const toggleGerencia = async (username) => {
+    const next = { ...accounts, [username]: { ...accounts[username], isGerencia: !accounts[username].isGerencia } };
+    setAccounts(next);
+    await sSet("accounts", next, true);
+  };
+
   const resetPassword = async (username, newPassword) => {
     const passwordHash = await hashPassword(newPassword);
     const next = { ...accounts, [username]: { ...accounts[username], passwordHash } };
     setAccounts(next);
     await sSet("accounts", next, true);
   };
+  /* ---- Papelera ---- */
+  const moveToTrash = async (tipo, data, label) => {
+    const entry = { id: uid("trash"), tipo, data, label: label || data.titulo || data.nombre || data.displayName || data.username || "—", deletedBy: displayName, deletedAt: nowIso() };
+    const next = [entry, ...trash];
+    setTrash(next);
+    await sSet("trash", next, true);
+  };
+
+  const restoreFromTrash = async (trashId) => {
+    const entry = trash.find(t => t.id === trashId);
+    if (!entry) return;
+    if (entry.tipo === "task") {
+      const next = [entry.data, ...tasks]; setTasks(next); await sSet("tasks", next, true);
+    } else if (entry.tipo === "account") {
+      const { username, ...acc } = entry.data;
+      const next = { ...accounts, [username]: acc }; setAccounts(next); await sSet("accounts", next, true);
+    } else if (entry.tipo === "employee") {
+      const next = [entry.data, ...employees]; setEmployees(next); await sSet("employees", next, true);
+    } else if (entry.tipo === "mttoEquipo") {
+      const next = [entry.data, ...mttoEquipos]; setMttoEquipos(next); await sSet("mtto-equipos", next, true);
+    }
+    const nextTrash = trash.filter(t => t.id !== trashId);
+    setTrash(nextTrash);
+    await sSet("trash", nextTrash, true);
+  };
+
+  const purgeFromTrash = async (trashId) => {
+    const nextTrash = trash.filter(t => t.id !== trashId);
+    setTrash(nextTrash);
+    await sSet("trash", nextTrash, true);
+  };
+
   const deleteAccount = async (username) => {
+    const data = { username, ...accounts[username] };
+    await moveToTrash("account", data, `${data.displayName || username} (usuario)`);
     const next = { ...accounts };
     delete next[username];
     setAccounts(next);
@@ -6448,6 +6582,14 @@ export default function App() {
     return rec;
   };
 
+  const deleteMttoEquipo = async (id) => {
+    const item = mttoEquipos.find(e => e.id === id);
+    if (item) await moveToTrash("mttoEquipo", item, `${item.nombre} (equipo de mantenimiento)`);
+    const next = mttoEquipos.filter(e => e.id !== id);
+    setMttoEquipos(next);
+    await sSet("mtto-equipos", next, true);
+  };
+
   const logMaintenance = async (equipoId, form) => {
     const rec = {
       id: uid("mtl"), equipoId, tipo: form.tipo || "preventivo", fecha: form.fecha || nowIso(),
@@ -6483,6 +6625,14 @@ export default function App() {
 
   const updateEmployee = async (id, patch) => {
     const next = employees.map(e => e.id === id ? { ...e, ...patch } : e);
+    setEmployees(next);
+    await sSet("employees", next, true);
+  };
+
+  const deleteEmployee = async (id) => {
+    const item = employees.find(e => e.id === id);
+    if (item) await moveToTrash("employee", item, `${item.name} (empleado)`);
+    const next = employees.filter(e => e.id !== id);
     setEmployees(next);
     await sSet("employees", next, true);
   };
@@ -6609,6 +6759,8 @@ export default function App() {
   };
 
   const deleteTask = async (id) => {
+    const item = tasks.find(t => t.id === id);
+    if (item) await moveToTrash("task", item);
     const next = tasks.filter(t => t.id !== id);
     setTasks(next);
     await sSet("tasks", next, true);
@@ -6898,6 +7050,8 @@ export default function App() {
   const displayName = account.displayName || currentUser;
   const isAdmin = !!account.isAdmin;
   const isAlmacenista = !!account.isAlmacenista;
+  const isGerencia = !!account.isGerencia;
+  const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista; // gerencia "pura": solo consulta
 
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
@@ -6937,6 +7091,11 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (gerenciaLocked && !GERENCIA_ALLOWED_VIEWS.includes(view)) setView("home");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gerenciaLocked, view]);
+
+  useEffect(() => {
     if (currentUser && pendingShelfId) setView("inventory");
   }, [currentUser, pendingShelfId]);
 
@@ -6974,8 +7133,8 @@ export default function App() {
     ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length }] : []),
     ...((isAdmin || isAlmacenista) ? [{ id: "inventory-movements", label: "Movimientos de Inventario", icon: History }] : []),
     { id: "maintenance", label: "Mantenimiento", icon: Wrench },
-    ...(isAdmin ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
-    ...(isAdmin ? [{ id: "executive", label: "Panel Ejecutivo", icon: Gauge }] : []),
+    ...((isAdmin || isGerencia) ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
+    ...((isAdmin || isGerencia) ? [{ id: "executive", label: "Panel Ejecutivo", icon: Gauge }] : []),
     ...(isAdmin ? [{ id: "maintenance-log", label: "Mantenimientos Realizados", icon: History }] : []),
     ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
     { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
@@ -6987,9 +7146,10 @@ export default function App() {
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets },
-    ...(isAdmin ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
+    ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck }] : []),
-  ];
+    ...(isAdmin ? [{ id: "trash", label: "Papelera", icon: Trash2, badge: trash.length }] : []),
+  ].filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id));
 
   return (
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
@@ -7077,6 +7237,9 @@ export default function App() {
                 <CheckCircle2 size={12} /> Sincronizado
               </span>
             )}
+            <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} className="p-1.5 rounded-md" style={{ background: C.bg }}>
+              {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
+            </button>
             {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
             {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
@@ -7093,7 +7256,7 @@ export default function App() {
             </button>
           )}
           {view === "home" && (
-            <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} onNavigate={setView}
+            <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length }} />
           )}
           {view === "ronda" && (
@@ -7129,7 +7292,7 @@ export default function App() {
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
-          {view === "analytics" && isAdmin && (
+          {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
@@ -7149,13 +7312,13 @@ export default function App() {
           )}
           {view === "maintenance" && (
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
-              onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance}
+              onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
-          {view === "maintenance-analytics" && isAdmin && (
+          {view === "maintenance-analytics" && (isAdmin || isGerencia) && (
             <MaintenanceAnalyticsView equipos={mttoEquipos} mttoLog={mttoLog} />
           )}
-          {view === "executive" && isAdmin && (
+          {view === "executive" && (isAdmin || isGerencia) && (
             <ExecutivePanelView equipos={mttoEquipos} mttoLog={mttoLog} roundsIndex={roundsIndex}
               coldRoundsIndex={coldRoundsIndex} meterRoundsIndex={meterRoundsIndex} currentUser={displayName} />
           )}
@@ -7188,7 +7351,7 @@ export default function App() {
           )}
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
-              onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onSetScheduleEntry={setScheduleEntry}
+              onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
               onImportJuly={importJulySchedule2026} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "tasks" && (
@@ -7198,7 +7361,10 @@ export default function App() {
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onDeleteAccount={deleteAccount} onResetPassword={resetPassword} currentUsername={currentUser} />
+              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword} currentUsername={currentUser} />
+          )}
+          {view === "trash" && isAdmin && (
+            <TrashView trash={trash} onRestore={restoreFromTrash} onPurge={purgeFromTrash} />
           )}
         </main>
       </div>

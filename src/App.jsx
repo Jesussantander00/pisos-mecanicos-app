@@ -778,14 +778,6 @@ const GYM_AREA_ITEMS = [
   { id: "gy31", c: 31, n: "Sonido ambiente", k: "status" },
 ];
 const GYM_ALL_ITEMS = [...GYM_CARDIO_ITEMS, ...GYM_FUERZA_ITEMS, ...GYM_AREA_ITEMS];
-// Revisión quincenal más a fondo (solo equipos de cardio, por componente) — complementa al check list diario.
-const GYM_QUINCENAL_COMPONENTS = [
-  { code: "consola", label: "Consola" },
-  { code: "motor", label: "Motor" },
-  { code: "tarjeta", label: "Tarjeta electrónica" },
-  { code: "cubiertas", label: "Cubiertas" },
-  { code: "estructura", label: "Estructura" },
-];
 const GYM_STATUS_OPTS = ["OK", "No OK"];
 const LAVANDERIA_FLOOR = { id: "lavanderia", name: "Lavandería — Piso 4" };
 const GYM_FLOOR = { id: "gimnasio", name: "Gimnasio — Piso 14" };
@@ -1845,114 +1837,6 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
 /* ============================================================
    VISTA: CHECK LIST CALDERA
    ============================================================ */
-/* ============================================================
-   VISTA: GIMNASIO — REVISIÓN QUINCENAL (por componente, solo cardio)
-   ============================================================ */
-function GymQuincenalView({ currentUser, shift, latestValues, onSaveRound }) {
-  const [entries, setEntries] = useState({});
-  const [notes, setNotes] = useState("");
-  const [saved, setSaved] = useState(false);
-  const [validationMsg, setValidationMsg] = useState(null);
-
-  useEffect(() => {
-    const seeded = {};
-    GYM_CARDIO_ITEMS.forEach(item => {
-      if (latestValues[item.id]) seeded[item.id] = latestValues[item.id];
-    });
-    setEntries(seeded);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const setComponent = (equipoId, compCode, value) => {
-    setEntries(prev => ({ ...prev, [equipoId]: { ...prev[equipoId], [compCode]: value } }));
-    setSaved(false);
-  };
-  const setObservacion = (equipoId, value) => {
-    setEntries(prev => ({ ...prev, [equipoId]: { ...prev[equipoId], observacion: value } }));
-    setSaved(false);
-  };
-
-  const filledCount = GYM_CARDIO_ITEMS.filter(item => {
-    const e = entries[item.id];
-    return e && GYM_QUINCENAL_COMPONENTS.every(c => e[c.code]);
-  }).length;
-
-  const handleSave = () => {
-    const missing = [];
-    const missingObs = [];
-    GYM_CARDIO_ITEMS.forEach(item => {
-      const e = entries[item.id] || {};
-      const allFilled = GYM_QUINCENAL_COMPONENTS.every(c => e[c.code]);
-      if (!allFilled) missing.push(item.n);
-      const hasFalla = GYM_QUINCENAL_COMPONENTS.some(c => e[c.code] === "Falla");
-      if (hasFalla && !(e.observacion || "").trim()) missingObs.push(item.n);
-    });
-    if (missingObs.length > 0) {
-      setValidationMsg(`Falta el comentario de qué falló en: ${missingObs.join(", ")}.`);
-      return;
-    }
-    if (missing.length > 0) {
-      setValidationMsg(`Todavía faltan componentes por revisar en: ${missing.join(", ")}.`);
-      return;
-    }
-    setValidationMsg(null);
-    onSaveRound(entries, notes);
-    setSaved(true);
-  };
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Gimnasio — Revisión Quincenal</h2>
-          <p className="text-sm" style={{ color: C.inkSoft }}>Revisión más a fondo de los equipos de cardio, por componente. Complementa al check list diario.</p>
-        </div>
-        <Pill tone="gray">{filledCount}/{GYM_CARDIO_ITEMS.length} equipos revisados</Pill>
-      </div>
-
-      {GYM_CARDIO_ITEMS.map(item => {
-        const e = entries[item.id] || {};
-        return (
-          <div key={item.id} className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-            <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>{item.n}</div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">
-              {GYM_QUINCENAL_COMPONENTS.map(comp => (
-                <div key={comp.code}>
-                  <label className="text-xs block mb-0.5" style={{ color: C.gray }}>{comp.label}</label>
-                  <select value={e[comp.code] || ""} onChange={ev => setComponent(item.id, comp.code, ev.target.value)}
-                    className="text-xs border rounded-md px-1.5 py-1 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                    <option value="">—</option>
-                    <option value="OK">OK</option>
-                    <option value="Falla">Falla</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-            <input value={e.observacion || ""} onChange={ev => setObservacion(item.id, ev.target.value)}
-              placeholder="Observaciones (obligatorio si algo falló)"
-              className="w-full text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-          </div>
-        );
-      })}
-
-      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas generales</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-      </div>
-
-      {validationMsg && (
-        <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
-      )}
-
-      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
-        <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
-        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar revisión quincenal</Button>
-      </div>
-      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Revisión guardada correctamente</div>}
-    </div>
-  );
-}
-
 function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
   const blank = { horaManometro: "", horaMcDonell: "", horaFondo: "", horaTqDistribucion: "", presionVaporPsi: "", observaciones: "" };
   const [form, setForm] = useState(blank);
@@ -4488,7 +4372,6 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true },
     { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
-    { id: "gym-quincenal", label: "Gimnasio Quincenal", icon: CalendarDays, desc: "Revisión a fondo, por componente", access: true },
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
@@ -6719,8 +6602,6 @@ export default function App() {
   const [lavanderiaRoundsIndex, setLavanderiaRoundsIndex] = useState([]);
   const [latestGymValues, setLatestGymValues] = useState({});
   const [gymRoundsIndex, setGymRoundsIndex] = useState([]);
-  const [latestGymQuincenalValues, setLatestGymQuincenalValues] = useState({});
-  const [gymQuincenalRoundsIndex, setGymQuincenalRoundsIndex] = useState([]);
   const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
   const [lastCalderaRound, setLastCalderaRound] = useState(null);
   const [pushSubscriptions, setPushSubscriptions] = useState([]);
@@ -6742,7 +6623,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, lgqv, gqri] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -6761,7 +6642,6 @@ export default function App() {
         sGet("tasks", true),
         sGet("trash", true),
         sGet("login-log", true),
-        sGet("latest-gym-quincenal-values", true), sGet("gym-quincenal-rounds-index", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -6800,8 +6680,6 @@ export default function App() {
       setTasks(tsk || []);
       setTrash(trs || []);
       setLoginLog(llog || []);
-      setLatestGymQuincenalValues(lgqv || {});
-      setGymQuincenalRoundsIndex(gqri || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -6826,6 +6704,9 @@ export default function App() {
       setAccounts(next);
       setCurrentUser(key);
       setView("home");
+      if (!isFirstEver && pushSubscriptions.length > 0) {
+        sendPushToSubscriptions(pushSubscriptions, "👤 Cuenta nueva esperando aprobación", `"${username}" se registró y necesita que la aprueben.`, "/");
+      }
     } catch (e) {
       console.error("Error creando cuenta:", e);
       setAuthError("No se pudo conectar con el servidor para crear la cuenta. Revisa tu conexión e intenta de nuevo.");
@@ -7602,25 +7483,6 @@ export default function App() {
     saveAreaRound(GYM_ALL_ITEMS, GYM_FLOOR, entries, notes, latestGymValues, setLatestGymValues,
       gymRoundsIndex, setGymRoundsIndex, "latest-gym-values", "gym-rounds-index");
 
-  const saveGymQuincenalRound = async (entries, notes) => {
-    const ts = nowIso();
-    const id = `gym-q-${Date.now()}`;
-    const newLatest = { ...latestGymQuincenalValues };
-    GYM_CARDIO_ITEMS.forEach(item => {
-      if (entries[item.id]) newLatest[item.id] = { ...entries[item.id], updatedAt: ts, updatedBy: displayName };
-    });
-    const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, notes };
-    const newIndex = [idxRec, ...gymQuincenalRoundsIndex].slice(0, 200);
-    setLatestGymQuincenalValues(newLatest);
-    setGymQuincenalRoundsIndex(newIndex);
-    await Promise.all([
-      sSet(`gym-quincenal-round-${id}`, entries, true),
-      sSet("gym-quincenal-rounds-index", newIndex, true),
-      sSet("latest-gym-quincenal-values", newLatest, true),
-    ]);
-    return idxRec;
-  };
-
   const saveCalderaRound = async (form) => {
     const ts = nowIso();
     const record = { id: `cald-${Date.now()}`, date: todayStr(), shift, user: displayName, savedAt: ts, ...form };
@@ -7788,7 +7650,6 @@ export default function App() {
     { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
     { id: "boiler", label: "Check List Caldera", icon: Gauge },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
-    { id: "gym-quincenal", label: "Gimnasio Quincenal", icon: CalendarDays },
     { id: "schedules", label: "Horario Mensual", icon: Users },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
@@ -8009,9 +7870,6 @@ export default function App() {
               ]} statusOptions={GYM_STATUS_OPTS}
               currentUser={displayName} shift={shift} activeIssues={activeIssues} latestValues={latestGymValues}
               onResolveIssue={resolveIssue} onSaveRound={saveGymRound} />
-          )}
-          {view === "gym-quincenal" && (
-            <GymQuincenalView currentUser={displayName} shift={shift} latestValues={latestGymQuincenalValues} onSaveRound={saveGymQuincenalRound} />
           )}
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}

@@ -778,6 +778,14 @@ const GYM_AREA_ITEMS = [
   { id: "gy31", c: 31, n: "Sonido ambiente", k: "status" },
 ];
 const GYM_ALL_ITEMS = [...GYM_CARDIO_ITEMS, ...GYM_FUERZA_ITEMS, ...GYM_AREA_ITEMS];
+// Revisión quincenal más a fondo (solo equipos de cardio, por componente) — complementa al check list diario.
+const GYM_QUINCENAL_COMPONENTS = [
+  { code: "consola", label: "Consola" },
+  { code: "motor", label: "Motor" },
+  { code: "tarjeta", label: "Tarjeta electrónica" },
+  { code: "cubiertas", label: "Cubiertas" },
+  { code: "estructura", label: "Estructura" },
+];
 const GYM_STATUS_OPTS = ["OK", "No OK"];
 const LAVANDERIA_FLOOR = { id: "lavanderia", name: "Lavandería — Piso 4" };
 const GYM_FLOOR = { id: "gimnasio", name: "Gimnasio — Piso 14" };
@@ -1837,6 +1845,114 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
 /* ============================================================
    VISTA: CHECK LIST CALDERA
    ============================================================ */
+/* ============================================================
+   VISTA: GIMNASIO — REVISIÓN QUINCENAL (por componente, solo cardio)
+   ============================================================ */
+function GymQuincenalView({ currentUser, shift, latestValues, onSaveRound }) {
+  const [entries, setEntries] = useState({});
+  const [notes, setNotes] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [validationMsg, setValidationMsg] = useState(null);
+
+  useEffect(() => {
+    const seeded = {};
+    GYM_CARDIO_ITEMS.forEach(item => {
+      if (latestValues[item.id]) seeded[item.id] = latestValues[item.id];
+    });
+    setEntries(seeded);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setComponent = (equipoId, compCode, value) => {
+    setEntries(prev => ({ ...prev, [equipoId]: { ...prev[equipoId], [compCode]: value } }));
+    setSaved(false);
+  };
+  const setObservacion = (equipoId, value) => {
+    setEntries(prev => ({ ...prev, [equipoId]: { ...prev[equipoId], observacion: value } }));
+    setSaved(false);
+  };
+
+  const filledCount = GYM_CARDIO_ITEMS.filter(item => {
+    const e = entries[item.id];
+    return e && GYM_QUINCENAL_COMPONENTS.every(c => e[c.code]);
+  }).length;
+
+  const handleSave = () => {
+    const missing = [];
+    const missingObs = [];
+    GYM_CARDIO_ITEMS.forEach(item => {
+      const e = entries[item.id] || {};
+      const allFilled = GYM_QUINCENAL_COMPONENTS.every(c => e[c.code]);
+      if (!allFilled) missing.push(item.n);
+      const hasFalla = GYM_QUINCENAL_COMPONENTS.some(c => e[c.code] === "Falla");
+      if (hasFalla && !(e.observacion || "").trim()) missingObs.push(item.n);
+    });
+    if (missingObs.length > 0) {
+      setValidationMsg(`Falta el comentario de qué falló en: ${missingObs.join(", ")}.`);
+      return;
+    }
+    if (missing.length > 0) {
+      setValidationMsg(`Todavía faltan componentes por revisar en: ${missing.join(", ")}.`);
+      return;
+    }
+    setValidationMsg(null);
+    onSaveRound(entries, notes);
+    setSaved(true);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Gimnasio — Revisión Quincenal</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Revisión más a fondo de los equipos de cardio, por componente. Complementa al check list diario.</p>
+        </div>
+        <Pill tone="gray">{filledCount}/{GYM_CARDIO_ITEMS.length} equipos revisados</Pill>
+      </div>
+
+      {GYM_CARDIO_ITEMS.map(item => {
+        const e = entries[item.id] || {};
+        return (
+          <div key={item.id} className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>{item.n}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">
+              {GYM_QUINCENAL_COMPONENTS.map(comp => (
+                <div key={comp.code}>
+                  <label className="text-xs block mb-0.5" style={{ color: C.gray }}>{comp.label}</label>
+                  <select value={e[comp.code] || ""} onChange={ev => setComponent(item.id, comp.code, ev.target.value)}
+                    className="text-xs border rounded-md px-1.5 py-1 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                    <option value="">—</option>
+                    <option value="OK">OK</option>
+                    <option value="Falla">Falla</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+            <input value={e.observacion || ""} onChange={ev => setObservacion(item.id, ev.target.value)}
+              placeholder="Observaciones (obligatorio si algo falló)"
+              className="w-full text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          </div>
+        );
+      })}
+
+      <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas generales</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
+
+      {validationMsg && (
+        <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
+      )}
+
+      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+        <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
+        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar revisión quincenal</Button>
+      </div>
+      {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Revisión guardada correctamente</div>}
+    </div>
+  );
+}
+
 function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
   const blank = { horaManometro: "", horaMcDonell: "", horaFondo: "", horaTqDistribucion: "", presionVaporPsi: "", observaciones: "" };
   const [form, setForm] = useState(blank);
@@ -4313,6 +4429,45 @@ function PushEnableButton({ onEnable }) {
   );
 }
 
+/* ============================================================
+   RECORRIDO GUIADO (primera vez que alguien entra)
+   ============================================================ */
+const ONBOARDING_STEPS = [
+  { title: "¡Bienvenido a Pisos Mecánicos!", body: "Esta es la app para tus rondas, mantenimiento, inventario y más — reemplaza los formatos en papel. Te mostramos rápido cómo usarla, toma un minuto." },
+  { title: "Todo empieza en Inicio", body: "Ahí tienes una tarjeta por cada sección de la app. Toca la que necesites. Si alguna se ve atenuada/gris, es porque tu cuenta no tiene ese permiso — pídeselo a un administrador si crees que deberías tenerlo." },
+  { title: "Tu ronda diaria", body: "Entra a \"Ronda de revisión\", elige tu turno arriba a la derecha, y ve marcando cada equipo piso por piso. Guarda al terminar cada piso, y sigue al siguiente." },
+  { title: "Si algo está dañado", body: "Marca \"Dañado / Fuera de servicio\" en ese equipo y escribe qué pasó — es obligatorio. Queda registrado y avisa a los administradores." },
+  { title: "Busca lo que necesites", body: "Arriba hay un buscador — te ayuda a encontrar cualquier equipo rápido, sin tener que navegar por los menús. Busca justo donde estés trabajando." },
+  { title: "¡Listo para empezar!", body: "Puedes volver a ver esta guía cuando quieras desde el botón de ayuda (?) arriba, junto al resto de íconos." },
+];
+
+function OnboardingTour({ onClose }) {
+  const [step, setStep] = useState(0);
+  const s = ONBOARDING_STEPS[step];
+  const isLast = step === ONBOARDING_STEPS.length - 1;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }}>
+      <div className="rounded-xl max-w-sm w-full p-5" style={{ background: C.panel }}>
+        <div className="flex items-center gap-1 mb-4">
+          {ONBOARDING_STEPS.map((_, i) => (
+            <div key={i} className="h-1 flex-1 rounded-full" style={{ background: i <= step ? C.amber : C.line }} />
+          ))}
+        </div>
+        <h3 className="text-base font-semibold mb-2" style={{ color: C.ink }}>{s.title}</h3>
+        <p className="text-sm mb-6" style={{ color: C.inkSoft }}>{s.body}</p>
+        <div className="flex items-center justify-between">
+          <button onClick={onClose} className="text-xs" style={{ color: C.gray }}>Saltar</button>
+          <div className="flex items-center gap-2">
+            {step > 0 && <Button size="sm" variant="ghost" onClick={() => setStep(step - 1)}>Atrás</Button>}
+            <Button size="sm" onClick={() => isLast ? onClose() : setStep(step + 1)}>{isLast ? "Entendido" : "Siguiente"}</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, counts }) {
   const canManageInv = isAdmin || isAlmacenista;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
@@ -4333,6 +4488,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true },
     { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
+    { id: "gym-quincenal", label: "Gimnasio Quincenal", icon: CalendarDays, desc: "Revisión a fondo, por componente", access: true },
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
@@ -4340,7 +4496,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
-    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin },
+    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
@@ -5056,7 +5212,7 @@ function pdfDocToBase64(doc) {
 }
 
 /** PDF de UNA entrega de turno (el recorrido que se acaba de completar), piso por piso. */
-async function generateTourPdf(tour) {
+async function generateTourPdf(tour, signatureDataUrl) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();
@@ -5087,6 +5243,19 @@ async function generateTourPdf(tour) {
     }
   });
 
+  if (signatureDataUrl) {
+    if (y > pageH - 55) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, "Firma de quien entrega el turno");
+    try {
+      doc.addImage(signatureDataUrl, "PNG", 14, y, 70, 27);
+      y += 30;
+    } catch { /* si la imagen no carga, se omite sin romper el PDF */ }
+    doc.setFontSize(8.5); doc.setTextColor(...PDF_C.inkSoft);
+    doc.text(`${tour.user} — ${fmtDT(nowIso())}`, 14, y);
+    doc.setTextColor(...PDF_C.ink); doc.setFontSize(9);
+    y += 6;
+  }
+
   pdfFooterAll(doc);
   return doc;
 }
@@ -5098,9 +5267,9 @@ async function generateTourPdf(tour) {
  * de Resend, que nunca toca el navegador) dispara el correo. No requiere que nadie
  * confirme "Enviar" en ninguna app — sucede solo.
  */
-async function sendTourEmailAuto(to, tour) {
+async function sendTourEmailAuto(to, tour, signatureDataUrl) {
   try {
-    const doc = await generateTourPdf(tour);
+    const doc = await generateTourPdf(tour, signatureDataUrl);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -5204,12 +5373,70 @@ function PrintableReport({ activeIssues, issueHistory, roundsIndex, onClose }) {
    por piso cómo quedó cada equipo y permite enviarlo de inmediato
    por correo o WhatsApp con un solo toque.
    ============================================================ */
+/* ============================================================
+   FIRMA DIGITAL (canvas) — para la Entrega de Turno
+   ============================================================ */
+function SignaturePad({ onChange }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+
+  const getPos = (e, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const point = e.touches ? e.touches[0] : e;
+    return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+  };
+
+  const start = (e) => {
+    e.preventDefault();
+    drawingRef.current = true;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const { x, y } = getPos(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+  const move = (e) => {
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const { x, y } = getPos(e, canvas);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.stroke();
+  };
+  const end = () => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    onChange(canvasRef.current.toDataURL("image/png"));
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    onChange(null);
+  };
+
+  return (
+    <div>
+      <canvas ref={canvasRef} width={340} height={130}
+        className="rounded-md border w-full touch-none" style={{ borderColor: C.line, background: "#fff", maxWidth: 340 }}
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
+      <button onClick={clear} className="text-xs mt-1" style={{ color: C.gray }}>Borrar firma</button>
+    </div>
+  );
+}
+
 function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [waTo, setWaTo] = useState(reportWhatsapp || "");
   const [sentNow, setSentNow] = useState(null);
   const [sendingAuto, setSendingAuto] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [signature, setSignature] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setWaTo(reportWhatsapp || ""); }, [reportWhatsapp]);
@@ -5231,7 +5458,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const doDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const doc = await generateTourPdf(lastTour);
+      const doc = await generateTourPdf(lastTour, signature);
       doc.save(`entrega-turno-${String(lastTour.date).replace(/\//g, "-")}.pdf`);
     } catch {
       setSentNow({ ok: false, text: "No se pudo generar el PDF (revisa la conexión a internet, se necesita la primera vez)." });
@@ -5242,7 +5469,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const doSendAutoEmail = async () => {
     if (!emailTo.trim()) { setSentNow({ ok: false, text: "Escribe un correo destino." }); return; }
     setSendingAuto(true); setSentNow(null);
-    const res = await sendTourEmailAuto(emailTo.trim(), lastTour);
+    const res = await sendTourEmailAuto(emailTo.trim(), lastTour, signature);
     setSentNow({ ok: res.ok, text: res.message });
     onLogSent({ to: emailTo.trim(), method: "Entrega de turno (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSendingAuto(false);
@@ -5287,6 +5514,14 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         Turno <b>{lastTour.shift}</b> · {lastTour.date} · recorrido de <b>{lastTour.user}</b> ·{" "}
         {lastTour.itemCount} equipos revisados{lastTour.damagedCount ? `, ${lastTour.damagedCount} dañados` : ", todo en orden"}
       </p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
+          Firma de quien entrega el turno <span className="normal-case font-normal" style={{ color: C.gray }}>(opcional)</span>
+        </div>
+        <SignaturePad onChange={setSignature} />
+        <div className="text-xs mt-1" style={{ color: C.gray }}>Si firmas aquí, queda incluida en el PDF que descargues o envíes.</div>
+      </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF de este recorrido</div>
@@ -6280,7 +6515,7 @@ function BackupButton() {
   );
 }
 
-function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, currentUsername }) {
+function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, loginLog, currentUsername }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -6290,6 +6525,7 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
   const [resetMsg, setResetMsg] = useState("");
   const list = Object.entries(accounts).sort((a, b) => (a[1].createdAt || "").localeCompare(b[1].createdAt || ""));
   const adminCount = list.filter(([, a]) => a.isAdmin).length;
+  const pending = list.filter(([, a]) => a.approved === false);
 
   const doReset = async (uname) => {
     if (!newPw || newPw.length < 4) { setResetMsg("La contraseña debe tener al menos 4 caracteres."); return; }
@@ -6312,6 +6548,23 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
         </p>
         <BackupButton />
       </div>
+
+      {pending.length > 0 && (
+        <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.red }}>
+            {pending.length} cuenta{pending.length !== 1 ? "s" : ""} esperando aprobación
+          </div>
+          {pending.map(([uname, acc]) => (
+            <div key={uname} className="flex items-center justify-between gap-2 py-1.5 flex-wrap">
+              <div className="text-sm" style={{ color: C.ink }}>{acc.displayName || uname} <span style={{ color: C.gray }}>({uname})</span></div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => onApproveAccount(uname)}>Aprobar</Button>
+                <Button size="sm" variant="red" onClick={() => onRejectAccount(uname)}>Rechazar</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Correo para envío de informes</div>
@@ -6341,6 +6594,13 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
               <div>
                 <div className="text-sm font-medium" style={{ color: C.ink }}>{uname} {uname === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}</div>
                 <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.createdAt)}</div>
+                <div className="text-xs" style={{ color: C.gray }}>
+                  {(() => {
+                    const entries = (loginLog || []).filter(l => l.username === uname);
+                    if (entries.length === 0) return "Nunca ha entrado";
+                    return `Último ingreso: ${fmtDT(entries[0].at)} · ${entries.length} ingreso${entries.length !== 1 ? "s" : ""} en total`;
+                  })()}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {acc.isAdmin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
@@ -6399,6 +6659,11 @@ export default function App() {
   }, []);
   const [nowClock, setNowClock] = useState(() => new Date());
   const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem("pm-local:theme") === "dark"; } catch { return false; } });
+  const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
+  const closeOnboarding = () => {
+    setShowOnboarding(false);
+    try { localStorage.setItem("pm-local:onboarded", "1"); } catch { /* noop */ }
+  };
   const toggleTheme = () => {
     const next = !darkMode;
     applyTheme(next); // muta el objeto C compartido ANTES de redibujar, para que no haya parpadeo
@@ -6454,11 +6719,14 @@ export default function App() {
   const [lavanderiaRoundsIndex, setLavanderiaRoundsIndex] = useState([]);
   const [latestGymValues, setLatestGymValues] = useState({});
   const [gymRoundsIndex, setGymRoundsIndex] = useState([]);
+  const [latestGymQuincenalValues, setLatestGymQuincenalValues] = useState({});
+  const [gymQuincenalRoundsIndex, setGymQuincenalRoundsIndex] = useState([]);
   const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
   const [lastCalderaRound, setLastCalderaRound] = useState(null);
   const [pushSubscriptions, setPushSubscriptions] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [trash, setTrash] = useState([]);
+  const [loginLog, setLoginLog] = useState([]);
   const [mttoLog, setMttoLog] = useState([]);
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -6474,7 +6742,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, lgqv, gqri] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -6492,6 +6760,8 @@ export default function App() {
         sGet("push-subscriptions", true),
         sGet("tasks", true),
         sGet("trash", true),
+        sGet("login-log", true),
+        sGet("latest-gym-quincenal-values", true), sGet("gym-quincenal-rounds-index", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -6529,6 +6799,9 @@ export default function App() {
       setPushSubscriptions(psub || []);
       setTasks(tsk || []);
       setTrash(trs || []);
+      setLoginLog(llog || []);
+      setLatestGymQuincenalValues(lgqv || {});
+      setGymQuincenalRoundsIndex(gqri || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -6546,8 +6819,8 @@ export default function App() {
     if (accounts[key]) { setAuthError("Ese usuario ya existe. Elige otro o inicia sesión."); setAuthBusy(false); return; }
     try {
       const passwordHash = await hashPassword(password);
-      const isAdmin = Object.keys(accounts).length === 0; // el primer usuario creado es admin
-      const next = { ...accounts, [key]: { displayName: username, passwordHash, isAdmin, createdAt: nowIso() } };
+      const isFirstEver = Object.keys(accounts).length === 0; // el primer usuario creado es admin, y queda aprobado de una
+      const next = { ...accounts, [key]: { displayName: username, passwordHash, isAdmin: isFirstEver, approved: isFirstEver, createdAt: nowIso() } };
       await sSet("accounts", next, true);
       await sSet("session", { username: key }, false);
       setAccounts(next);
@@ -6576,11 +6849,29 @@ export default function App() {
       await sSet("session", { username: key }, false);
       setCurrentUser(key);
       setView("home");
+      // Registra el ingreso para poder ver, como admin, quién está usando la app y con qué frecuencia.
+      const logEntry = { username: key, at: nowIso() };
+      const nextLog = [logEntry, ...loginLog].slice(0, 2000);
+      setLoginLog(nextLog);
+      sSet("login-log", nextLog, true); // no se espera (await) a propósito, para no atrasar el ingreso
     } catch (e) {
       console.error("Error iniciando sesión:", e);
       setAuthError("No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.");
     }
     setAuthBusy(false);
+  };
+
+  const approveAccount = async (username) => {
+    const next = { ...accounts, [username]: { ...accounts[username], approved: true } };
+    setAccounts(next);
+    await sSet("accounts", next, true);
+  };
+
+  const rejectAccount = async (username) => {
+    const next = { ...accounts };
+    delete next[username];
+    setAccounts(next);
+    await sSet("accounts", next, true);
   };
 
   const logout = async () => { setCurrentUser(null); await sSet("session", null, false); };
@@ -7311,6 +7602,25 @@ export default function App() {
     saveAreaRound(GYM_ALL_ITEMS, GYM_FLOOR, entries, notes, latestGymValues, setLatestGymValues,
       gymRoundsIndex, setGymRoundsIndex, "latest-gym-values", "gym-rounds-index");
 
+  const saveGymQuincenalRound = async (entries, notes) => {
+    const ts = nowIso();
+    const id = `gym-q-${Date.now()}`;
+    const newLatest = { ...latestGymQuincenalValues };
+    GYM_CARDIO_ITEMS.forEach(item => {
+      if (entries[item.id]) newLatest[item.id] = { ...entries[item.id], updatedAt: ts, updatedBy: displayName };
+    });
+    const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, notes };
+    const newIndex = [idxRec, ...gymQuincenalRoundsIndex].slice(0, 200);
+    setLatestGymQuincenalValues(newLatest);
+    setGymQuincenalRoundsIndex(newIndex);
+    await Promise.all([
+      sSet(`gym-quincenal-round-${id}`, entries, true),
+      sSet("gym-quincenal-rounds-index", newIndex, true),
+      sSet("latest-gym-quincenal-values", newLatest, true),
+    ]);
+    return idxRec;
+  };
+
   const saveCalderaRound = async (form) => {
     const ts = nowIso();
     const record = { id: `cald-${Date.now()}`, date: todayStr(), shift, user: displayName, savedAt: ts, ...form };
@@ -7377,6 +7687,7 @@ export default function App() {
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
+  const pendingAccountsCount = useMemo(() => Object.values(accounts).filter(a => a.approved === false).length, [accounts]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
     [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex]
@@ -7436,6 +7747,22 @@ export default function App() {
   );
   if (!currentUser) return <AuthScreen accounts={accounts} onLogin={login} onRegister={register} error={authError} busy={authBusy} />;
 
+  if (account.approved === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
+        <div className="max-w-sm text-center rounded-xl border p-6" style={{ borderColor: C.line, background: C.panel }}>
+          <Clock size={32} style={{ color: C.amber, margin: "0 auto 12px" }} />
+          <h2 className="text-base font-semibold mb-2" style={{ color: C.ink }}>Cuenta pendiente de aprobación</h2>
+          <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+            Ya creaste tu cuenta, pero un administrador todavía tiene que aprobarla antes de que puedas usar la app.
+            Avísale — puede hacerlo desde el Panel de administrador.
+          </p>
+          <Button variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
+        </div>
+      </div>
+    );
+  }
+
   if (printMode) {
     return <PrintableReport activeIssues={activeIssues} issueHistory={issueHistory} roundsIndex={roundsIndex} onClose={() => setPrintMode(false)} />;
   }
@@ -7461,6 +7788,7 @@ export default function App() {
     { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
     { id: "boiler", label: "Check List Caldera", icon: Gauge },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
+    { id: "gym-quincenal", label: "Gimnasio Quincenal", icon: CalendarDays },
     { id: "schedules", label: "Horario Mensual", icon: Users },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
@@ -7468,12 +7796,13 @@ export default function App() {
     { id: "reports", label: "Reportes", icon: History },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets },
     ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
-    ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck }] : []),
+    ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount }] : []),
     ...(isAdmin ? [{ id: "trash", label: "Papelera", icon: Trash2, badge: trash.length }] : []),
   ].filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id));
 
   return (
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
+      {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
       {/* SIDEBAR */}
       <aside className={`fixed lg:static z-20 top-0 left-0 w-64 shrink-0 transition-transform flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{ background: C.steel, height: "100vh" }}>
@@ -7565,6 +7894,9 @@ export default function App() {
                 <CheckCircle2 size={12} /> Sincronizado
               </span>
             )}
+            <button onClick={() => setShowOnboarding(true)} title="Ver guía de bienvenida" className="p-1.5 rounded-md" style={{ background: C.bg }}>
+              <span className="text-xs font-bold w-4 h-4 flex items-center justify-center" style={{ color: C.ink }}>?</span>
+            </button>
             <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} className="p-1.5 rounded-md" style={{ background: C.bg }}>
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
@@ -7585,7 +7917,7 @@ export default function App() {
           )}
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
-              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length }} />
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length, pendingAccounts: pendingAccountsCount }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
@@ -7678,6 +8010,9 @@ export default function App() {
               currentUser={displayName} shift={shift} activeIssues={activeIssues} latestValues={latestGymValues}
               onResolveIssue={resolveIssue} onSaveRound={saveGymRound} />
           )}
+          {view === "gym-quincenal" && (
+            <GymQuincenalView currentUser={displayName} shift={shift} latestValues={latestGymQuincenalValues} onSaveRound={saveGymQuincenalRound} />
+          )}
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
@@ -7690,7 +8025,8 @@ export default function App() {
           {view === "admin" && isAdmin && (
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword} currentUsername={currentUser} />
+              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
+              onApproveAccount={approveAccount} onRejectAccount={rejectAccount} loginLog={loginLog} currentUsername={currentUser} />
           )}
           {view === "trash" && isAdmin && (
             <TrashView trash={trash} onRestore={restoreFromTrash} onPurge={purgeFromTrash} />

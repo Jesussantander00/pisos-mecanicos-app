@@ -1336,6 +1336,10 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 
   const isLast = floorIndex === floorCount - 1;
   const [validationMsg, setValidationMsg] = useState(null);
+  const [search, setSearch] = useState("");
+  const visibleItems = search.trim()
+    ? floor.items.filter(it => it.n.toLowerCase().includes(search.trim().toLowerCase()))
+    : floor.items;
 
   const handleSave = () => {
     const { missing, missingComment } = validateRoundEntries(floor.items, entries);
@@ -1378,7 +1382,15 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
         Los campos ya vienen con lo último registrado por el turno anterior — revisa, corrige lo que cambió y guarda.
       </div>
 
-      {floor.items.map(item => (
+      <div className="relative mb-3">
+        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar un equipo de este piso…"
+          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
+
+      {visibleItems.length === 0 ? (
+        <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Sin resultados para "{search}" en este piso.</p>
+      ) : visibleItems.map(item => (
         <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
           activeIssue={activeIssues[item.id]} previous={latestValues[item.id]}
           onResolve={(it, solution) => onResolveIssue(it, solution)} />
@@ -1415,6 +1427,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
    ============================================================ */
 function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound, coldHistory }) {
   const [entries, setEntries] = useState({});
+  const [search, setSearch] = useState("");
   const [notes, setNotes] = useState("");
   const [supervisor, setSupervisor] = useState("");
   const [ingeniero, setIngeniero] = useState("");
@@ -1508,27 +1521,55 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         </div>
       )}
 
-      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>Cuartos fríos ({COLD_ROOMS.length})</div>
-      {COLD_ROOMS.map(item => (
-        <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
-          activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} hint={item.setpoint}
-          outOfRange={isColdRoomOutOfRange(item, entries[item.id]?.value)}
-          onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
-      ))}
+      <div className="relative mb-3">
+        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar un cuarto o máquina…"
+          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
 
-      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>Máquinas de hielo A&B ({ICE_MACHINES_AB.length})</div>
-      {ICE_MACHINES_AB.map(item => (
-        <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
-          activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} statusOptions={ICE_STATUS_OPTS}
-          onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
-      ))}
-
-      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>Máquinas de hielo — Linos / Habitaciones ({ICE_MACHINES_LINOS.length})</div>
-      {ICE_MACHINES_LINOS.map(item => (
-        <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
-          activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} statusOptions={ICE_STATUS_OPTS}
-          onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
-      ))}
+      {(() => {
+        const q = search.trim().toLowerCase();
+        const visColdRooms = q ? COLD_ROOMS.filter(i => i.n.toLowerCase().includes(q)) : COLD_ROOMS;
+        const visIceAB = q ? ICE_MACHINES_AB.filter(i => i.n.toLowerCase().includes(q)) : ICE_MACHINES_AB;
+        const visIceLinos = q ? ICE_MACHINES_LINOS.filter(i => i.n.toLowerCase().includes(q)) : ICE_MACHINES_LINOS;
+        const noResults = q && visColdRooms.length === 0 && visIceAB.length === 0 && visIceLinos.length === 0;
+        if (noResults) return <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Sin resultados para "{search}".</p>;
+        return (
+          <>
+            {visColdRooms.length > 0 && (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>Cuartos fríos ({visColdRooms.length})</div>
+                {visColdRooms.map(item => (
+                  <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+                    activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} hint={item.setpoint}
+                    outOfRange={isColdRoomOutOfRange(item, entries[item.id]?.value)}
+                    onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+                ))}
+              </>
+            )}
+            {visIceAB.length > 0 && (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>Máquinas de hielo A&B ({visIceAB.length})</div>
+                {visIceAB.map(item => (
+                  <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+                    activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} statusOptions={ICE_STATUS_OPTS}
+                    onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+                ))}
+              </>
+            )}
+            {visIceLinos.length > 0 && (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>Máquinas de hielo — Linos / Habitaciones ({visIceLinos.length})</div>
+                {visIceLinos.map(item => (
+                  <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+                    activeIssue={activeIssues[item.id]} previous={latestColdValues[item.id]} statusOptions={ICE_STATUS_OPTS}
+                    onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+                ))}
+              </>
+            )}
+          </>
+        );
+      })()}
 
       <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
@@ -1698,6 +1739,7 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
 function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUser, shift, activeIssues, latestValues, onResolveIssue, onSaveRound }) {
   const allItems = useMemo(() => sections.flatMap(s => s.items), [sections]);
   const [entries, setEntries] = useState({});
+  const [search, setSearch] = useState("");
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
   const [validationMsg, setValidationMsg] = useState(null);
@@ -1749,16 +1791,28 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
         Los campos ya vienen con lo último registrado — revisa, corrige lo que cambió y guarda. Marca "Dañado / Fuera de servicio" si algo no funciona; te va a pedir un comentario obligatorio.
       </div>
 
-      {sections.map(sec => (
-        <div key={sec.title || "unica"}>
-          {sec.title && <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>{sec.title} ({sec.items.length})</div>}
-          {sec.items.map(item => (
-            <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
-              activeIssue={activeIssues[item.id]} previous={latestValues[item.id]} statusOptions={statusOptions}
-              onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
-          ))}
-        </div>
-      ))}
+      <div className="relative mb-3">
+        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar un equipo…"
+          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
+
+      {(() => {
+        const q = search.trim().toLowerCase();
+        const visSections = sections.map(sec => ({ ...sec, items: q ? sec.items.filter(it => it.n.toLowerCase().includes(q)) : sec.items }));
+        const totalVisible = visSections.reduce((s, sec) => s + sec.items.length, 0);
+        if (q && totalVisible === 0) return <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Sin resultados para "{search}".</p>;
+        return visSections.map(sec => sec.items.length > 0 && (
+          <div key={sec.title || "unica"}>
+            {sec.title && <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-4" style={{ color: C.inkSoft }}>{sec.title} ({sec.items.length})</div>}
+            {sec.items.map(item => (
+              <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
+                activeIssue={activeIssues[item.id]} previous={latestValues[item.id]} statusOptions={statusOptions}
+                onResolve={(iss, solution) => onResolveIssue(iss, solution)} />
+            ))}
+          </div>
+        ));
+      })()}
 
       <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas importantes</div>
@@ -2805,9 +2859,10 @@ const MTTO_ESTADOS = [
   { code: "fuera-de-servicio", label: "Fuera de servicio" },
 ];
 
-function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onCreateEquipo, onImportCatalog }) {
+function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSelectEquipo, onCreateEquipo, onImportCatalog }) {
   const [sistema, setSistema] = useState("");
   const [nombre, setNombre] = useState("");
+  const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
@@ -2881,7 +2936,36 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onCrea
         </div>
       )}
 
-      {sistemas.length === 0 ? (
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar un equipo en cualquier sistema…"
+          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
+
+      {search.trim() ? (
+        (() => {
+          const q = search.trim().toLowerCase();
+          const matches = equipos.filter(e => e.active !== false && e.nombre.toLowerCase().includes(q));
+          if (matches.length === 0) return <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin resultados para "{search}".</p>;
+          return (
+            <div className="grid grid-cols-2 gap-3">
+              {matches.map(eq => {
+                const status = currentEquipoStatus(eq.id, mttoLog);
+                return (
+                  <button key={eq.id} onClick={() => onSelectEquipo(eq.id)}
+                    className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: status.outOfService ? C.red : C.line, background: status.outOfService ? C.redSoft : C.panel }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold" style={{ color: C.ink }}>{eq.nombre}</div>
+                      {status.outOfService && <Pill tone="red">Fuera de servicio</Pill>}
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: C.gray }}>{eq.sistema}</div>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()
+      ) : sistemas.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
           Aún no hay equipos registrados. {canManage ? "Importa el catálogo o agrega uno arriba." : "Pídele a un administrador que los cargue."}
         </p>
@@ -2907,17 +2991,26 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onCrea
 }
 
 function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSelectEquipo, onDeleteEquipo }) {
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
+  const visEquipos = q ? equipos.filter(eq => eq.nombre.toLowerCase().includes(q)) : equipos;
   return (
     <div>
       <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a sistemas</Button>
       <h2 className="text-lg font-semibold mt-2 mb-1" style={{ color: C.ink }}>{sistema}</h2>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Elige un equipo para ver su historial o registrar un mantenimiento.</p>
+      <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Elige un equipo para ver su historial o registrar un mantenimiento.</p>
 
-      {equipos.length === 0 ? (
-        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin equipos en este sistema.</p>
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Buscar un equipo de ${sistema}…`}
+          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
+
+      {visEquipos.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>{q ? `Sin resultados para "${search}".` : "Sin equipos en este sistema."}</p>
       ) : (
         <div className="grid grid-cols-2 gap-3">
-          {equipos.map(eq => {
+          {visEquipos.map(eq => {
             const status = currentEquipoStatus(eq.id, mttoLog);
             const stats = computeEquipoStats(eq, mttoLog);
             return (
@@ -3108,7 +3201,7 @@ function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEqu
 
   return (
     <SistemasListView equipos={equipos} mttoLog={mttoLog} canManage={canManage}
-      onSelectSistema={setSelectedSistema} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog} />
+      onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog} />
   );
 }
 
@@ -4045,9 +4138,9 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
    CAMPANA DE NOTIFICACIONES (admin) — turnos que no hicieron su recorrido
    ============================================================ */
 /* ============================================================
-   BÚSQUEDA GLOBAL
+   BÚSQUEDA GLOBAL — busca en TODOS los catálogos de equipos de la app
    ============================================================ */
-function GlobalSearch({ mttoEquipos, invItems, shelves, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf }) {
+function GlobalSearch({ mttoEquipos, invItems, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf, onOpenFloor }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
 
@@ -4055,14 +4148,42 @@ function GlobalSearch({ mttoEquipos, invItems, shelves, employees, tasks, onNavi
     const query = q.trim().toLowerCase();
     if (query.length < 2) return [];
     const out = [];
+
+    FLOORS.forEach(floor => {
+      floor.items.forEach(item => {
+        if (item.n.toLowerCase().includes(query)) {
+          out.push({ tipo: "Ronda de revisión", label: item.n, sub: floor.name, action: () => onOpenFloor(floor.id) });
+        }
+      });
+    });
+    ALL_COLD_ROOM_ITEMS.forEach(item => {
+      if (item.n.toLowerCase().includes(query)) {
+        out.push({ tipo: "Cuartos Fríos", label: item.n, sub: "", action: () => onNavigate("coldrooms") });
+      }
+    });
+    ALL_METERS.forEach(item => {
+      if (item.n.toLowerCase().includes(query)) {
+        out.push({ tipo: "Medidores", label: item.n, sub: "", action: () => onNavigate("meters") });
+      }
+    });
+    LAVANDERIA_ITEMS.forEach(item => {
+      if (item.n.toLowerCase().includes(query)) {
+        out.push({ tipo: "Lavandería", label: item.n, sub: "", action: () => onNavigate("laundry") });
+      }
+    });
+    GYM_ALL_ITEMS.forEach(item => {
+      if (item.n.toLowerCase().includes(query)) {
+        out.push({ tipo: "Gimnasio", label: item.n, sub: "", action: () => onNavigate("gym") });
+      }
+    });
     (mttoEquipos || []).filter(e => e.active !== false).forEach(e => {
       if (e.nombre.toLowerCase().includes(query) || e.sistema.toLowerCase().includes(query)) {
-        out.push({ tipo: "Equipo", label: e.nombre, sub: e.sistema, action: () => onOpenEquipo(e.id) });
+        out.push({ tipo: "Mantenimiento", label: e.nombre, sub: e.sistema, action: () => onOpenEquipo(e.id) });
       }
     });
     (invItems || []).forEach(it => {
       if (it.name.toLowerCase().includes(query) || (it.sku || "").toLowerCase().includes(query)) {
-        out.push({ tipo: "Repuesto", label: it.name, sub: it.sku || "", action: () => onOpenShelf(it.shelfId) });
+        out.push({ tipo: "Inventario", label: it.name, sub: it.sku || "", action: () => onOpenShelf(it.shelfId) });
       }
     });
     (employees || []).filter(e => e.active !== false).forEach(e => {
@@ -4075,21 +4196,21 @@ function GlobalSearch({ mttoEquipos, invItems, shelves, employees, tasks, onNavi
         out.push({ tipo: "Tarea", label: t.titulo, sub: TASK_STATES.find(s => s.code === t.estado)?.label || "", action: () => onNavigate("tasks") });
       }
     });
-    return out.slice(0, 20);
+    return out.slice(0, 25);
   }, [q, mttoEquipos, invItems, employees, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="relative flex-1" style={{ maxWidth: 260 }}>
+    <div className="relative flex-1" style={{ maxWidth: 280 }}>
       <div className="relative">
         <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
         <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
-          placeholder="Buscar equipo, repuesto, empleado…"
+          placeholder="Buscar cualquier equipo, repuesto, empleado…"
           className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
       {open && q.trim().length >= 2 && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-80 rounded-lg border shadow-lg z-50 max-h-[60vh] overflow-y-auto"
+          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-96 rounded-lg border shadow-lg z-50 max-h-[65vh] overflow-y-auto"
             style={{ background: C.panel, borderColor: C.line }}>
             {results.length === 0 ? (
               <div className="p-3 text-xs" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
@@ -7442,10 +7563,11 @@ export default function App() {
             )}
           </div>
           {isAdmin && (
-            <GlobalSearch mttoEquipos={mttoEquipos} invItems={invItems} shelves={shelves} employees={employees} tasks={tasks}
+            <GlobalSearch mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
               onNavigate={setView}
               onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
-              onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }} />
+              onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }}
+              onOpenFloor={(id) => { setFloorId(id); setView("ronda"); }} />
           )}
           <div className="flex items-center gap-2">
             {pendingSync > 0 && (

@@ -4140,71 +4140,56 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 /* ============================================================
    BÚSQUEDA GLOBAL — busca en TODOS los catálogos de equipos de la app
    ============================================================ */
-function GlobalSearch({ mttoEquipos, invItems, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf, onOpenFloor }) {
+function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf, onOpenFloor }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
     if (query.length < 2) return [];
-    const out = [];
 
-    FLOORS.forEach(floor => {
-      floor.items.forEach(item => {
-        if (item.n.toLowerCase().includes(query)) {
-          out.push({ tipo: "Ronda de revisión", label: item.n, sub: floor.name, action: () => onOpenFloor(floor.id) });
-        }
-      });
-    });
-    ALL_COLD_ROOM_ITEMS.forEach(item => {
-      if (item.n.toLowerCase().includes(query)) {
-        out.push({ tipo: "Cuartos Fríos", label: item.n, sub: "", action: () => onNavigate("coldrooms") });
-      }
-    });
-    ALL_METERS.forEach(item => {
-      if (item.n.toLowerCase().includes(query)) {
-        out.push({ tipo: "Medidores", label: item.n, sub: "", action: () => onNavigate("meters") });
-      }
-    });
-    LAVANDERIA_ITEMS.forEach(item => {
-      if (item.n.toLowerCase().includes(query)) {
-        out.push({ tipo: "Lavandería", label: item.n, sub: "", action: () => onNavigate("laundry") });
-      }
-    });
-    GYM_ALL_ITEMS.forEach(item => {
-      if (item.n.toLowerCase().includes(query)) {
-        out.push({ tipo: "Gimnasio", label: item.n, sub: "", action: () => onNavigate("gym") });
-      }
-    });
-    (mttoEquipos || []).filter(e => e.active !== false).forEach(e => {
-      if (e.nombre.toLowerCase().includes(query) || e.sistema.toLowerCase().includes(query)) {
-        out.push({ tipo: "Mantenimiento", label: e.nombre, sub: e.sistema, action: () => onOpenEquipo(e.id) });
-      }
-    });
-    (invItems || []).forEach(it => {
-      if (it.name.toLowerCase().includes(query) || (it.sku || "").toLowerCase().includes(query)) {
-        out.push({ tipo: "Inventario", label: it.name, sub: it.sku || "", action: () => onOpenShelf(it.shelfId) });
-      }
-    });
-    (employees || []).filter(e => e.active !== false).forEach(e => {
-      if (e.name.toLowerCase().includes(query)) {
-        out.push({ tipo: "Empleado", label: e.name, sub: e.cargo || "", action: () => onNavigate("schedules") });
-      }
-    });
-    (tasks || []).forEach(t => {
-      if (t.titulo.toLowerCase().includes(query)) {
-        out.push({ tipo: "Tarea", label: t.titulo, sub: TASK_STATES.find(s => s.code === t.estado)?.label || "", action: () => onNavigate("tasks") });
-      }
-    });
-    return out.slice(0, 25);
-  }, [q, mttoEquipos, invItems, employees, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Si estás DENTRO de una pantalla con su propio catálogo de equipos, la búsqueda se limita
+    // solo a esa pantalla — así no te saca de lo que estás llenando para llevarte a otro lado.
+    const scoped = {
+      ronda: () => FLOORS.flatMap(floor => floor.items
+        .filter(item => item.n.toLowerCase().includes(query))
+        .map(item => ({ tipo: "Ronda de revisión", label: item.n, sub: floor.name, action: () => onOpenFloor(floor.id) }))),
+      coldrooms: () => ALL_COLD_ROOM_ITEMS.filter(i => i.n.toLowerCase().includes(query))
+        .map(i => ({ tipo: "Cuartos Fríos", label: i.n, sub: "", action: () => onNavigate("coldrooms") })),
+      meters: () => ALL_METERS.filter(i => i.n.toLowerCase().includes(query))
+        .map(i => ({ tipo: "Medidores", label: i.n, sub: "", action: () => onNavigate("meters") })),
+      laundry: () => LAVANDERIA_ITEMS.filter(i => i.n.toLowerCase().includes(query))
+        .map(i => ({ tipo: "Lavandería", label: i.n, sub: "", action: () => onNavigate("laundry") })),
+      gym: () => GYM_ALL_ITEMS.filter(i => i.n.toLowerCase().includes(query))
+        .map(i => ({ tipo: "Gimnasio", label: i.n, sub: "", action: () => onNavigate("gym") })),
+      maintenance: () => (mttoEquipos || []).filter(e => e.active !== false && (e.nombre.toLowerCase().includes(query) || e.sistema.toLowerCase().includes(query)))
+        .map(e => ({ tipo: "Mantenimiento", label: e.nombre, sub: e.sistema, action: () => onOpenEquipo(e.id) })),
+      inventory: () => (invItems || []).filter(it => it.name.toLowerCase().includes(query) || (it.sku || "").toLowerCase().includes(query))
+        .map(it => ({ tipo: "Inventario", label: it.name, sub: it.sku || "", action: () => onOpenShelf(it.shelfId) })),
+      schedules: () => (employees || []).filter(e => e.active !== false && e.name.toLowerCase().includes(query))
+        .map(e => ({ tipo: "Empleado", label: e.name, sub: e.cargo || "", action: () => onNavigate("schedules") })),
+      tasks: () => (tasks || []).filter(t => t.titulo.toLowerCase().includes(query))
+        .map(t => ({ tipo: "Tarea", label: t.titulo, sub: TASK_STATES.find(s => s.code === t.estado)?.label || "", action: () => onNavigate("tasks") })),
+    };
+
+    if (scoped[currentView]) return scoped[currentView]().slice(0, 25);
+
+    // Fuera de esas pantallas (Inicio, Admin, etc.) sí busca en todo, para poder llegar a donde sea.
+    return Object.values(scoped).flatMap(fn => fn()).slice(0, 25);
+  }, [q, currentView, mttoEquipos, invItems, employees, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const scopedLabels = {
+    ronda: "Buscar en la Ronda de revisión…", coldrooms: "Buscar en Cuartos Fríos…", meters: "Buscar en Medidores…",
+    laundry: "Buscar en Lavandería…", gym: "Buscar en Gimnasio…", maintenance: "Buscar en Mantenimiento…",
+    inventory: "Buscar en Inventario…", schedules: "Buscar empleado…", tasks: "Buscar tarea…",
+  };
 
   return (
     <div className="relative flex-1" style={{ maxWidth: 280 }}>
       <div className="relative">
         <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
         <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
-          placeholder="Buscar cualquier equipo, repuesto, empleado…"
+          placeholder={scopedLabels[currentView] || "Buscar cualquier equipo, repuesto, empleado…"}
           className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
       {open && q.trim().length >= 2 && (
@@ -7563,7 +7548,7 @@ export default function App() {
             )}
           </div>
           {isAdmin && (
-            <GlobalSearch mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
+            <GlobalSearch currentView={view} mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
               onNavigate={setView}
               onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
               onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }}

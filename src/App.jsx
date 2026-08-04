@@ -518,7 +518,7 @@ function validateRoundEntries(items, entries) {
  * Mañana (termina 14:00) = Lecturas + Ronda + Cuartos Fríos. Tarde (termina 22:00) = Ronda.
  * Noche (termina 6:00 del día siguiente) = Ronda + Gimnasio. Solo avisa después de que el turno ya terminó.
  */
-function computeShiftCompletionAlerts(now, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex) {
+function computeShiftCompletionAlerts(now, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex) {
   const todayD = todayStr();
   const yesterdayD = (() => { const d = new Date(now); d.setDate(d.getDate() - 1); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; })();
   const hour = now.getHours() + now.getMinutes() / 60;
@@ -530,11 +530,14 @@ function computeShiftCompletionAlerts(now, roundsIndex, meterRoundsIndex, coldRo
     if (!hasRound(meterRoundsIndex, todayD, "06:00 – 14:00")) missing.push("Lecturas de Medidores");
     if (!hasRound(roundsIndex, todayD, "06:00 – 14:00")) missing.push("Ronda de revisión");
     if (!hasRound(coldRoundsIndex, todayD, "06:00 – 14:00")) missing.push("Cuartos Fríos");
+    if (!hasRound(calderaRoundsIndex, todayD, "06:00 – 14:00")) missing.push("Check List Caldera");
+    if (!(lavanderiaRoundsIndex || []).some(r => r.date === todayD)) missing.push("Equipos de Lavandería");
     if (missing.length) alerts.push({ turno: "Turno mañana (6:00-14:00) de hoy", missing });
   }
   if (hour >= 22) {
     const missing = [];
     if (!hasRound(roundsIndex, todayD, "14:00 – 22:00")) missing.push("Ronda de revisión");
+    if (!hasRound(calderaRoundsIndex, todayD, "14:00 – 22:00")) missing.push("Check List Caldera");
     if (missing.length) alerts.push({ turno: "Turno tarde (14:00-22:00) de hoy", missing });
   }
   if (hour >= 6) {
@@ -542,6 +545,7 @@ function computeShiftCompletionAlerts(now, roundsIndex, meterRoundsIndex, coldRo
     const nightDone = (idx) => hasRound(idx, todayD, "22:00 – 06:00") || hasRound(idx, yesterdayD, "22:00 – 06:00");
     if (!nightDone(roundsIndex)) missing.push("Ronda de revisión");
     if (!nightDone(gymRoundsIndex)) missing.push("Equipos de Gimnasio");
+    if (!nightDone(calderaRoundsIndex)) missing.push("Check List Caldera");
     if (missing.length) alerts.push({ turno: "Turno noche (22:00-6:00) más reciente", missing });
   }
   return alerts;
@@ -588,9 +592,12 @@ function computeUptimeBySystem(equipos, mttoLog) {
 }
 
 /** Compara cuántas rondas se guardaron este mes contra cuántas deberían haberse hecho, por tipo. */
-function computeComplianceThisMonth(now, roundsIndex, coldRoundsIndex, meterRoundsIndex) {
-  const daysElapsed = now.getDate();
-  const month = now.getMonth() + 1, year = now.getFullYear();
+function computeComplianceForMonth(targetDate, roundsIndex, coldRoundsIndex, meterRoundsIndex) {
+  const month = targetDate.getMonth() + 1, year = targetDate.getFullYear();
+  const now = new Date();
+  const isCurrentMonth = now.getMonth() === targetDate.getMonth() && now.getFullYear() === targetDate.getFullYear();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysElapsed = isCurrentMonth ? now.getDate() : daysInMonth;
   const inMonth = (dateStr) => {
     const p = (dateStr || "").split("/");
     return p.length === 3 && Number(p[1]) === month && Number(p[2]) === year;
@@ -607,14 +614,20 @@ function computeComplianceThisMonth(now, roundsIndex, coldRoundsIndex, meterRoun
   };
 }
 
-/** Costo acumulado de mantenimiento, total y por sistema, a partir de lo registrado en la app. */
-function computeMaintenanceCost(equipos, mttoLog) {
+/** Costo acumulado de mantenimiento, total y por sistema. Si se pasa targetDate, filtra solo a ese mes. */
+function computeMaintenanceCost(equipos, mttoLog, targetDate) {
   const activeEquipos = (equipos || []).filter(e => e.active !== false);
   const bySistema = {};
   let total = 0;
+  const month = targetDate ? targetDate.getMonth() + 1 : null;
+  const year = targetDate ? targetDate.getFullYear() : null;
   (mttoLog || []).forEach(r => {
     const costo = Number(r.costo) || 0;
     if (!costo) return;
+    if (targetDate) {
+      const d = new Date(r.fecha);
+      if (d.getMonth() + 1 !== month || d.getFullYear() !== year) return;
+    }
     total += costo;
     const eq = activeEquipos.find(e => e.id === r.equipoId);
     const sistema = eq?.sistema || "Otros";
@@ -914,6 +927,43 @@ function hoursForEntry(entry) {
   return h;
 }
 function isWorkedDay(entry) { return !!entry && !entry.code && entry.entrada != null; }
+
+/** Arma el contenido de un archivo .ics (calendario) con los turnos de un empleado, listo para descargar. */
+function buildIcsForEmployee(employee, daysIso, entriesByEmployee) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmtIcsDate = (dateIso, hourDecimal) => {
+    const [y, m, d] = dateIso.split("-").map(Number);
+    const hh = Math.floor(hourDecimal), mm = Math.round((hourDecimal - hh) * 60);
+    return `${y}${pad(m)}${pad(d)}T${pad(hh)}${pad(mm)}00`;
+  };
+  const events = [];
+  daysIso.forEach(d => {
+    const entry = entriesByEmployee[employee.id]?.[d];
+    if (!isWorkedDay(entry)) return;
+    const start = fmtIcsDate(d, entry.entrada);
+    let endDateIso = d;
+    if (entry.salida < entry.entrada) { // cruza medianoche
+      const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + 1);
+      endDateIso = dt.toISOString().slice(0, 10);
+    }
+    const end = fmtIcsDate(endDateIso, entry.salida);
+    events.push(
+      "BEGIN:VEVENT",
+      `UID:${employee.id}-${d}@pisosmecanicos-hcc.com`,
+      `DTSTAMP:${nowIso().replace(/[-:]/g, "").split(".")[0]}Z`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:Turno — Pisos Mecánicos`,
+      `DESCRIPTION:Hyatt Regency Cartagena, Ingeniería`,
+      "END:VEVENT"
+    );
+  });
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Pisos Mecanicos - Hyatt Regency Cartagena//ES", "CALSCALE:GREGORIAN",
+    ...events,
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
 
 /** Agrupa una lista de fechas ISO en semanas lunes-domingo (para las columnas "Horas"/"Diferencia" del Excel). */
 function weeksInRange(daysIso) {
@@ -2092,7 +2142,7 @@ function QrCodeBox({ url, label, filename }) {
   );
 }
 
-function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega, onCreateBodega, onImportInventory }) {
+function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega, onCreateBodega, onImportInventory, onDeleteBodega }) {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -2125,6 +2175,11 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
       doc.save("codigos-qr-estanterias.pdf");
     } catch { setImportMsg({ ok: false, text: "No se pudieron generar los códigos QR." }); }
     setGeneratingQr(false);
+  };
+
+  const doDelete = async (id) => {
+    const res = await onDeleteBodega(id);
+    if (res && !res.ok) setImportMsg({ ok: false, text: res.message });
   };
 
   return (
@@ -2165,16 +2220,23 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
             const myItems = invItems.filter(i => i.bodegaId === b.id);
             const low = computeLowStock(myItems).length;
             return (
-              <button key={b.id} onClick={() => onSelectBodega(b.id)}
-                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold" style={{ color: C.ink }}>{b.name}</div>
-                  {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
-                </div>
-                <div className="text-xs mt-1" style={{ color: C.gray }}>
-                  {myShelves.length} estantería{myShelves.length !== 1 ? "s" : ""} · {myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}
-                </div>
-              </button>
+              <div key={b.id} className="relative">
+                <button onClick={() => onSelectBodega(b.id)}
+                  className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold pr-5" style={{ color: C.ink }}>{b.name}</div>
+                    {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: C.gray }}>
+                    {myShelves.length} estantería{myShelves.length !== 1 ? "s" : ""} · {myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}
+                  </div>
+                </button>
+                {canManage && (
+                  <button onClick={(e) => { e.stopPropagation(); doDelete(b.id); }} className="absolute top-2 right-2 p-1">
+                    <Trash2 size={13} color={C.gray} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -2183,7 +2245,7 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
   );
 }
 
-function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSelectShelf, onCreateShelf }) {
+function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSelectShelf, onCreateShelf, onDeleteShelf }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -2234,15 +2296,22 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
             const myItems = invItems.filter(i => i.shelfId === s.id);
             const low = computeLowStock(myItems).length;
             return (
-              <button key={s.id} onClick={() => onSelectShelf(s.id)}
-                className="text-left rounded-lg border p-3 hover:shadow-sm transition" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold" style={{ color: C.ink }}>Estantería {s.code}</div>
-                  {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
-                </div>
-                {s.name && <div className="text-xs" style={{ color: C.inkSoft }}>{s.name}</div>}
-                <div className="text-xs mt-1" style={{ color: C.gray }}>{myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}</div>
-              </button>
+              <div key={s.id} className="relative">
+                <button onClick={() => onSelectShelf(s.id)}
+                  className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold pr-5" style={{ color: C.ink }}>Estantería {s.code}</div>
+                    {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
+                  </div>
+                  {s.name && <div className="text-xs" style={{ color: C.inkSoft }}>{s.name}</div>}
+                  <div className="text-xs mt-1" style={{ color: C.gray }}>{myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}</div>
+                </button>
+                {canManage && (
+                  <button onClick={(e) => { e.stopPropagation(); onDeleteShelf(s.id); }} className="absolute top-2 right-2 p-1">
+                    <Trash2 size={13} color={C.gray} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -2358,7 +2427,7 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
   );
 }
 
-function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, onImportInventory, initialShelfId, onConsumedInitialShelf }) {
+function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, onImportInventory, onDeleteBodega, onDeleteShelf, initialShelfId, onConsumedInitialShelf }) {
   const [selectedBodegaId, setSelectedBodegaId] = useState(null);
   const [selectedShelfId, setSelectedShelfId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -2386,13 +2455,13 @@ function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onC
   if (bodega) {
     return (
       <BodegaShelvesView bodega={bodega} shelves={shelves.filter(s => s.bodegaId === bodega.id)} invItems={invItems}
-        canManage={canManage} onBack={() => setSelectedBodegaId(null)} onSelectShelf={setSelectedShelfId} onCreateShelf={onCreateShelf} />
+        canManage={canManage} onBack={() => setSelectedBodegaId(null)} onSelectShelf={setSelectedShelfId} onCreateShelf={onCreateShelf} onDeleteShelf={onDeleteShelf} />
     );
   }
 
   return (
     <BodegasListView bodegas={bodegas} shelves={shelves} invItems={invItems} canManage={canManage}
-      onSelectBodega={setSelectedBodegaId} onCreateBodega={onCreateBodega} onImportInventory={onImportInventory} />
+      onSelectBodega={setSelectedBodegaId} onCreateBodega={onCreateBodega} onImportInventory={onImportInventory} onDeleteBodega={onDeleteBodega} />
   );
 }
 
@@ -3174,22 +3243,38 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
 /* ============================================================
    VISTA: PANEL EJECUTIVO
    ============================================================ */
+/** Pequeña etiqueta "↑/↓ X% vs mes pasado" para el Panel Ejecutivo. */
+function TrendBadge({ current, previous, unit = "%", goodDirection = "up" }) {
+  if (previous == null) return null;
+  const diff = current - previous;
+  if (Math.abs(diff) < 1) return <span className="text-xs block mt-1" style={{ color: C.gray }}>≈ igual que el mes pasado</span>;
+  const up = diff > 0;
+  const good = goodDirection === "up" ? up : !up;
+  const text = unit === "%" ? `${Math.abs(Math.round(diff))}%` : `$${Math.abs(Math.round(diff)).toLocaleString("es-CO")}`;
+  return <span className="text-xs font-medium block mt-1" style={{ color: good ? C.green : C.red }}>{up ? "↑" : "↓"} {text} vs. mes pasado</span>;
+}
+
 function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, meterRoundsIndex, currentUser }) {
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
   const now = new Date();
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
   const uptime = useMemo(() => computeUptimeBySystem(equipos, mttoLog), [equipos, mttoLog]);
-  const compliance = useMemo(() => computeComplianceThisMonth(now, roundsIndex, coldRoundsIndex, meterRoundsIndex),
+  const compliance = useMemo(() => computeComplianceForMonth(now, roundsIndex, coldRoundsIndex, meterRoundsIndex),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [roundsIndex, coldRoundsIndex, meterRoundsIndex]);
-  const cost = useMemo(() => computeMaintenanceCost(equipos, mttoLog), [equipos, mttoLog]);
+  const compliancePrev = useMemo(() => computeComplianceForMonth(lastMonthDate, roundsIndex, coldRoundsIndex, meterRoundsIndex),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [roundsIndex, coldRoundsIndex, meterRoundsIndex]);
+  const cost = useMemo(() => computeMaintenanceCost(equipos, mttoLog, now), [equipos, mttoLog]); // eslint-disable-line react-hooks/exhaustive-deps
+  const costPrev = useMemo(() => computeMaintenanceCost(equipos, mttoLog, lastMonthDate), [equipos, mttoLog]); // eslint-disable-line react-hooks/exhaustive-deps
   const avgUptime = uptime.length ? Math.round(uptime.reduce((s, u) => s + u.pct, 0) / uptime.length) : 100;
 
   const doDownload = async () => {
     setDownloading(true);
     try {
-      const doc = await generateExecutivePdf(uptime, compliance, cost, currentUser);
+      const doc = await generateExecutivePdf(uptime, compliance, cost, currentUser, compliancePrev, costPrev);
       doc.save(`panel-ejecutivo-${todayStr().replace(/\//g, "-")}.pdf`);
     } catch { setMsg("No se pudo generar el PDF."); }
     setDownloading(false);
@@ -3214,10 +3299,12 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento de rondas</div>
           <div className="text-3xl font-bold mt-1" style={{ color: compliance.ronda.pct >= 90 ? C.green : C.red }}>{compliance.ronda.pct}%</div>
+          <TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />
         </div>
         <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Costo de mantenimiento (mes)</div>
           <div className="text-2xl font-bold mt-1" style={{ color: C.ink }}>{cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}</div>
+          <TrendBadge current={cost.total} previous={costPrev.total} unit="$" goodDirection="down" />
         </div>
       </div>
 
@@ -3234,18 +3321,19 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         ))}
       </div>
 
-      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento de rondas este mes</div>
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento de rondas este mes (vs. mes pasado)</div>
       <div className="rounded-lg border mb-5 overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         {[
-          { label: "Ronda de revisión", c: compliance.ronda },
-          { label: "Cuartos Fríos", c: compliance.cuartosFrios },
-          { label: "Lecturas de Medidores", c: compliance.medidores },
+          { label: "Ronda de revisión", c: compliance.ronda, p: compliancePrev.ronda },
+          { label: "Cuartos Fríos", c: compliance.cuartosFrios, p: compliancePrev.cuartosFrios },
+          { label: "Lecturas de Medidores", c: compliance.medidores, p: compliancePrev.medidores },
         ].map((row, i) => (
           <div key={row.label} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
             <span style={{ color: C.ink }}>{row.label}</span>
-            <span>
-              <span style={{ color: C.gray }}>{row.c.actual}/{row.c.expected}</span>{" "}
+            <span className="flex items-center gap-2">
+              <span style={{ color: C.gray }}>{row.c.actual}/{row.c.expected}</span>
               <span className="font-semibold" style={{ color: row.c.pct >= 90 ? C.green : C.red }}>({row.c.pct}%)</span>
+              <span style={{ color: C.gray }}>· antes {row.p.pct}%</span>
             </span>
           </div>
         ))}
@@ -3253,7 +3341,7 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
 
       {cost.bySistema.length > 0 && (
         <>
-          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema</div>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema (este mes)</div>
           <div className="rounded-lg border overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             {cost.bySistema.slice(0, 10).map(([sistema, c], i) => (
               <div key={sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
@@ -3636,6 +3724,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
   const [msg, setMsg] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
+  const [icsEmployeeId, setIcsEmployeeId] = useState("");
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -3761,6 +3850,29 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
 
       {isAdmin && showManage && <EmployeeManagePanel employees={employees} onCreateEmployee={onCreateEmployee} onUpdateEmployee={onUpdateEmployee} onDeleteEmployee={onDeleteEmployee} />}
+
+      <div className="rounded-lg border p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+        <span className="text-xs" style={{ color: C.inkSoft }}>Descarga los turnos de este mes para agregarlos a tu calendario del celular:</span>
+        <select value={icsEmployeeId} onChange={e => setIcsEmployeeId(e.target.value)}
+          className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <option value="">Elige tu nombre…</option>
+          {sortedEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+        <Button size="sm" variant="ghost" icon={Download} disabled={!icsEmployeeId}
+          onClick={() => {
+            const emp = employees.find(e => e.id === icsEmployeeId);
+            if (!emp) return;
+            const ics = buildIcsForEmployee(emp, daysIso, entriesByEmployee);
+            const blob = new Blob([ics], { type: "text/calendar" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = `turnos-${emp.name.replace(/\s+/g, "-")}-${monthDate.getFullYear()}-${monthDate.getMonth() + 1}.ics`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>
+          Agregar al calendario
+        </Button>
+      </div>
 
       {isAdmin && editingCell && (
         <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.amber, background: C.amberSoft }}>
@@ -3932,10 +4044,75 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 /* ============================================================
    CAMPANA DE NOTIFICACIONES (admin) — turnos que no hicieron su recorrido
    ============================================================ */
+/* ============================================================
+   BÚSQUEDA GLOBAL
+   ============================================================ */
+function GlobalSearch({ mttoEquipos, invItems, shelves, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const results = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    if (query.length < 2) return [];
+    const out = [];
+    (mttoEquipos || []).filter(e => e.active !== false).forEach(e => {
+      if (e.nombre.toLowerCase().includes(query) || e.sistema.toLowerCase().includes(query)) {
+        out.push({ tipo: "Equipo", label: e.nombre, sub: e.sistema, action: () => onOpenEquipo(e.id) });
+      }
+    });
+    (invItems || []).forEach(it => {
+      if (it.name.toLowerCase().includes(query) || (it.sku || "").toLowerCase().includes(query)) {
+        out.push({ tipo: "Repuesto", label: it.name, sub: it.sku || "", action: () => onOpenShelf(it.shelfId) });
+      }
+    });
+    (employees || []).filter(e => e.active !== false).forEach(e => {
+      if (e.name.toLowerCase().includes(query)) {
+        out.push({ tipo: "Empleado", label: e.name, sub: e.cargo || "", action: () => onNavigate("schedules") });
+      }
+    });
+    (tasks || []).forEach(t => {
+      if (t.titulo.toLowerCase().includes(query)) {
+        out.push({ tipo: "Tarea", label: t.titulo, sub: TASK_STATES.find(s => s.code === t.estado)?.label || "", action: () => onNavigate("tasks") });
+      }
+    });
+    return out.slice(0, 20);
+  }, [q, mttoEquipos, invItems, employees, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="relative flex-1" style={{ maxWidth: 260 }}>
+      <div className="relative">
+        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+        <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+          placeholder="Buscar equipo, repuesto, empleado…"
+          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      </div>
+      {open && q.trim().length >= 2 && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-80 rounded-lg border shadow-lg z-50 max-h-[60vh] overflow-y-auto"
+            style={{ background: C.panel, borderColor: C.line }}>
+            {results.length === 0 ? (
+              <div className="p-3 text-xs" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
+            ) : results.map((r, i) => (
+              <button key={i} onClick={() => { r.action(); setOpen(false); setQ(""); }}
+                className="block w-full text-left px-3 py-2 border-b last:border-0" style={{ borderColor: C.line }}>
+                <div className="text-xs font-semibold" style={{ color: C.amber }}>{r.tipo}</div>
+                <div className="text-sm" style={{ color: C.ink }}>{r.label}</div>
+                {r.sub && <div className="text-xs" style={{ color: C.gray }}>{r.sub}</div>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
+    "Check List Caldera": "boiler", "Equipos de Lavandería": "laundry",
   };
   const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0);
   return (
@@ -5259,31 +5436,38 @@ async function generateAllEquiposQrPdf(equipos) {
   return doc;
 }
 /** PDF de una sola página con el resumen ejecutivo, listo para reuniones con la gerencia. */
-async function generateExecutivePdf(uptime, compliance, cost, generatedBy) {
+async function generateExecutivePdf(uptime, compliance, cost, generatedBy, compliancePrev, costPrev) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   let y = pdfLetterhead(doc, "Panel Ejecutivo — Resumen del Mes", [fmtDT(nowIso()), `Generado por ${generatedBy || "—"}`]);
 
   const avgUptime = uptime.length ? Math.round(uptime.reduce((s, u) => s + u.pct, 0) / uptime.length) : 100;
+  const costDelta = costPrev ? cost.total - costPrev.total : null;
   y = pdfStatBoxes(doc, y, [
     { label: "Disponibilidad promedio", value: `${avgUptime}%`, color: avgUptime >= 90 ? PDF_C.green : PDF_C.red },
-    { label: "Cumplimiento rondas", value: `${compliance.ronda.pct}%`, color: compliance.ronda.pct >= 90 ? PDF_C.green : PDF_C.red },
+    { label: "Cumplimiento rondas", value: `${compliance.ronda.pct}%${compliancePrev ? ` (antes ${compliancePrev.ronda.pct}%)` : ""}`, color: compliance.ronda.pct >= 90 ? PDF_C.green : PDF_C.red },
     { label: "Costo mantenimiento", value: cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—", color: PDF_C.steelDark },
   ]);
+  if (costDelta != null) {
+    doc.setFontSize(8.5);
+    doc.setTextColor(...(costDelta > 0 ? PDF_C.red : PDF_C.green));
+    doc.text(`${costDelta > 0 ? "▲" : "▼"} ${Math.abs(costDelta).toLocaleString("es-CO")} vs. el mes pasado ($${(costPrev.total || 0).toLocaleString("es-CO")})`, 15, y);
+    y += 6;
+  }
 
   y = pdfSectionTitle(doc, y, "Disponibilidad de equipos por sistema");
   y = pdfTable(doc, y, ["Sistema", "Equipos", "Fuera de servicio", "Disponibilidad"],
     uptime.slice(0, 12).map(u => [u.sistema, String(u.total), String(u.fuera), `${u.pct}%`]));
 
-  y = pdfSectionTitle(doc, y, "Cumplimiento de rondas este mes");
-  y = pdfTable(doc, y, ["Tipo de ronda", "Hechas", "Esperadas", "Cumplimiento"], [
-    ["Ronda de revisión", String(compliance.ronda.actual), String(compliance.ronda.expected), `${compliance.ronda.pct}%`],
-    ["Cuartos Fríos", String(compliance.cuartosFrios.actual), String(compliance.cuartosFrios.expected), `${compliance.cuartosFrios.pct}%`],
-    ["Lecturas de Medidores", String(compliance.medidores.actual), String(compliance.medidores.expected), `${compliance.medidores.pct}%`],
+  y = pdfSectionTitle(doc, y, "Cumplimiento de rondas este mes (vs. mes pasado)");
+  y = pdfTable(doc, y, ["Tipo de ronda", "Hechas", "Esperadas", "Cumplimiento", "Mes pasado"], [
+    ["Ronda de revisión", String(compliance.ronda.actual), String(compliance.ronda.expected), `${compliance.ronda.pct}%`, compliancePrev ? `${compliancePrev.ronda.pct}%` : "—"],
+    ["Cuartos Fríos", String(compliance.cuartosFrios.actual), String(compliance.cuartosFrios.expected), `${compliance.cuartosFrios.pct}%`, compliancePrev ? `${compliancePrev.cuartosFrios.pct}%` : "—"],
+    ["Lecturas de Medidores", String(compliance.medidores.actual), String(compliance.medidores.expected), `${compliance.medidores.pct}%`, compliancePrev ? `${compliancePrev.medidores.pct}%` : "—"],
   ]);
 
   if (cost.bySistema.length > 0) {
-    y = pdfSectionTitle(doc, y, "Costo de mantenimiento por sistema");
+    y = pdfSectionTitle(doc, y, "Costo de mantenimiento por sistema (este mes)");
     pdfTable(doc, y, ["Sistema", "Costo acumulado"], cost.bySistema.slice(0, 10).map(([s, c]) => [s, `$${c.toLocaleString("es-CO")}`]));
   }
 
@@ -5929,7 +6113,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
 /* ============================================================
    VISTA: PAPELERA
    ============================================================ */
-const TRASH_TYPE_LABELS = { task: "Tarea", account: "Usuario", employee: "Empleado", mttoEquipo: "Equipo de mantenimiento" };
+const TRASH_TYPE_LABELS = { task: "Tarea", account: "Usuario", employee: "Empleado", mttoEquipo: "Equipo de mantenimiento", bodega: "Bodega", shelf: "Estantería" };
 function TrashView({ trash, onRestore, onPurge }) {
   const sorted = [...trash].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
   return (
@@ -6355,6 +6539,10 @@ export default function App() {
       const next = [entry.data, ...employees]; setEmployees(next); await sSet("employees", next, true);
     } else if (entry.tipo === "mttoEquipo") {
       const next = [entry.data, ...mttoEquipos]; setMttoEquipos(next); await sSet("mtto-equipos", next, true);
+    } else if (entry.tipo === "bodega") {
+      const next = [entry.data, ...bodegas]; setBodegas(next); await sSet("inventory-bodegas", next, true);
+    } else if (entry.tipo === "shelf") {
+      const next = [entry.data, ...shelves]; setShelves(next); await sSet("inventory-shelves", next, true);
     }
     const nextTrash = trash.filter(t => t.id !== trashId);
     setTrash(nextTrash);
@@ -6433,6 +6621,33 @@ export default function App() {
     setShelves(next);
     await sSet("inventory-shelves", next, true);
     return rec;
+  };
+
+  const deleteBodega = async (id) => {
+    const item = bodegas.find(b => b.id === id);
+    const myShelves = shelves.filter(s => s.bodegaId === id);
+    const myItems = invItems.filter(i => i.bodegaId === id);
+    if (myShelves.length > 0 || myItems.length > 0) {
+      return { ok: false, message: `Esta bodega todavía tiene ${myShelves.length} estantería(s) y ${myItems.length} repuesto(s). Bórralos primero.` };
+    }
+    if (item) await moveToTrash("bodega", item, `${item.name} (bodega)`);
+    const next = bodegas.filter(b => b.id !== id);
+    setBodegas(next);
+    await sSet("inventory-bodegas", next, true);
+    return { ok: true };
+  };
+
+  const deleteShelf = async (id) => {
+    const item = shelves.find(s => s.id === id);
+    const myItems = invItems.filter(i => i.shelfId === id);
+    if (myItems.length > 0) {
+      return { ok: false, message: `Esta estantería todavía tiene ${myItems.length} repuesto(s). Bórralos primero.` };
+    }
+    if (item) await moveToTrash("shelf", item, `Estantería ${item.code} (${item.name || "sin nombre"})`);
+    const next = shelves.filter(s => s.id !== id);
+    setShelves(next);
+    await sSet("inventory-shelves", next, true);
+    return { ok: true };
   };
 
   const createInvItem = async (shelfId, bodegaId, form) => {
@@ -7057,8 +7272,8 @@ export default function App() {
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
   const shiftAlerts = useMemo(
-    () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex),
-    [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex]
+    () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
+    [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex]
   );
   const maintenanceDue = useMemo(
     () => computeUpcomingMaintenance(nowClock, mttoEquipos, mttoCronograma),
@@ -7226,6 +7441,12 @@ export default function App() {
               <span className="ml-2">{nowClock.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
             )}
           </div>
+          {isAdmin && (
+            <GlobalSearch mttoEquipos={mttoEquipos} invItems={invItems} shelves={shelves} employees={employees} tasks={tasks}
+              onNavigate={setView}
+              onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
+              onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }} />
+          )}
           <div className="flex items-center gap-2">
             {pendingSync > 0 && (
               <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }}>
@@ -7300,6 +7521,7 @@ export default function App() {
             <InventoryView bodegas={bodegas} shelves={shelves} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateBodega={createBodega} onCreateShelf={createShelf} onCreateItem={createInvItem}
               onRetiro={doInvRetiro} onEntrada={doInvEntrada} onImportInventory={importFullInventory}
+              onDeleteBodega={deleteBodega} onDeleteShelf={deleteShelf}
               initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)} />
           )}
           {view === "inventory-alerts" && (isAdmin || isAlmacenista) && (

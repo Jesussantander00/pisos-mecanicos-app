@@ -381,7 +381,6 @@ const FLOORS = [
     { c: 297, n: "Nivel Tanque de Agua Potable Piso 44 #1", k: "numeric", u: "%", tank: true },
     { c: 298, n: "Nivel Tanque de Agua Potable Piso 44 #2", k: "numeric", u: "%", tank: true },
     { c: 299, n: "Tablero y controlador avisos lado Bahía", k: "status" },
-    { c: 300, n: "Muestra de Agua Linos Piso #", k: "sample" },
   ]},
 ];
 
@@ -4397,6 +4396,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks },
+    { id: "profile", label: "Mi Perfil", icon: User, desc: "Tu firma para la entrega de turno", access: true },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
@@ -5351,13 +5351,56 @@ function SignaturePad({ onChange }) {
   );
 }
 
-function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult }) {
+/* ============================================================
+   VISTA: MI PERFIL (firma guardada, se usa sola en cada entrega de turno)
+   ============================================================ */
+function ProfileView({ currentUser, mySignature, onSaveSignature }) {
+  const [draft, setDraft] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  const doSave = async () => {
+    if (!draft) return;
+    await onSaveSignature(draft);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mi Perfil</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{currentUser}</p>
+
+      <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Mi firma</div>
+        <p className="text-xs mb-3" style={{ color: C.gray }}>
+          La guardas una sola vez aquí, y de ahí en adelante se agrega sola en cada Entrega de turno — no hace falta volver a firmar cada vez.
+        </p>
+
+        {mySignature && !draft && (
+          <div className="mb-3">
+            <div className="text-xs mb-1" style={{ color: C.gray }}>Firma actual:</div>
+            <img src={mySignature} alt="Tu firma" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 240, background: "#fff" }} />
+          </div>
+        )}
+
+        <div className="text-xs mb-1" style={{ color: C.gray }}>{mySignature ? "Dibuja aquí para reemplazarla:" : "Dibuja tu firma aquí:"}</div>
+        <SignaturePad onChange={setDraft} />
+
+        <div className="flex items-center gap-2 mt-2">
+          <Button size="sm" disabled={!draft} onClick={doSave}>Guardar firma</Button>
+          {saved && <span className="text-xs font-medium" style={{ color: C.green }}>✓ Firma guardada</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult, mySignature, onGoToProfile }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [waTo, setWaTo] = useState(reportWhatsapp || "");
   const [sentNow, setSentNow] = useState(null);
   const [sendingAuto, setSendingAuto] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [signature, setSignature] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setWaTo(reportWhatsapp || ""); }, [reportWhatsapp]);
@@ -5379,7 +5422,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const doDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const doc = await generateTourPdf(lastTour, signature);
+      const doc = await generateTourPdf(lastTour, mySignature);
       doc.save(`entrega-turno-${String(lastTour.date).replace(/\//g, "-")}.pdf`);
     } catch {
       setSentNow({ ok: false, text: "No se pudo generar el PDF (revisa la conexión a internet, se necesita la primera vez)." });
@@ -5390,7 +5433,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const doSendAutoEmail = async () => {
     if (!emailTo.trim()) { setSentNow({ ok: false, text: "Escribe un correo destino." }); return; }
     setSendingAuto(true); setSentNow(null);
-    const res = await sendTourEmailAuto(emailTo.trim(), lastTour, signature);
+    const res = await sendTourEmailAuto(emailTo.trim(), lastTour, mySignature);
     setSentNow({ ok: res.ok, text: res.message });
     onLogSent({ to: emailTo.trim(), method: "Entrega de turno (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSendingAuto(false);
@@ -5422,11 +5465,11 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
             </div>
             <Button size="sm" variant="ghost" onClick={onAckFinished}>Entendido</Button>
           </div>
-          {autoSendResult && (
-            <div className="text-xs mt-2" style={{ color: autoSendResult.ok ? "#1c5e2e" : C.red }}>
-              {autoSendResult.ok ? "✓ " : "✗ "}{autoSendResult.message}
-            </div>
-          )}
+        </div>
+      )}
+      {autoSendResult && (
+        <div className="rounded-lg p-3 mb-4 text-sm" style={{ background: autoSendResult.ok ? C.greenSoft : C.redSoft, border: `1px solid ${autoSendResult.ok ? C.green : C.red}`, color: autoSendResult.ok ? "#1c5e2e" : C.red }}>
+          {autoSendResult.ok ? "✓ " : "✗ "}{autoSendResult.message}
         </div>
       )}
 
@@ -5437,11 +5480,19 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
       </p>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
-          Firma de quien entrega el turno <span className="normal-case font-normal" style={{ color: C.gray }}>(opcional)</span>
-        </div>
-        <SignaturePad onChange={setSignature} />
-        <div className="text-xs mt-1" style={{ color: C.gray }}>Si firmas aquí, queda incluida en el PDF que descargues o envíes.</div>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Firma de quien entrega el turno</div>
+        {mySignature ? (
+          <div>
+            <img src={mySignature} alt="Tu firma" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 200, background: "#fff" }} />
+            <div className="text-xs mt-1" style={{ color: C.gray }}>
+              Esta es la firma guardada en tu perfil — se incluye sola en el PDF. <button onClick={onGoToProfile} className="underline" style={{ color: C.blue }}>Cambiarla</button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs" style={{ color: C.gray }}>
+            Todavía no has guardado tu firma. <button onClick={onGoToProfile} className="underline font-semibold" style={{ color: C.blue }}>Configúrala en Mi Perfil</button> — la guardas una sola vez y de ahí en adelante se agrega sola en cada entrega de turno.
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -6802,6 +6853,12 @@ export default function App() {
     setAuthBusy(false);
   };
 
+  const updateMySignature = async (dataUrl) => {
+    const next = { ...accounts, [currentUser]: { ...accounts[currentUser], signature: dataUrl } };
+    setAccounts(next);
+    await sSet("accounts", next, true);
+  };
+
   const approveAccount = async (username) => {
     const next = { ...accounts, [username]: { ...accounts[username], approved: true } };
     setAccounts(next);
@@ -7722,6 +7779,7 @@ export default function App() {
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
     { id: "schedules", label: "Horario Mensual", icon: Users },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
+    { id: "profile", label: "Mi Perfil", icon: User },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -7878,10 +7936,14 @@ export default function App() {
           {view === "meters-history" && (
             <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
+          {view === "profile" && (
+            <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature} />
+          )}
           {view === "handoff" && (
             <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onLogSent={logSentReport} currentUser={displayName} justFinished={justFinished}
-              onAckFinished={() => setJustFinished(false)} autoSendResult={autoSendResult} />
+              onAckFinished={() => setJustFinished(false)} autoSendResult={autoSendResult}
+              mySignature={account.signature} onGoToProfile={() => setView("profile")} />
           )}
           {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} onCheckIn={checkInIssue} />}
           {view === "reports" && (

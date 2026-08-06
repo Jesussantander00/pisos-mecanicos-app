@@ -27,6 +27,12 @@ async function writeToSupabase(key, value) {
 /**
  * Lee un valor guardado. shared=true -> Supabase (visible para todos los usuarios).
  * shared=false -> localStorage (solo este navegador/dispositivo).
+ *
+ * Antes de ir al servidor, revisa si HAY un cambio de este mismo celular que todavía no se pudo
+ * subir (por ejemplo, alguien avanzando una ronda sin señal). Si lo hay, se usa ESE en vez del
+ * servidor — porque es más reciente que lo que el servidor tiene (por definición, ya que no se
+ * ha podido subir todavía). Esto evita que la app "regrese" el progreso al reabrirla sin señal,
+ * o justo antes de que la señal vuelva y alcance a sincronizar.
  */
 export async function sGet(key, shared) {
   if (!shared) {
@@ -38,6 +44,9 @@ export async function sGet(key, shared) {
       return null;
     }
   }
+  const pending = readQueue().find(item => item.key === key);
+  if (pending) return pending.value;
+
   const { data, error } = await supabase
     .from("app_storage")
     .select("value")

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useRegisterSW } from "virtual:pwa-register/react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   LineChart, Line, Legend
@@ -1336,10 +1337,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 
   const isLast = floorIndex === floorCount - 1;
   const [validationMsg, setValidationMsg] = useState(null);
-  const [search, setSearch] = useState("");
-  const visibleItems = search.trim()
-    ? floor.items.filter(it => it.n.toLowerCase().includes(search.trim().toLowerCase()))
-    : floor.items;
+  const visibleItems = floor.items;
 
   const handleSave = () => {
     const { missing, missingComment } = validateRoundEntries(floor.items, entries);
@@ -1382,15 +1380,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
         Los campos ya vienen con lo último registrado por el turno anterior — revisa, corrige lo que cambió y guarda.
       </div>
 
-      <div className="relative mb-3">
-        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar un equipo de este piso…"
-          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-      </div>
-
-      {visibleItems.length === 0 ? (
-        <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Sin resultados para "{search}" en este piso.</p>
-      ) : visibleItems.map(item => (
+      {visibleItems.map(item => (
         <EquipmentRow key={item.id} item={item} entry={entries[item.id]} onChange={onChange}
           activeIssue={activeIssues[item.id]} previous={latestValues[item.id]}
           onResolve={(it, solution) => onResolveIssue(it, solution)} />
@@ -6541,6 +6531,19 @@ export default function App() {
     try { localStorage.setItem("pm-local:last-view", v); } catch { /* noop */ }
   }, []);
   const [nowClock, setNowClock] = useState(() => new Date());
+  // Detecta cuándo hay una versión nueva de la app lista para usar (así no hace falta borrar
+  // e instalar de nuevo cada vez que se sube una actualización) — revisa cada 30 min mientras
+  // está abierta, y también apenas se vuelve a abrir el celular con la app en la pantalla.
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW(swUrl, registration) {
+      if (!registration) return;
+      setInterval(() => { registration.update().catch(() => {}); }, 30 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") registration.update().catch(() => {});
+      });
+    },
+  });
+
   const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem("pm-local:theme") === "dark"; } catch { return false; } });
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const closeOnboarding = () => {
@@ -6578,7 +6581,16 @@ export default function App() {
     const id = setInterval(tryFlush, 20000); // reintento silencioso, por si "online" no se dispara bien
     return () => { cancelled = true; window.removeEventListener("online", tryFlush); window.removeEventListener("pm-queue-changed", onQueueChanged); clearInterval(id); };
   }, []);
-  const [floorId, setFloorId] = useState(FLOORS[0].id);
+  const [floorId, setFloorIdRaw] = useState(() => {
+    try {
+      const saved = localStorage.getItem("pm-local:last-floor");
+      return saved && FLOORS.some(f => f.id === saved) ? saved : FLOORS[0].id;
+    } catch { return FLOORS[0].id; }
+  });
+  const setFloorId = useCallback((id) => {
+    setFloorIdRaw(id);
+    try { localStorage.setItem("pm-local:last-floor", id); } catch { /* noop */ }
+  }, []);
   const [activeIssues, setActiveIssues] = useState({});
   const [issueHistory, setIssueHistory] = useState([]);
   const [roundsIndex, setRoundsIndex] = useState([]);
@@ -7664,6 +7676,13 @@ export default function App() {
   return (
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
+      {needRefresh && (
+        <div className="fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
+          style={{ background: C.steelDark, borderTop: `2px solid ${C.amber}` }}>
+          <span className="text-sm text-white">🔄 Hay una versión nueva de la app lista para usar.</span>
+          <Button size="sm" onClick={() => updateServiceWorker(true)}>Actualizar ahora</Button>
+        </div>
+      )}
       {/* SIDEBAR */}
       <aside className={`fixed lg:static z-20 top-0 left-0 w-64 shrink-0 transition-transform flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{ background: C.steel, height: "100vh" }}>

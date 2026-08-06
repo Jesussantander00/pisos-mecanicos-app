@@ -508,10 +508,37 @@ function validateRoundEntries(items, entries) {
   items.forEach(item => {
     const e = entries[item.id];
     const hasValue = e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged);
-    if (!hasValue) missing.push(item.n);
-    if (e?.damaged && !(e.observation || "").trim()) missingComment.push(item.n);
+    if (!hasValue) missing.push({ id: item.id, n: item.n });
+    if (e?.damaged && !(e.observation || "").trim()) missingComment.push({ id: item.id, n: item.n });
   });
   return { missing, missingComment, ok: missing.length === 0 && missingComment.length === 0 };
+}
+
+/** Lleva la pantalla directo al equipo (usado al hacer clic en la lista de pendientes) y lo resalta un momento. */
+function scrollToItem(itemId) {
+  const el = document.getElementById(`item-row-${itemId}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.style.transition = "box-shadow 0.2s ease";
+  el.style.boxShadow = `0 0 0 3px ${C.amber}`;
+  setTimeout(() => { el.style.boxShadow = ""; }, 1800);
+}
+
+/** Aviso de "faltan estos equipos", con cada nombre clickeable para saltar directo a esa fila. */
+function PendingItemsAlert({ msg }) {
+  if (!msg) return null;
+  return (
+    <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>
+      ⚠ {msg.prefix}{" "}
+      {msg.items.map((it, i) => (
+        <span key={it.id}>
+          <button onClick={() => scrollToItem(it.id)} className="underline font-semibold" style={{ color: C.red }}>{it.n}</button>
+          {i < msg.items.length - 1 ? ", " : ""}
+        </span>
+      ))}
+      {msg.suffix ? ` ${msg.suffix}` : "."}
+    </div>
+  );
 }
 
 /**
@@ -1217,7 +1244,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
   const update = (patch) => onChange(item.id, { ...entry, ...patch });
 
   return (
-    <div className="rounded-lg border p-3 mb-2" style={{ borderColor: alert ? C.red : C.line, background: alert ? C.redSoft : C.panel }}>
+    <div id={`item-row-${item.id}`} className="rounded-lg border p-3 mb-2" style={{ borderColor: alert ? C.red : C.line, background: alert ? C.redSoft : C.panel }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-2" style={{ minWidth: 200 }}>
           <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0 mt-0.5" style={{ background: C.bg, color: C.inkSoft }}>#{item.c}</span>
@@ -1342,11 +1369,11 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
   const handleSave = () => {
     const { missing, missingComment } = validateRoundEntries(floor.items, entries);
     if (missingComment.length > 0) {
-      setValidationMsg(`Falta el comentario de qué pasó en: ${missingComment.join(", ")}. Los equipos marcados como dañados necesitan una observación antes de guardar.`);
+      setValidationMsg({ prefix: "Falta el comentario de qué pasó en:", items: missingComment, suffix: "Los equipos marcados como dañados necesitan una observación antes de guardar." });
       return;
     }
     if (missing.length > 0) {
-      setValidationMsg(`Todavía faltan estos equipos por registrar: ${missing.join(", ")}.`);
+      setValidationMsg({ prefix: "Todavía faltan estos equipos por registrar:", items: missing });
       return;
     }
     setValidationMsg(null);
@@ -1393,9 +1420,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
-      {validationMsg && (
-        <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
-      )}
+      <PendingItemsAlert msg={validationMsg} />
 
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Vo.Bo. pendiente de supervisor</div>
@@ -1456,11 +1481,11 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const handleSave = () => {
     const { missing, missingComment } = validateRoundEntries(ALL_COLD_ROOM_ITEMS, entries);
     if (missingComment.length > 0) {
-      setSendMsg({ ok: false, text: `Falta el comentario de qué pasó en: ${missingComment.join(", ")}. Los equipos marcados como dañados necesitan una observación antes de guardar.` });
+      setSendMsg({ ok: false, text: "Falta el comentario de qué pasó en:", items: missingComment });
       return;
     }
     if (missing.length > 0) {
-      setSendMsg({ ok: false, text: `Todavía faltan estos por registrar: ${missing.join(", ")}.` });
+      setSendMsg({ ok: false, text: "Todavía faltan estos por registrar:", items: missing });
       return;
     }
     onSaveColdRound(entries, notes, supervisor, ingeniero);
@@ -1585,7 +1610,17 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1 mb-3" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
-      {sendMsg && !sendMsg.ok && <div className="rounded-md p-2 mt-1 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {sendMsg.text}</div>}
+      {sendMsg && !sendMsg.ok && (
+        <div className="rounded-md p-2 mt-1 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>
+          ⚠ {sendMsg.text}{" "}
+          {sendMsg.items ? sendMsg.items.map((it, i) => (
+            <span key={it.id}>
+              <button onClick={() => scrollToItem(it.id)} className="underline font-semibold" style={{ color: C.red }}>{it.n}</button>
+              {i < sendMsg.items.length - 1 ? ", " : "."}
+            </span>
+          )) : null}
+        </div>
+      )}
 
       {lastColdRound && !todayIsSunday && (
         <div className="rounded-md p-2 text-xs" style={{ background: C.bg, color: C.inkSoft }}>
@@ -1755,11 +1790,11 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
   const handleSave = () => {
     const { missing, missingComment } = validateRoundEntries(allItems, entries);
     if (missingComment.length > 0) {
-      setValidationMsg(`Falta el comentario de qué pasó en: ${missingComment.join(", ")}. Los equipos marcados como dañados necesitan una observación antes de guardar.`);
+      setValidationMsg({ prefix: "Falta el comentario de qué pasó en:", items: missingComment, suffix: "Los equipos marcados como dañados necesitan una observación antes de guardar." });
       return;
     }
     if (missing.length > 0) {
-      setValidationMsg(`Todavía faltan estos equipos por registrar: ${missing.join(", ")}.`);
+      setValidationMsg({ prefix: "Todavía faltan estos equipos por registrar:", items: missing });
       return;
     }
     setValidationMsg(null);
@@ -1811,9 +1846,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
-      {validationMsg && (
-        <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {validationMsg}</div>
-      )}
+      <PendingItemsAlert msg={validationMsg} />
 
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
@@ -4421,7 +4454,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 /* ============================================================
    VISTA: EQUIPOS FUERA DE SERVICIO
    ============================================================ */
-function IssuesView({ activeIssues, onResolve }) {
+function IssuesView({ activeIssues, onResolve, onCheckIn }) {
   const list = Object.values(activeIssues).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt));
   return (
     <div>
@@ -4433,14 +4466,15 @@ function IssuesView({ activeIssues, onResolve }) {
           <div className="text-sm font-medium" style={{ color: C.green }}>No hay equipos reportados como dañados. Todo en orden.</div>
         </div>
       )}
-      {list.map(iss => <IssueResolveCard key={iss.equipmentId} iss={iss} onResolve={onResolve} />)}
+      {list.map(iss => <IssueResolveCard key={iss.equipmentId} iss={iss} onResolve={onResolve} onCheckIn={onCheckIn} />)}
     </div>
   );
 }
 
-function IssueResolveCard({ iss, onResolve }) {
+function IssueResolveCard({ iss, onResolve, onCheckIn }) {
   const [open, setOpen] = useState(false);
   const [solution, setSolution] = useState("");
+  const checkins = iss.checkins || [];
   return (
     <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -4452,8 +4486,22 @@ function IssueResolveCard({ iss, onResolve }) {
           <div className="text-sm font-semibold" style={{ color: C.ink }}>#{iss.code} · {iss.name}</div>
           <div className="text-xs mt-1" style={{ color: "#7a3a26" }}>Reportado por <b>{iss.openedBy}</b> · {fmtDT(iss.openedAt)} · lleva <b>{elapsed(iss.openedAt)}</b></div>
           <div className="text-sm italic mt-1" style={{ color: C.ink }}>"{iss.observation}"</div>
+          {checkins.length > 0 && (
+            <div className="mt-2 pl-2" style={{ borderLeft: `2px solid ${C.red}` }}>
+              {checkins.map((c, i) => (
+                <div key={i} className="text-xs" style={{ color: "#7a3a26" }}>
+                  ↳ Sigue igual — confirmado por <b>{c.by}</b> · {fmtDT(c.at)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        {!open ? <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>Marcar resuelto</Button> : null}
+        {!open && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => onCheckIn(iss)}>Sigue igual</Button>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>Marcar resuelto</Button>
+          </div>
+        )}
       </div>
       {open && (
         <div className="flex items-center gap-2 mt-2">
@@ -6869,6 +6917,16 @@ export default function App() {
     await sSet("active-issues", newActive, true);
   };
 
+  /** "Sigue igual": deja constancia de que se revisó y el equipo sigue con la misma falla,
+   *  sin obligar a escribir un comentario nuevo cada turno. Queda como una lista de confirmaciones. */
+  const checkInIssue = async (iss) => {
+    const id = iss.equipmentId || iss.id;
+    const entry = { by: displayName, at: nowIso(), shift };
+    const newActive = { ...activeIssues, [id]: { ...activeIssues[id], checkins: [...(activeIssues[id]?.checkins || []), entry] } };
+    setActiveIssues(newActive);
+    await sSet("active-issues", newActive, true);
+  };
+
   /**
    * Actualiza el nivel de un tanque manualmente, SIN pasar por la ronda completa del piso.
    * Pensado para cortes de agua u otras emergencias donde hay que revisar/actualizar
@@ -7825,7 +7883,7 @@ export default function App() {
               onLogSent={logSentReport} currentUser={displayName} justFinished={justFinished}
               onAckFinished={() => setJustFinished(false)} autoSendResult={autoSendResult} />
           )}
-          {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} />}
+          {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} onCheckIn={checkInIssue} />}
           {view === "reports" && (
             <ReportsView issueHistory={issueHistory} roundsIndex={roundsIndex} activeIssues={activeIssues} latestValues={latestValues}
               reportEmail={reportEmail} reportWhatsapp={reportWhatsapp} onOpenPrint={() => setPrintMode(true)}

@@ -10,7 +10,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "sw.js",
       registerType: "autoUpdate",
-      injectRegister: "auto",
+      injectRegister: false,
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
         name: "Pisos Mecánicos — Hyatt Regency Cartagena",

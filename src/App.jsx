@@ -1121,7 +1121,7 @@ function Pill({ children, tone = "gray" }) {
 }
 
 function Button({ children, onClick, variant = "primary", size = "md", disabled, icon: Icon, type = "button" }) {
-  const base = "inline-flex items-center gap-1.5 rounded-md font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
+  const base = "inline-flex items-center gap-1.5 rounded-md font-medium transition duration-150 ease-out active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100";
   const sizes = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-2 text-sm";
   const styles = {
     primary: { background: C.steel, color: "#fff" },
@@ -4225,7 +4225,7 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
       {open && q.trim().length >= 2 && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-96 rounded-lg border shadow-lg z-50 max-h-[65vh] overflow-y-auto"
+          <div className="pm-animate-in fixed left-2 right-2 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-96 rounded-lg border shadow-lg z-50 max-h-[65vh] overflow-y-auto"
             style={{ background: C.panel, borderColor: C.line }}>
             {results.length === 0 ? (
               <div className="p-3 text-xs" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
@@ -4265,7 +4265,7 @@ function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
         <>
           {/* fondo invisible: tocar en cualquier parte fuera del panel lo cierra */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 rounded-lg border shadow-lg z-50 max-h-[70vh] overflow-y-auto"
+          <div className="pm-animate-in fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 rounded-lg border shadow-lg z-50 max-h-[70vh] overflow-y-auto"
             style={{ background: "#fff", borderColor: C.line }}>
             <div className="flex items-center justify-between p-3 border-b sticky top-0" style={{ borderColor: C.line, background: "#fff" }}>
               <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Notificaciones</div>
@@ -4334,7 +4334,7 @@ function PushEnableButton({ onEnable }) {
         <Bell size={16} color={busy ? C.gray : C.amber} />
       </button>
       {msg && (
-        <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-64 rounded-lg border shadow-lg z-50 p-3 text-xs"
+        <div className="pm-animate-in fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-64 rounded-lg border shadow-lg z-50 p-3 text-xs"
           style={{ background: "#fff", borderColor: C.line, color: msg.ok ? C.green : C.red }}>
           {msg.message}
         </div>
@@ -4362,7 +4362,7 @@ function OnboardingTour({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }}>
-      <div className="rounded-xl max-w-sm w-full p-5" style={{ background: C.panel }}>
+      <div className="pm-animate-in rounded-xl max-w-sm w-full p-5" style={{ background: C.panel }}>
         <div className="flex items-center gap-1 mb-4">
           {ONBOARDING_STEPS.map((_, i) => (
             <div key={i} className="h-1 flex-1 rounded-full" style={{ background: i <= step ? C.amber : C.line }} />
@@ -7801,15 +7801,15 @@ export default function App() {
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
       {needRefresh && (
-        <div className="fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
+        <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
           style={{ background: C.steelDark, borderTop: `2px solid ${C.amber}` }}>
           <span className="text-sm text-white">🔄 Hay una versión nueva de la app lista para usar.</span>
           <Button size="sm" onClick={() => updateServiceWorker(true)}>Actualizar ahora</Button>
         </div>
       )}
       {/* SIDEBAR */}
-      <aside className={`fixed lg:static z-20 top-0 left-0 w-64 shrink-0 transition-transform flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-        style={{ background: C.steel, height: "100vh" }}>
+      <aside className={`fixed lg:static z-20 top-0 left-0 w-64 shrink-0 transition-transform duration-200 flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        style={{ transitionTimingFunction: "var(--ease-out)", background: C.steel, height: "100vh" }}>
         <style>{`
           .floor-scroll::-webkit-scrollbar { width: 8px; }
           .floor-scroll::-webkit-scrollbar-track { background: transparent; }

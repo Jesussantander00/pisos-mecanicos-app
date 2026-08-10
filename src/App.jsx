@@ -1447,7 +1447,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 /* ============================================================
    VISTA: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
    ============================================================ */
-function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound, coldHistory }) {
+function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound, coldHistory, mySignature }) {
   const [entries, setEntries] = useState({});
   const [search, setSearch] = useState("");
   const [notes, setNotes] = useState("");
@@ -1503,7 +1503,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const doDownloadPdf = async () => {
     setDownloading(true);
     try {
-      const doc = await generateColdRoomsWeekPdf(weekGrid, weekLabel, currentUser);
+      const doc = await generateColdRoomsWeekPdf(weekGrid, weekLabel, currentUser, mySignature);
       doc.save(`cuartos-frios-semana-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
     } catch { setSendMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
     setDownloading(false);
@@ -1512,7 +1512,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const doSendEmail = async () => {
     if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSending(true); setSendMsg(null);
-    const res = await sendColdRoomsWeekEmailAuto(emailTo.trim(), weekGrid, weekLabel, currentUser);
+    const res = await sendColdRoomsWeekEmailAuto(emailTo.trim(), weekGrid, weekLabel, currentUser, mySignature);
     setSendMsg({ ok: res.ok, text: res.message });
     onLogSent?.({ to: emailTo.trim(), method: "Cuartos Fríos (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSending(false);
@@ -1964,7 +1964,7 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
 /* ============================================================
    VISTA SEMANAL DE MEDIDORES
    ============================================================ */
-function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser }) {
+function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser, mySignature }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
@@ -1998,7 +1998,7 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
   const doDownloadPdf = async () => {
     setDownloading(true);
     try {
-      const doc = await generateMetersWeekPdf(grid, weekLabel, currentUser);
+      const doc = await generateMetersWeekPdf(grid, weekLabel, currentUser, mySignature);
       doc.save(`lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
     } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
     setDownloading(false);
@@ -2085,7 +2085,7 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser })
 /* ============================================================
    VISTA SEMANAL DE CUARTOS FRÍOS
    ============================================================ */
-function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser }) {
+function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser, mySignature }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
@@ -2102,7 +2102,7 @@ function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser 
   const doDownload = async () => {
     setDownloading(true);
     try {
-      const doc = await generateColdRoomsWeekPdf(grid, weekLabel, currentUser);
+      const doc = await generateColdRoomsWeekPdf(grid, weekLabel, currentUser, mySignature);
       doc.save(`cuartos-frios-semana-${weekLabel.replace(/[\s/]+/g, "-")}.pdf`);
     } catch { setMsg({ ok: false, text: "No se pudo generar el PDF (revisa la conexión)." }); }
     setDownloading(false);
@@ -2111,7 +2111,7 @@ function ColdRoomsWeeklyView({ coldHistory, reportEmail, onLogSent, currentUser 
   const doSend = async () => {
     if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     setSending(true); setMsg(null);
-    const res = await sendColdRoomsWeekEmailAuto(emailTo.trim(), grid, weekLabel, currentUser);
+    const res = await sendColdRoomsWeekEmailAuto(emailTo.trim(), grid, weekLabel, currentUser, mySignature);
     setMsg({ ok: res.ok, text: res.message });
     onLogSent?.({ to: emailTo.trim(), method: "Cuartos Fríos (semana, correo con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSending(false);
@@ -4963,6 +4963,21 @@ function pdfLetterhead(doc, title, metaLines) {
 }
 
 /** Pie de página con línea divisoria, fecha de generación y "Página X de Y", aplicado a TODAS las páginas al final. */
+/** Agrega la firma guardada de quien envía el reporte, si tiene una configurada en Mi Perfil. Devuelve la nueva posición Y. */
+function pdfSignatureBlock(doc, y, pageH, signatureDataUrl, userLine) {
+  if (!signatureDataUrl) return y;
+  if (y > pageH - 55) { doc.addPage(); y = 18; }
+  y = pdfSectionTitle(doc, y, "Firma");
+  try {
+    doc.addImage(signatureDataUrl, "PNG", 14, y, 70, 27);
+    y += 30;
+  } catch { /* si la imagen no carga, se omite sin romper el PDF */ }
+  doc.setFontSize(8.5); doc.setTextColor(...PDF_C.inkSoft);
+  doc.text(userLine, 14, y);
+  doc.setTextColor(...PDF_C.ink); doc.setFontSize(9);
+  return y + 6;
+}
+
 function pdfFooterAll(doc) {
   const pages = doc.internal.getNumberOfPages();
   const pageW = doc.internal.pageSize.getWidth();
@@ -5172,18 +5187,7 @@ async function generateTourPdf(tour, signatureDataUrl) {
     }
   });
 
-  if (signatureDataUrl) {
-    if (y > pageH - 55) { doc.addPage(); y = 18; }
-    y = pdfSectionTitle(doc, y, "Firma de quien entrega el turno");
-    try {
-      doc.addImage(signatureDataUrl, "PNG", 14, y, 70, 27);
-      y += 30;
-    } catch { /* si la imagen no carga, se omite sin romper el PDF */ }
-    doc.setFontSize(8.5); doc.setTextColor(...PDF_C.inkSoft);
-    doc.text(`${tour.user} — ${fmtDT(nowIso())}`, 14, y);
-    doc.setTextColor(...PDF_C.ink); doc.setFontSize(9);
-    y += 6;
-  }
+  y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, `${tour.user} — ${fmtDT(nowIso())}`);
 
   pdfFooterAll(doc);
   return doc;
@@ -5909,7 +5913,7 @@ async function sendScheduleEmailAuto(to, monthLabel, employees, daysIso, entries
 /* ============================================================
    PDF Y CORREO: CUARTOS FRÍOS
    ============================================================ */
-async function generateColdRoomsPdf(record) {
+async function generateColdRoomsPdf(record, signatureDataUrl) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();
@@ -5948,15 +5952,17 @@ async function generateColdRoomsPdf(record) {
     doc.setFontSize(8.5); doc.setTextColor(...PDF_C.gray);
     doc.text(`Supervisor: ${record.supervisor || "—"}     Ingeniero: ${record.ingeniero || "—"}`, 14, y);
     doc.setTextColor(...PDF_C.ink);
+    y += 6;
   }
+  y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, `${record.user} — ${fmtDT(nowIso())}`);
 
   pdfFooterAll(doc);
   return doc;
 }
 
-async function sendColdRoomsEmailAuto(to, record) {
+async function sendColdRoomsEmailAuto(to, record, signatureDataUrl) {
   try {
-    const doc = await generateColdRoomsPdf(record);
+    const doc = await generateColdRoomsPdf(record, signatureDataUrl);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -6011,7 +6017,7 @@ function buildColdRoomsWeekGrid(coldHistory, weekStart) {
   return { days, rows };
 }
 
-async function generateColdRoomsWeekPdf(grid, weekLabel, generatedBy) {
+async function generateColdRoomsWeekPdf(grid, weekLabel, generatedBy, signatureDataUrl) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
   const pageH = doc.internal.pageSize.getHeight();
@@ -6052,13 +6058,15 @@ async function generateColdRoomsWeekPdf(grid, weekLabel, generatedBy) {
   });
   flushGroup();
 
+  y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, `${generatedBy || "—"} — ${fmtDT(nowIso())}`);
+
   pdfFooterAll(doc);
   return doc;
 }
 
-async function sendColdRoomsWeekEmailAuto(to, grid, weekLabel, generatedBy) {
+async function sendColdRoomsWeekEmailAuto(to, grid, weekLabel, generatedBy, signatureDataUrl) {
   try {
-    const doc = await generateColdRoomsWeekPdf(grid, weekLabel, generatedBy);
+    const doc = await generateColdRoomsWeekPdf(grid, weekLabel, generatedBy, signatureDataUrl);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -6137,7 +6145,7 @@ function buildMeterWeekGrid(meterHistory, weekStart) {
   return { days, rows };
 }
 
-async function generateMetersWeekPdf(grid, weekLabel, generatedBy) {
+async function generateMetersWeekPdf(grid, weekLabel, generatedBy, signatureDataUrl) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
   const pageH = doc.internal.pageSize.getHeight();
@@ -6178,13 +6186,15 @@ async function generateMetersWeekPdf(grid, weekLabel, generatedBy) {
   });
   flushGroup();
 
+  y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, `${generatedBy || "—"} — ${fmtDT(nowIso())}`);
+
   pdfFooterAll(doc);
   return doc;
 }
 
-async function sendMetersWeekEmailAuto(to, grid, weekLabel, generatedBy) {
+async function sendMetersWeekEmailAuto(to, grid, weekLabel, generatedBy, signatureDataUrl) {
   try {
-    const doc = await generateMetersWeekPdf(grid, weekLabel, generatedBy);
+    const doc = await generateMetersWeekPdf(grid, weekLabel, generatedBy, signatureDataUrl);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -7490,7 +7500,7 @@ export default function App() {
       // adjunto, sin que nadie tenga que tocar nada. Si falla (sin internet, backend sin
       // configurar, etc.) queda registrado y el técnico puede reintentarlo desde la pantalla.
       if (reportEmail) {
-        sendTourEmailAuto(reportEmail, tourRec).then(async (res) => {
+        sendTourEmailAuto(reportEmail, tourRec, account.signature).then(async (res) => {
           setAutoSendResult(res);
           await logSentReport({ to: reportEmail, method: "Entrega de turno (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: displayName, sentAt: nowIso() });
         });
@@ -7932,17 +7942,17 @@ export default function App() {
           {view === "coldrooms" && (
             <ColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
               latestColdValues={latestColdValues} onResolveIssue={resolveIssue} onSaveColdRound={saveColdRound}
-              reportEmail={reportEmail} onLogSent={logSentReport} lastColdRound={lastColdRound} coldHistory={coldHistory} />
+              reportEmail={reportEmail} onLogSent={logSentReport} lastColdRound={lastColdRound} coldHistory={coldHistory} mySignature={account.signature} />
           )}
           {view === "coldrooms-history" && (
-            <ColdRoomsWeeklyView coldHistory={coldHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+            <ColdRoomsWeeklyView coldHistory={coldHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} mySignature={account.signature} />
           )}
           {view === "meters" && (
             <MetersView currentUser={displayName} shift={shift}
               latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} meterHistory={meterHistory} />
           )}
           {view === "meters-history" && (
-            <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+            <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} mySignature={account.signature} />
           )}
           {view === "profile" && (
             <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature} />

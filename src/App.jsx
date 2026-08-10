@@ -506,7 +506,7 @@ function validateRoundEntries(items, entries) {
   const missingComment = [];
   items.forEach(item => {
     const e = entries[item.id];
-    const hasValue = e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged);
+    const hasValue = e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged || e.ph || e.cloro || e.operador);
     if (!hasValue) missing.push({ id: item.id, n: item.n });
     if (e?.damaged && !(e.observation || "").trim()) missingComment.push({ id: item.id, n: item.n });
   });
@@ -1285,6 +1285,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
               <input value={entry?.ph ?? ""} onChange={e => update({ ph: e.target.value })} placeholder="PH" className="w-16 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               <input value={entry?.cloro ?? ""} onChange={e => update({ cloro: e.target.value })} placeholder="Cloro" className="w-16 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               <input value={entry?.operador ?? ""} onChange={e => update({ operador: e.target.value })} placeholder="Operador" className="w-28 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <input value={entry?.pisoMuestra ?? ""} onChange={e => update({ pisoMuestra: e.target.value })} placeholder="Piso de muestra" className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             </div>
           )}
           <label className="flex items-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer select-none"

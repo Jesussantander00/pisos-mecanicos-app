@@ -508,7 +508,7 @@ function validateRoundEntries(items, entries) {
     const e = entries[item.id];
     const hasValue = e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged || e.ph || e.cloro || e.operador);
     if (!hasValue) missing.push({ id: item.id, n: item.n });
-    if (e?.damaged && !(e.observation || "").trim()) missingComment.push({ id: item.id, n: item.n });
+    if (e?.damaged && !e?.stillSame && !(e.observation || "").trim()) missingComment.push({ id: item.id, n: item.n });
   });
   return { missing, missingComment, ok: missing.length === 0 && missingComment.length === 0 };
 }
@@ -1293,6 +1293,13 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
             <input type="checkbox" checked={damaged} onChange={e => update({ damaged: e.target.checked })} className="accent-current" />
             Dañado / Fuera de servicio
           </label>
+          {damaged && activeIssue && (
+            <label className="flex items-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer select-none"
+              style={{ background: entry?.stillSame ? C.amber : C.bg, color: entry?.stillSame ? "#fff" : C.inkSoft }}>
+              <input type="checkbox" checked={!!entry?.stillSame} onChange={e => update({ stillSame: e.target.checked })} className="accent-current" />
+              Continúa igual (sin novedad)
+            </label>
+          )}
         </div>
       </div>
 

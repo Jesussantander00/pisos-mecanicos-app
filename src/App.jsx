@@ -62,11 +62,21 @@ const DARK_COLORS = {
 // Cambiar de tema es simplemente sobrescribir sus valores y forzar un redibujado — así no hay que
 // tocar cada componente uno por uno para que reaccionen al modo oscuro.
 const C = { ...LIGHT_COLORS };
+/** Refleja los colores que se usan en hover/active de Tailwind como variables CSS reales —
+ * así "hover:border-[var(--pm-amber)]" se actualiza solo entre modo claro/oscuro. */
+function syncCssVars() {
+  try {
+    document.documentElement.style.setProperty("--pm-amber", C.amber);
+    document.documentElement.style.setProperty("--pm-line", C.line);
+  } catch { /* noop (por si corre antes de que exista document, poco probable) */ }
+}
 try {
   if (localStorage.getItem("pm-local:theme") === "dark") Object.assign(C, DARK_COLORS);
 } catch { /* noop */ }
+syncCssVars();
 function applyTheme(dark) {
   Object.assign(C, dark ? DARK_COLORS : LIGHT_COLORS);
+  syncCssVars();
 }
 
 const STATUS_OPTS = ["Automático", "Manual", "Apagado"];
@@ -4437,13 +4447,11 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       <div className="grid grid-cols-2 gap-3">
         {modules.map(m => (
           <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
-            className={`text-left rounded-lg border p-3 transition duration-150 ease-out ${m.access ? "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:shadow-sm" : ""}`}
+            className={`text-left rounded-lg border p-3 transition duration-150 ease-out ${m.access ? "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]" : ""}`}
             style={{
               borderColor: C.line, background: m.access ? C.panel : C.bg,
               opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
-            }}
-            onMouseEnter={e => { if (m.access) e.currentTarget.style.borderColor = C.amber; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = C.line; }}>
+            }}>
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-2">
                 <m.icon size={16} style={{ color: m.access ? C.amber : C.gray }} />
@@ -7853,10 +7861,8 @@ export default function App() {
         <div className="p-3 space-y-1 shrink-0">
           {NAV.map(n => (
             <button key={n.id} onClick={() => { setView(n.id); setSidebarOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150"
-              style={{ background: view === n.id ? "#2a3f56" : "transparent", color: view === n.id ? "#fff" : "#c3d0dd" }}
-              onMouseEnter={e => { if (view !== n.id) e.currentTarget.style.background = "#1f3247"; }}
-              onMouseLeave={e => { if (view !== n.id) e.currentTarget.style.background = "transparent"; }}>
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] ${view === n.id ? "" : "hover:bg-white/5 active:bg-white/10"}`}
+              style={{ background: view === n.id ? "#2a3f56" : undefined, color: view === n.id ? "#fff" : "#c3d0dd" }}>
               <n.icon size={16} />
               <span className="flex-1 text-left">{n.label}</span>
               {!!n.badge && <span className="text-xs font-bold px-1.5 rounded-full" style={{ background: C.red, color: "#fff" }}>{n.badge}</span>}

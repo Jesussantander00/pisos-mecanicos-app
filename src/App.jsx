@@ -4437,11 +4437,13 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       <div className="grid grid-cols-2 gap-3">
         {modules.map(m => (
           <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
-            className="text-left rounded-lg border p-3 transition"
+            className={`text-left rounded-lg border p-3 transition duration-150 ease-out ${m.access ? "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:shadow-sm" : ""}`}
             style={{
               borderColor: C.line, background: m.access ? C.panel : C.bg,
               opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
-            }}>
+            }}
+            onMouseEnter={e => { if (m.access) e.currentTarget.style.borderColor = C.amber; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = C.line; }}>
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-2">
                 <m.icon size={16} style={{ color: m.access ? C.amber : C.gray }} />
@@ -7742,7 +7744,14 @@ export default function App() {
     if (currentUser && pendingEquipoId) setView("maintenance");
   }, [currentUser, pendingEquipoId]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg, color: C.inkSoft }}>Cargando…</div>;
+  if (loading) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3" style={{ background: C.bg, color: C.inkSoft }}>
+      <div className="pm-pulse rounded-2xl p-4" style={{ background: C.amber }}>
+        <Gauge size={32} color="#fff" />
+      </div>
+      <span className="text-sm">Cargando…</span>
+    </div>
+  );
   if (loadError) return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
       <div className="max-w-sm text-center">
@@ -7844,8 +7853,10 @@ export default function App() {
         <div className="p-3 space-y-1 shrink-0">
           {NAV.map(n => (
             <button key={n.id} onClick={() => { setView(n.id); setSidebarOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium"
-              style={{ background: view === n.id ? "#2a3f56" : "transparent", color: view === n.id ? "#fff" : "#c3d0dd" }}>
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150"
+              style={{ background: view === n.id ? "#2a3f56" : "transparent", color: view === n.id ? "#fff" : "#c3d0dd" }}
+              onMouseEnter={e => { if (view !== n.id) e.currentTarget.style.background = "#1f3247"; }}
+              onMouseLeave={e => { if (view !== n.id) e.currentTarget.style.background = "transparent"; }}>
               <n.icon size={16} />
               <span className="flex-1 text-left">{n.label}</span>
               {!!n.badge && <span className="text-xs font-bold px-1.5 rounded-full" style={{ background: C.red, color: "#fff" }}>{n.badge}</span>}

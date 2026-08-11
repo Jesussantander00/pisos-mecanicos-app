@@ -4310,25 +4310,45 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       const days = daysIso.map(d => ({ date: d, isSundayOrHoliday: isSundayOrHoliday(d) }));
       const employeesForApi = activeEmployees.map(e => ({ id: e.id, name: e.name, cargo: e.cargo || "", fixedRestDay: e.fixedRestDay ?? null }));
 
-      const res = await requestAiScheduleDraft({
-        monthLabel, days, employees: employeesForApi,
+      // Pedir el mes completo de una sola vez puede tardar tanto que Vercel corte la función a la
+      // mitad. En vez de eso, se pide en tandas de máximo 15 días, todas al tiempo — cada tanda es
+      // rápida por separado, y entre todas arman el mes igual. Si alguna tanda falla, las demás
+      // igual quedan aplicadas (no se pierde todo por un problema en una sola parte).
+      const CHUNK_SIZE = 15;
+      const dayChunks = [];
+      for (let i = 0; i < days.length; i += CHUNK_SIZE) dayChunks.push(days.slice(i, i + CHUNK_SIZE));
+
+      const results = await Promise.all(dayChunks.map(chunkDays => requestAiScheduleDraft({
+        monthLabel, days: chunkDays, employees: employeesForApi,
         existingEntries: entriesByEmployee, referenceEntries,
         rulesText: aiRulesText, weeklyHoursTarget: WEEKLY_HOURS_TARGET,
-      });
+      }).catch(() => ({ ok: false, message: "No se pudo conectar con el servicio de IA para esta parte del mes." }))));
 
-      if (!res.ok) { setAiError(res.message || "No se pudo generar el borrador."); setAiGenerating(false); return; }
+      const okResults = results.filter(r => r && r.ok);
+      const failedCount = results.length - okResults.length;
 
       const overrides = {};
-      res.entries.forEach(e => {
-        const key = scheduleKey(e.employeeId, e.date);
-        overrides[key] = e.code ? { code: e.code } : { entrada: e.entrada, salida: e.salida };
+      okResults.forEach(r => {
+        r.entries.forEach(e => {
+          const key = scheduleKey(e.employeeId, e.date);
+          overrides[key] = e.code ? { code: e.code } : { entrada: e.entrada, salida: e.salida };
+        });
       });
+
+      if (Object.keys(overrides).length === 0) {
+        const firstMsg = results.find(r => r && !r.ok)?.message;
+        setAiError(firstMsg || "La IA no llenó ningún día — puede que ya esté todo lleno este mes, o que no haya podido cumplir las reglas.");
+        setAiGenerating(false);
+        return;
+      }
+
       setDraftOverrides(overrides);
       setDraftActive(true);
-      setAiNotes(res.notes || null);
-      if (Object.keys(overrides).length === 0) {
-        setAiError("La IA no llenó ningún día — puede que ya esté todo lleno este mes, o que no haya podido cumplir las reglas. Revisa las notas si hay.");
+      let notes = okResults.map(r => r.notes).filter(Boolean).join(" ");
+      if (failedCount > 0) {
+        notes = (notes ? notes + " " : "") + `Aviso: ${failedCount} de ${results.length} parte(s) del mes no se pudieron generar — vuelve a darle "Generar borrador" para completar los días que falten (los que ya se generaron no se pierden).`;
       }
+      setAiNotes(notes || null);
     } catch {
       setAiError("No se pudo conectar con el servicio de IA. Intenta de nuevo.");
     }

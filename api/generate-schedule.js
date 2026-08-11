@@ -7,6 +7,12 @@
 //
 // Configúrala en Vercel → tu proyecto → Settings → Environment Variables:
 //   ANTHROPIC_API_KEY  = tu clave secreta de console.anthropic.com (empieza con "sk-ant-")
+//
+// Le pide a Vercel el máximo de tiempo posible para esta función (60 segundos — es el tope del
+// plan gratuito; en un plan de pago se puede subir más). Aun así, quien llama a esta función
+// (la app) manda como mucho ~15 días por pedido, no el mes completo, para que casi nunca haga
+// falta tanto tiempo — ver la función doGenerateAiDraft en App.jsx.
+export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

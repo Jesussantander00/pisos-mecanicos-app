@@ -526,25 +526,29 @@ function validateRoundEntries(items, entries) {
 /** Lleva la pantalla directo al equipo (usado al hacer clic en la lista de pendientes) y lo resalta un momento. */
 /** Comprime una foto y la convierte a base64 (sin el prefijo "data:...") — lista para mandar a la
  *  función que lee el número del medidor. Más liviana que la de subir a Supabase (no hace falta
- *  tanta resolución solo para leer un número). */
-function imageFileToBase64ForReading(file, maxWidth = 900, quality = 0.75) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, maxWidth / img.width);
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL("image/jpeg", quality);
-      resolve(dataUrl.split(",")[1]); // solo el base64, sin el "data:image/jpeg;base64,"
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("No se pudo leer la imagen.")); };
-    img.src = url;
-  });
+ *  tanta resolución solo para leer un número).
+ *
+ *  IMPORTANTE: usa createImageBitmap con imageOrientation:"from-image" en vez del Image() normal,
+ *  porque muchas fotos de celular tomadas en vertical guardan la imagen "acostada" por dentro,
+ *  con una marca (EXIF) que dice "gírala al mostrarla". El Image()+canvas normal ignora esa marca
+ *  y manda la foto acostada tal cual, lo que hacía que la lectura saliera mal. createImageBitmap
+ *  sí respeta esa marca y entrega la foto ya derecha, como se ve a simple vista. */
+async function imageFileToBase64ForReading(file, maxWidth = 900, quality = 0.75) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    bitmap = await createImageBitmap(file); // navegador viejo sin soporte para imageOrientation
+  }
+  const scale = Math.min(1, maxWidth / bitmap.width);
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  const dataUrl = canvas.toDataURL("image/jpeg", quality);
+  return dataUrl.split(",")[1]; // solo el base64, sin el "data:image/jpeg;base64,"
 }
 
 /** Le pide a la función serverless que lea el número que muestra un medidor en la foto. */
@@ -1716,15 +1720,24 @@ function MeterRow({ meter, entry, onChange, previous }) {
   const update = (sub, v) => onChange(meter.id, { ...entry, [sub]: v });
   const [reading, setReading] = useState(null); // qué "sub" está leyendo ahora mismo, o null
   const [readMsg, setReadMsg] = useState(null);
+  const [confirmedSubs, setConfirmedSubs] = useState({}); // {sub: true} — quedó leído por foto y sin tocar desde entonces
 
   const doRead = async (sub, file) => {
     setReading(sub); setReadMsg(null);
     try {
       const res = await readMeterFromPhoto(file);
-      if (res.ok) { update(sub, res.lectura); setReadMsg({ ok: true, text: `Leído: ${res.lectura}` }); }
-      else setReadMsg({ ok: false, text: res.message || "No se pudo leer." });
+      if (res.ok) {
+        update(sub, res.lectura);
+        setConfirmedSubs(prev => ({ ...prev, [sub]: true }));
+        setReadMsg({ ok: true, text: `Leído: ${res.lectura}` });
+      } else setReadMsg({ ok: false, text: res.message || "No se pudo leer." });
     } catch { setReadMsg({ ok: false, text: "No se pudo leer (revisa la conexión)." }); }
     setReading(null);
+  };
+
+  const updateManual = (sub, v) => {
+    update(sub, v);
+    setConfirmedSubs(prev => { const next = { ...prev }; delete next[sub]; return next; }); // si lo editan a mano, ya no es "confirmado por foto"
   };
 
   return (
@@ -1736,20 +1749,23 @@ function MeterRow({ meter, entry, onChange, previous }) {
           const prevVal = previous?.[sub];
           const hasBoth = val !== undefined && val !== "" && prevVal !== undefined && prevVal !== "" && !isNaN(Number(val)) && !isNaN(Number(prevVal));
           const consumo = hasBoth ? Number(val) - Number(prevVal) : null;
+          const confirmed = !!confirmedSubs[sub];
           return (
             <div key={sub} className="flex flex-col">
               <label className="text-xs mb-1" style={{ color: C.gray }}>
                 {meter.subs ? sub : "Lectura"}{meter.u ? ` (${meter.u})` : ""}
               </label>
               <div className="flex items-center gap-1">
-                <input type="number" step="any" value={val ?? ""} onChange={e => update(sub, e.target.value)}
-                  placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <input type="number" step="any" value={val ?? ""} onChange={e => updateManual(sub, e.target.value)}
+                  placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none"
+                  style={{ borderColor: confirmed ? C.green : C.line, borderWidth: confirmed ? 2 : 1, background: confirmed ? C.greenSoft : C.panel, color: C.ink }} />
                 <label className="flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer shrink-0" style={{ background: C.blueSoft, color: C.blue }}>
                   {reading === sub ? "…" : <Camera size={13} />}
                   <input type="file" accept="image/*" className="hidden" disabled={reading !== null}
                     onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) doRead(sub, f); }} />
                 </label>
               </div>
+              {confirmed && <span className="text-xs mt-1 font-medium" style={{ color: C.green }}>✓ Leído por foto</span>}
               {consumo !== null ? (
                 <span className="text-xs mt-1" style={{ color: consumo < 0 ? C.red : C.green }}>
                   Consumo: {consumo.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{meter.u ? ` ${meter.u}` : ""}
@@ -1771,9 +1787,27 @@ function MeterRow({ meter, entry, onChange, previous }) {
 }
 
 function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, meterHistory }) {
-  const [entries, setEntries] = useState({});
-  const [notes, setNotes] = useState("");
+  const DRAFT_KEY = "pm-local:meters-draft";
+  const [entries, setEntries] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}").entries || {}; } catch { return {}; }
+  });
+  const [notes, setNotes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}").notes || ""; } catch { return ""; }
+  });
   const [saved, setSaved] = useState(false);
+  const [restoredDraft] = useState(() => {
+    try { return Object.keys(JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}").entries || {}).length > 0; } catch { return false; }
+  });
+
+  // Guarda un borrador en este celular cada vez que algo cambia — así, si la app se recarga o se
+  // cierra por sorpresa (por ejemplo al actualizar a una versión nueva) antes de darle "Guardar
+  // lecturas", lo que ya se había escrito no se pierde: se recupera solo al volver a entrar.
+  useEffect(() => {
+    try {
+      if (Object.keys(entries).length > 0 || notes) localStorage.setItem(DRAFT_KEY, JSON.stringify({ entries, notes }));
+      else localStorage.removeItem(DRAFT_KEY);
+    } catch { /* noop */ }
+  }, [entries, notes]);
 
   const onChange = useCallback((id, val) => { setEntries(prev => ({ ...prev, [id]: val })); setSaved(false); }, []);
 
@@ -1790,6 +1824,7 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
     setSaved(true);
     setEntries({});
     setNotes("");
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
   };
 
   return (
@@ -1805,6 +1840,12 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
       <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
         Escribe la lectura actual de cada medidor. El consumo (diferencia contra la última lectura guardada) se calcula solo, igual que en el Excel.
       </div>
+
+      {restoredDraft && (
+        <div className="rounded-md p-2 mb-3 text-xs font-semibold" style={{ background: C.amberSoft, color: "#7a5405" }}>
+          📋 Recuperamos lecturas que habías escrito y no habías guardado todavía — revísalas antes de continuar.
+        </div>
+      )}
 
       {anomalies.length > 0 && (
         <div className="rounded-md p-2 mb-3 text-xs font-semibold flex items-start gap-2" style={{ background: C.redSoft, color: C.red }}>
@@ -7931,7 +7972,9 @@ export default function App() {
         <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
           style={{ background: C.steelDark, borderTop: `2px solid ${C.amber}` }}>
           <span className="text-sm text-white">🔄 Hay una versión nueva de la app lista para usar.</span>
-          <Button size="sm" onClick={() => updateServiceWorker(true)}>Actualizar ahora</Button>
+          <Button size="sm" onClick={() => {
+            if (confirm("Esto va a recargar la app para tomar la versión nueva. Si tienes algo escrito sin guardar (una ronda, una lectura), guárdalo primero. ¿Continuar?")) updateServiceWorker(true);
+          }}>Actualizar ahora</Button>
         </div>
       )}
       {/* SIDEBAR */}

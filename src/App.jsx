@@ -1411,7 +1411,8 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
       if (lv) {
         seeded[item.id] = {
           status: lv.status, value: lv.value, ph: lv.ph, cloro: lv.cloro, operador: lv.operador,
-          observation: lv.observation, damaged: !!activeIssues[item.id],
+          observation: activeIssues[item.id] ? undefined : lv.observation, // si sigue dañado, no precargar el comentario viejo: hay que confirmar algo nuevo o marcar "Continúa igual"
+          damaged: !!activeIssues[item.id],
         };
       } else if (activeIssues[item.id]) {
         seeded[item.id] = { damaged: true }; // sin precargar la observación: hay que escribir algo nuevo o marcar "Continúa igual"
@@ -1524,7 +1525,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
     ALL_COLD_ROOM_ITEMS.forEach(item => {
       const lv = latestColdValues[item.id];
       if (lv) {
-        seeded[item.id] = { status: lv.status, value: lv.value, observation: lv.observation, damaged: !!activeIssues[item.id] };
+        seeded[item.id] = { status: lv.status, value: lv.value, observation: activeIssues[item.id] ? undefined : lv.observation, damaged: !!activeIssues[item.id] };
       } else if (activeIssues[item.id]) {
         seeded[item.id] = { damaged: true }; // sin precargar la observación: hay que escribir algo nuevo o marcar "Continúa igual"
       }
@@ -1745,7 +1746,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
                   placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <label className="flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer shrink-0" style={{ background: C.blueSoft, color: C.blue }}>
                   {reading === sub ? "…" : <Camera size={13} />}
-                  <input type="file" accept="image/*" capture="environment" className="hidden" disabled={reading !== null}
+                  <input type="file" accept="image/*" className="hidden" disabled={reading !== null}
                     onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) doRead(sub, f); }} />
                 </label>
               </div>
@@ -1855,7 +1856,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
     const seeded = {};
     allItems.forEach(item => {
       const lv = latestValues[item.id];
-      if (lv) seeded[item.id] = { status: lv.status, value: lv.value, observation: lv.observation, damaged: !!activeIssues[item.id] };
+      if (lv) seeded[item.id] = { status: lv.status, value: lv.value, observation: activeIssues[item.id] ? undefined : lv.observation, damaged: !!activeIssues[item.id] };
       else if (activeIssues[item.id]) seeded[item.id] = { damaged: true }; // sin precargar la observación: hay que escribir algo nuevo o marcar "Continúa igual"
     });
     setEntries(seeded);

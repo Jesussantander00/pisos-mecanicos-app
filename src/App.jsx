@@ -1093,6 +1093,7 @@ const SPECIAL_CODES = [
   { code: "INC", label: "Incapacidad" },
   { code: "ALT", label: "Alterno / cambio" },
   { code: "LIC_PAT", label: "Licencia de paternidad" },
+  { code: "COMP", label: "Compensatorio (día ganado por horas de reducción)" },
 ];
 const SPECIAL_CODE_COLORS = {
   VAC: { bg: "#dff5e3", fg: "#1c7a34" },
@@ -1100,7 +1101,35 @@ const SPECIAL_CODE_COLORS = {
   INC: { bg: "#ffe3ea", fg: "#a31245" },
   ALT: { bg: "#fff3d6", fg: "#8a5a00" },
   LIC_PAT: { bg: "#e0ecff", fg: "#1e4fa3" },
+  COMP: { bg: "#e8e0fb", fg: "#6b21a8" },
 };
+/**
+ * Horas que se guardan por cada día trabajado (para quien tiene turnos de 8h en vez de las 7h
+ * "reducidas" que trabaja la mayoría) y cuántas horas juntas hacen un día de descanso completo.
+ * HOURS_FOR_FULL_COMP_DAY = 8 porque un día de descanso "vale" un turno completo de 8h.
+ */
+const HOURS_FOR_FULL_COMP_DAY = 8;
+
+/**
+ * Cuántas horas de reducción tiene acumuladas un empleado HASTA HOY, mirando TODO su historial
+ * real en scheduleEntries (no solo el mes en pantalla): suma 1 hora por cada día trabajado
+ * (según employee.reductionHoursPerDay) y resta 8 horas por cada día "COMP" que ya se le haya
+ * dado (para no volver a contar un descanso que ya se cobró). Es informativo — nunca asigna nada
+ * solo, la app únicamente lo muestra para que el admin decida cuándo darle el día.
+ */
+function computeCompBalance(employee, scheduleEntries) {
+  const rate = Number(employee.reductionHoursPerDay) || 0;
+  if (!rate) return { hours: 0, fullDays: 0 };
+  const prefix = `${employee.id}::`;
+  let hours = 0;
+  Object.entries(scheduleEntries || {}).forEach(([key, entry]) => {
+    if (!key.startsWith(prefix)) return;
+    if (isWorkedDay(entry)) hours += rate;
+    else if (entry?.code === "COMP") hours -= HOURS_FOR_FULL_COMP_DAY;
+  });
+  hours = Math.max(0, hours);
+  return { hours, fullDays: Math.floor(hours / HOURS_FOR_FULL_COMP_DAY) };
+}
 const WEEKLY_HOURS_TARGET = 42; // igual al que ya usa tu Excel en las columnas "Diferencia semana"
 
 function isHoliday2026(dateIso) { return COLOMBIA_HOLIDAYS_2026.includes(dateIso); }
@@ -4099,6 +4128,9 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
                 <input defaultValue={emp.badge || ""} onBlur={e => { if (e.target.value !== (emp.badge || "")) onUpdateEmployee(emp.id, { badge: e.target.value.trim() }); }}
                   placeholder="Etiqueta (ej: acum. reducción)" title="Aparece como una marca de color junto al nombre, en pantalla y en el PDF"
                   className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, width: 160 }} />
+                <input type="number" min="0" step="0.5" defaultValue={emp.reductionHoursPerDay || ""} onBlur={e => { const v = e.target.value === "" ? null : Number(e.target.value); if (v !== (emp.reductionHoursPerDay ?? null)) onUpdateEmployee(emp.id, { reductionHoursPerDay: v }); }}
+                  placeholder="Hrs. reducción/día" title="Cuántas horas se le acumulan por cada día trabajado (ej. 1 si trabaja 8h en vez de las 7h reducidas). Vacío = no acumula."
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, width: 100 }} />
                 <Button size="sm" variant="ghost" onClick={() => onUpdateEmployee(emp.id, { active: !emp.active })}>{emp.active ? "Desactivar" : "Activar"}</Button>
                 <button onClick={() => onDeleteEmployee(emp.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
               </div>
@@ -4324,7 +4356,10 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       });
 
       const days = daysIso.map(d => ({ date: d, isSundayOrHoliday: isSundayOrHoliday(d) }));
-      const employeesForApi = activeEmployees.map(e => ({ id: e.id, name: e.name, cargo: e.cargo || "", fixedRestDay: e.fixedRestDay ?? null }));
+      const employeesForApi = activeEmployees.map(e => ({
+        id: e.id, name: e.name, cargo: e.cargo || "", fixedRestDay: e.fixedRestDay ?? null,
+        compBalance: e.reductionHoursPerDay > 0 ? computeCompBalance(e, scheduleEntries) : null,
+      }));
 
       // Cuántos domingos/festivos tiene YA trabajados cada persona este mismo mes (lo que ya
       // estaba guardado antes de generar). Esto se le manda a cada tanda y se va actualizando
@@ -4664,6 +4699,15 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
                             {emp.badge}
                           </span>
                         )}
+                        {emp.reductionHoursPerDay > 0 && (() => {
+                          const comp = computeCompBalance(emp, scheduleEntries);
+                          return (
+                            <span className="text-[10px] font-normal ml-1.5 px-1.5 py-0.5 rounded-full" title="Horas de reducción acumuladas (informativo — no se asigna sola, la das tú a mano poniendo el código COMP en el día que elijas)"
+                              style={{ background: comp.fullDays >= 1 ? "#fde68a" : "#eef1f4", color: comp.fullDays >= 1 ? "#78350f" : "#5c6b7a" }}>
+                              {comp.fullDays >= 1 ? `¡${comp.fullDays} día(s) ganado(s)!` : `${comp.hours}h acum.`}
+                            </span>
+                          );
+                        })()}
                         {warnings.length > 0 && <AlertTriangle size={12} style={{ display: "inline", color: C.red, marginLeft: 4, verticalAlign: "-1px" }} />}
                       </td>
                       {daysIso.map(d => {
@@ -6604,7 +6648,7 @@ async function generateSchedulePdf(monthLabel, employees, daysIso, entriesByEmpl
 
   doc.setFontSize(7.5); doc.setTextColor(...PDF_C.gray);
   const finalY = doc.lastAutoTable.finalY + 6;
-  doc.text(`* Domingo o festivo. Las celdas muestran hora de entrada-salida (ej. 8.5-16.5). Objetivo semanal: ${WEEKLY_HOURS_TARGET}h. VAC = vacaciones · LIBRE = descanso · INC = incapacidad · ALT = alterno/cambio · LIC_PAT = licencia de paternidad.`, 14, finalY);
+  doc.text(`* Domingo o festivo. Las celdas muestran hora de entrada-salida (ej. 8.5-16.5). Objetivo semanal: ${WEEKLY_HOURS_TARGET}h. VAC = vacaciones · LIBRE = descanso · INC = incapacidad · ALT = alterno/cambio · LIC_PAT = licencia de paternidad · COMP = compensatorio (día ganado por horas de reducción).`, 14, finalY);
   doc.setTextColor(...PDF_C.ink);
 
   pdfFooterAll(doc);

@@ -45,12 +45,12 @@ IMPORTANTE: este pedido cubre SOLO UNA PARTE del mes (los días de la lista de a
 DÍAS A PROGRAMAR EN ESTE PEDIDO (cada uno con su fecha ISO y si es domingo/festivo):
 ${JSON.stringify(days, null, 0)}
 
-REGLA DE DOMINGOS/FESTIVOS: por defecto cada persona puede trabajar hasta 3 domingos/festivos en el MES COMPLETO (no solo en esta parte) — salvo que las reglas del usuario den un número distinto para un cargo o una persona en concreto, en cuyo caso ese número manda. Los SÁBADOS que NO sean festivo no tienen ningún tope de cantidad — cúbrelos con toda normalidad siguiendo el patrón del mes de referencia, igual que cualquier día entre semana; no los dejes vacíos por precaución.
+REGLA DE DOMINGOS/FESTIVOS: por defecto cada persona puede trabajar hasta 3 domingos/festivos en el MES COMPLETO (no solo en esta parte) — salvo que las reglas del usuario den un número distinto para un cargo o una persona en concreto, en cuyo caso ese número manda. Costumbre normal del hotel (sigue esto como patrón por defecto salvo que las reglas digan otra cosa): a los turnistas normalmente se les programa domingo SÍ, domingo NO (alternados) — evita ponerle domingo a la misma persona dos domingos seguidos, porque ahí sí se genera un recargo/costo mayor para el hotel. Los SÁBADOS que NO sean festivo no tienen ningún tope de cantidad — cúbrelos con toda normalidad siguiendo el patrón del mes de referencia, igual que cualquier día entre semana; no los dejes vacíos por precaución.
 
 DOMINGOS/FESTIVOS QUE CADA PERSONA YA TIENE TRABAJADOS EN OTRAS PARTES DE ESTE MISMO MES (ya sea porque ya estaban en el horario, o porque ya se generaron en otro pedido de este mismo mes) — súmalos al decidir si a alguien todavía le queda "cupo" de domingos en los días que tú vas a programar:
 ${JSON.stringify(sundaysAlreadyWorked || {}, null, 0)}
 
-EMPLEADOS (id, nombre, cargo, día de descanso fijo si tiene uno — 0=domingo, 1=lunes... 6=sábado, null si no tiene uno fijo):
+EMPLEADOS (id, nombre, cargo, día de descanso fijo si tiene uno — 0=domingo, 1=lunes... 6=sábado, null si no tiene uno fijo. "compBalance" cuando existe: horas de reducción laboral que esa persona ya tiene acumuladas por trabajar turnos de 8h en vez de las 7h reducidas normales, y "fullDays" = cuántos días completos de descanso ya ganó con eso):
 ${JSON.stringify(employees, null, 0)}
 
 DÍAS QUE YA ESTÁN LLENOS EN EL HORARIO (vacaciones, incapacidades, turnos ya puestos a mano, etc.) — NO LOS TOQUES, NO LOS REPITAS EN TU RESPUESTA, son un dato fijo para que sepas quién ya no está disponible ese día:
@@ -71,9 +71,10 @@ QUÉ HACER:
 - Respeta el día de descanso fijo de cada empleado si lo tiene (no le pongas turno ese día, salvo que las reglas digan explícitamente lo contrario).
 - Intenta que cada empleado llegue cerca de ${weeklyHoursTarget || 42} horas por semana en promedio, como ya viene trabajando.
 - Si una regla habla de "horas acumuladas" o "compensatorios" para armar un día de descanso, no inventes la fecha exacta del descanso por tu cuenta — dilo en "notas" para que el usuario decida cuándo, salvo que las reglas te den una fecha concreta.
+- Si un empleado tiene "compBalance.fullDays" de 1 o más (ver la lista de EMPLEADOS), NO le pongas tú un día de descanso extra por tu cuenta — solo menciónalo en "notas" (ej. "Fulano ya tiene 1 día de descanso acumulado por horas de reducción, pendiente de programar, idealmente en sábado o junto a un domingo libre"), para que el usuario lo agregue a mano con el código COMP en el día que decida.
 - Si las reglas del usuario piden un mínimo de personas por turno o por día, priorízalo por encima de las horas objetivo.
 - Si hay un conflicto que no puedas resolver bien (ej. no hay suficiente personal para cubrir algo), dilo en el campo "notas" en vez de inventar una solución forzada.
-- IMPORTANTE — formato de salida compacto (esta parte del mes puede tener bastantes turnos, así que cada uno debe ocupar lo menos posible): agrupa por empleado, y dentro de cada empleado usa la fecha como llave. El valor de cada día es un texto: "8.5-16.5" para un turno normal (entrada-salida), o "C:VAC" para un código especial (usa VAC, LIBRE, INC, ALT o LIC_PAT). No repitas el id del empleado en cada día, va una sola vez como llave del objeto exterior.
+- IMPORTANTE — formato de salida compacto (esta parte del mes puede tener bastantes turnos, así que cada uno debe ocupar lo menos posible): agrupa por empleado, y dentro de cada empleado usa la fecha como llave. El valor de cada día es un texto: "8.5-16.5" para un turno normal (entrada-salida), o "C:VAC" para un código especial (usa VAC, LIBRE, INC, ALT, LIC_PAT o COMP — este último SOLO si las reglas del usuario piden explícitamente poner un día compensatorio en una fecha concreta, nunca por tu cuenta). No repitas el id del empleado en cada día, va una sola vez como llave del objeto exterior.
 
 Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin \`\`\`, sin espacios ni saltos de línea extra:
 {"e":{"id-del-empleado":{"2026-09-01":"8.5-16.5","2026-09-02":"C:VAC"}},"notas":"2-4 frases en español explicando decisiones importantes o advertencias, o vacío si no hay nada que avisar"}`;

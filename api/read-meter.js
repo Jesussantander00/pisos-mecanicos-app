@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { imageBase64, mediaType } = req.body || {};
+  const { imageBase64, mediaType, previousReading, meterName } = req.body || {};
   if (!imageBase64) {
     res.status(400).json({ ok: false, message: "Falta la foto." });
     return;
@@ -23,6 +23,10 @@ export default async function handler(req, res) {
     res.status(500).json({ ok: false, message: "Falta configurar ANTHROPIC_API_KEY en Vercel." });
     return;
   }
+
+  const contextLine = previousReading
+    ? `\n\nDATO DE CONTEXTO IMPORTANTE: la última lectura registrada para este mismo medidor${meterName ? ` (${meterName})` : ""} fue ${previousReading}. Los medidores de consumo casi siempre SUBEN con el tiempo (nunca bajan, salvo casos raros de reinicio del contador) — así que la lectura nueva debería ser igual o mayor a ese número, y normalmente no muy distinta (el consumo de unos días no suele ser enorme). Usa este dato como referencia para revisar tu propia lectura: si lo que lees es mucho menor a ${previousReading}, o muchísimo mayor, vuelve a fijarte con cuidado en la foto antes de responder — es más probable que te hayas confundido de dígito que un salto así de grande.`
+    : "";
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -49,6 +53,7 @@ Ten en cuenta estos formatos comunes de medidores, y fíjate cuál aplica en est
 - Otros medidores son digitales, con una sola pantalla de números.
 - Ignora cualquier otro número que veas en la foto que NO sea la lectura (números de serie, modelo, año de fabricación, códigos de barra, etc.) — esos suelen estar en una etiqueta aparte, más pequeños, y no son la lectura de consumo.
 - Si hay varias filas o ventanas de números, la lectura principal casi siempre es la fila más grande/prominente, normalmente cerca del centro del medidor.
+${contextLine}
 
 Antes de responder, primero describe en 1-2 frases qué tipo de medidor ves y dónde está la lectura principal. Luego responde con el número exacto.
 

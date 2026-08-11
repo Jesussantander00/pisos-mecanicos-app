@@ -8,7 +8,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -552,12 +552,28 @@ async function imageFileToBase64ForReading(file, maxWidth = 900, quality = 0.75)
 }
 
 /** Le pide a la función serverless que lea el número que muestra un medidor en la foto. */
-async function readMeterFromPhoto(file) {
+async function readMeterFromPhoto(file, previousReading, meterName) {
   const imageBase64 = await imageFileToBase64ForReading(file);
   const resp = await fetch("/api/read-meter", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, mediaType: "image/jpeg" }),
+    body: JSON.stringify({ imageBase64, mediaType: "image/jpeg", previousReading, meterName }),
+  });
+  return resp.json();
+}
+
+/**
+ * Le pide a la función serverless que arme un borrador de horario mensual con IA.
+ * Solo llena los días vacíos (los que ya tienen algo — vacaciones, turnos puestos a mano, etc.
+ * — se le mandan como "esto ya está, no lo toques"). Nunca guarda nada por su cuenta: la app
+ * recibe el borrador, lo muestra para revisar/editar, y solo se guarda de verdad cuando el
+ * usuario confirma.
+ */
+async function requestAiScheduleDraft({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget }) {
+  const resp = await fetch("/api/generate-schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget }),
   });
   return resp.json();
 }
@@ -1725,7 +1741,8 @@ function MeterRow({ meter, entry, onChange, previous }) {
   const doRead = async (sub, file) => {
     setReading(sub); setReadMsg(null);
     try {
-      const res = await readMeterFromPhoto(file);
+      const prevVal = previous?.[sub];
+      const res = await readMeterFromPhoto(file, prevVal !== undefined && prevVal !== "" ? prevVal : null, meter.n);
       if (res.ok) {
         update(sub, res.lectura);
         setConfirmedSubs(prev => ({ ...prev, [sub]: true }));
@@ -2753,6 +2770,44 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
 /* ============================================================
    VISTA: TAREAS / PENDIENTES
    ============================================================ */
+/* ============================================================
+   DICTADO POR VOZ (usa el reconocimiento de voz que ya trae el navegador — sin costo)
+   ============================================================ */
+function VoiceInputButton({ onResult }) {
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const SpeechRecognitionApi = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+  if (!SpeechRecognitionApi) return null; // el navegador no lo soporta — no se muestra el botón, sin romper nada
+
+  const toggle = () => {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const rec = new SpeechRecognitionApi();
+    rec.lang = "es-CO";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const text = e.results?.[0]?.[0]?.transcript;
+      if (text) onResult(text);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+
+  return (
+    <button type="button" onClick={toggle} title={listening ? "Detener" : "Dictar por voz"}
+      className="p-2 rounded-md shrink-0" style={{ background: listening ? C.red : C.blueSoft, color: listening ? "#fff" : C.blue }}>
+      {listening ? <span className="pm-pulse block"><Mic size={15} /></span> : <Mic size={15} />}
+    </button>
+  );
+}
+
 function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
   const [filterEstado, setFilterEstado] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -2789,8 +2844,11 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
 
       {showNew && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <div className="flex items-center gap-1 mb-2">
+            <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
+              className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
+          </div>
           <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
             className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -3949,7 +4007,7 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onApplyAiDraft, reportEmail, onLogSent }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
   const [editingCell, setEditingCell] = useState(null);
@@ -3965,6 +4023,16 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const [icsEmployeeId, setIcsEmployeeId] = useState("");
+
+  // ---- Borrador de horario generado con IA (no se guarda hasta que el usuario lo confirma) ----
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiRulesText, setAiRulesText] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiNotes, setAiNotes] = useState(null);
+  const [draftActive, setDraftActive] = useState(false);
+  const [draftOverrides, setDraftOverrides] = useState({}); // { [scheduleKey]: {entrada,salida} | {code} }
+  const [applyingDraft, setApplyingDraft] = useState(false);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -3987,6 +4055,22 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees, scheduleEntries, daysIso]);
 
+  /** Lo que se ve en pantalla: si hay un borrador de IA activo, se le suman/reemplazan sus celdas
+   *  encima de lo real (sin tocar lo real todavía) — así se puede revisar y editar antes de guardar. */
+  const viewEntriesByEmployee = useMemo(() => {
+    if (!draftActive) return entriesByEmployee;
+    const map = {};
+    activeEmployees.forEach(emp => {
+      map[emp.id] = { ...(entriesByEmployee[emp.id] || {}) };
+      daysIso.forEach(d => {
+        const ov = draftOverrides[scheduleKey(emp.id, d)];
+        if (ov) map[emp.id][d] = ov;
+      });
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entriesByEmployee, draftActive, draftOverrides, activeEmployees, daysIso]);
+
   const sortedEmployees = useMemo(() => {
     const order = [...CARGOS, ""];
     return [...activeEmployees].sort((a, b) => order.indexOf(a.cargo || "") - order.indexOf(b.cargo || ""));
@@ -3994,7 +4078,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
   }, [activeEmployees]);
 
   const openCell = (employeeId, dateIso) => {
-    const entry = entriesByEmployee[employeeId]?.[dateIso];
+    const entry = viewEntriesByEmployee[employeeId]?.[dateIso];
     setEditingCell({ employeeId, dateIso });
     setDraftMode(entry?.code ? "special" : "hours");
     setDraftEntrada(entry?.entrada != null ? String(entry.entrada) : "");
@@ -4006,7 +4090,12 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     const patch = draftMode === "special"
       ? { code: draftCode, note: draftNote }
       : { entrada: draftEntrada === "" ? null : Number(draftEntrada), salida: draftSalida === "" ? null : Number(draftSalida), note: draftNote };
-    onSetScheduleEntry(editingCell.employeeId, editingCell.dateIso, patch);
+    if (draftActive) {
+      const key = scheduleKey(editingCell.employeeId, editingCell.dateIso);
+      setDraftOverrides(prev => ({ ...prev, [key]: patch }));
+    } else {
+      onSetScheduleEntry(editingCell.employeeId, editingCell.dateIso, patch);
+    }
     setEditingCell(null);
   };
 
@@ -4015,7 +4104,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     if (!editingCell) return null;
     const week = weeks.find(w => w.includes(editingCell.dateIso));
     if (!week) return null;
-    const entries = entriesByEmployee[editingCell.employeeId] || {};
+    const entries = viewEntriesByEmployee[editingCell.employeeId] || {};
     const draftEntry = draftMode === "special"
       ? { code: draftCode }
       : { entrada: draftEntrada === "" ? null : Number(draftEntrada), salida: draftSalida === "" ? null : Number(draftSalida) };
@@ -4029,7 +4118,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       && new Date(editingCell.dateIso + "T00:00:00").getDay() === emp.fixedRestDay && draftMode !== "special";
     return { weekLabel: label, before, after, diff, restDayHit, isSundayHoliday: isSundayOrHoliday(editingCell.dateIso) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingCell, draftMode, draftEntrada, draftSalida, draftCode, entriesByEmployee]);
+  }, [editingCell, draftMode, draftEntrada, draftSalida, draftCode, viewEntriesByEmployee]);
 
   const doImport = async () => {
     setImporting(true); setImportMsg(null);
@@ -4059,8 +4148,71 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     setSending(false);
   };
 
+  const doGenerateAiDraft = async () => {
+    setAiGenerating(true); setAiError(null); setAiNotes(null);
+    try {
+      // Ejemplo reciente de cómo trabaja cada quien: los 14 días reales justo antes de este mes,
+      // para que la IA copie el mismo tipo de turno de cada persona.
+      const refStart = new Date(daysIso[0] + "T00:00:00");
+      refStart.setDate(refStart.getDate() - 14);
+      const referenceEntries = {};
+      activeEmployees.forEach(emp => {
+        const list = [];
+        for (let i = 0; i < 14; i++) {
+          const dt = new Date(refStart); dt.setDate(dt.getDate() + i);
+          const iso = dt.toISOString().slice(0, 10);
+          const e = scheduleEntries[scheduleKey(emp.id, iso)];
+          if (isWorkedDay(e)) list.push({ date: iso, entrada: e.entrada, salida: e.salida });
+        }
+        if (list.length) referenceEntries[emp.id] = list;
+      });
+
+      const days = daysIso.map(d => ({ date: d, isSundayOrHoliday: isSundayOrHoliday(d) }));
+      const employeesForApi = activeEmployees.map(e => ({ id: e.id, name: e.name, cargo: e.cargo || "", fixedRestDay: e.fixedRestDay ?? null }));
+
+      const res = await requestAiScheduleDraft({
+        monthLabel, days, employees: employeesForApi,
+        existingEntries: entriesByEmployee, referenceEntries,
+        rulesText: aiRulesText, weeklyHoursTarget: WEEKLY_HOURS_TARGET,
+      });
+
+      if (!res.ok) { setAiError(res.message || "No se pudo generar el borrador."); setAiGenerating(false); return; }
+
+      const overrides = {};
+      res.entries.forEach(e => {
+        const key = scheduleKey(e.employeeId, e.date);
+        overrides[key] = e.code ? { code: e.code } : { entrada: e.entrada, salida: e.salida };
+      });
+      setDraftOverrides(overrides);
+      setDraftActive(true);
+      setAiNotes(res.notes || null);
+      if (Object.keys(overrides).length === 0) {
+        setAiError("La IA no llenó ningún día — puede que ya esté todo lleno este mes, o que no haya podido cumplir las reglas. Revisa las notas si hay.");
+      }
+    } catch {
+      setAiError("No se pudo conectar con el servicio de IA. Intenta de nuevo.");
+    }
+    setAiGenerating(false);
+  };
+
+  const doApplyAiDraft = async () => {
+    setApplyingDraft(true);
+    try {
+      await onApplyAiDraft(draftOverrides);
+      setDraftActive(false); setDraftOverrides({}); setAiNotes(null); setAiError(null); setShowAiPanel(false);
+      setImportMsg({ ok: true, text: `Horario generado guardado: ${Object.keys(draftOverrides).length} celda(s) aplicadas.` });
+    } catch {
+      setAiError("No se pudo guardar el horario generado. Intenta de nuevo.");
+    }
+    setApplyingDraft(false);
+  };
+
+  const doDiscardAiDraft = () => {
+    setDraftActive(false); setDraftOverrides({}); setAiNotes(null); setAiError(null);
+  };
+
   const employeeWarnings = activeEmployees.map(emp => ({
-    emp, ...computeScheduleWarnings(emp, daysIso, entriesByEmployee[emp.id] || {}),
+    emp, ...computeScheduleWarnings(emp, daysIso, viewEntriesByEmployee[emp.id] || {}),
   })).filter(w => w.warnings.length > 0);
 
   return (
@@ -4090,6 +4242,50 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
 
       {isAdmin && showManage && <EmployeeManagePanel employees={employees} onCreateEmployee={onCreateEmployee} onUpdateEmployee={onUpdateEmployee} onDeleteEmployee={onDeleteEmployee} />}
+
+      {isAdmin && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.amber, background: C.panel }}>
+          <button onClick={() => setShowAiPanel(v => !v)} className="flex items-center gap-2 w-full text-left">
+            <Sparkles size={16} color={C.amber} />
+            <span className="text-sm font-semibold flex-1" style={{ color: C.ink }}>Generar borrador de {monthLabel} con IA</span>
+            {showAiPanel ? <ChevronDown size={16} color={C.gray} /> : <ChevronRight size={16} color={C.gray} />}
+          </button>
+
+          {showAiPanel && !draftActive && (
+            <div className="mt-3">
+              <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+                Escribe las reglas de este mes en español normal (quién libra qué día, mínimo de personas por turno, cambios especiales, etc.).
+                La IA solo llena los días que todavía están vacíos — lo que ya tengas puesto (vacaciones, turnos ya asignados) no se toca,
+                y copia el mismo tipo de turno que cada quien ya venía trabajando.
+              </div>
+              <textarea value={aiRulesText} onChange={e => setAiRulesText(e.target.value)} rows={4}
+                placeholder="Ej: Martelo libra los domingos. Mínimo 2 personas en el turno de noche siempre. Barrios está de vacaciones del 10 al 15."
+                className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <Button size="sm" icon={Sparkles} disabled={aiGenerating} onClick={doGenerateAiDraft}>
+                {aiGenerating ? "Generando borrador…" : "Generar borrador"}
+              </Button>
+              {aiError && <div className="text-xs mt-2" style={{ color: C.red }}>{aiError}</div>}
+            </div>
+          )}
+
+          {draftActive && (
+            <div className="mt-3">
+              <div className="rounded-md p-2 mb-2 text-xs" style={{ background: "#fdf0da", color: "#7a5405" }}>
+                <b>Borrador sin guardar</b> — las celdas marcadas con <Sparkles size={10} style={{ display: "inline", verticalAlign: "-1px" }} /> en
+                la tabla de abajo son las que propuso la IA. Haz clic en cualquiera para editarla antes de guardar, igual que con una celda normal.
+              </div>
+              {aiNotes && <div className="text-xs mb-2" style={{ color: C.inkSoft }}><b>Notas de la IA:</b> {aiNotes}</div>}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button size="sm" disabled={applyingDraft} onClick={doApplyAiDraft}>
+                  {applyingDraft ? "Guardando…" : `Guardar este horario (${Object.keys(draftOverrides).length} celdas)`}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={applyingDraft} onClick={doDiscardAiDraft}>Descartar borrador</Button>
+              </div>
+              {aiError && <div className="text-xs mt-2" style={{ color: C.red }}>{aiError}</div>}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-lg border p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
         <span className="text-xs" style={{ color: C.inkSoft }}>Descarga los turnos de este mes para agregarlos a tu calendario del celular:</span>
@@ -4210,7 +4406,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
             {(() => {
               let lastCargo = null;
               return sortedEmployees.map((emp, i) => {
-                const entries = entriesByEmployee[emp.id] || {};
+                const entries = viewEntriesByEmployee[emp.id] || {};
                 const { sundaysHolidaysCount, warnings } = computeScheduleWarnings(emp, daysIso, entries);
                 const monthTotal = weeks.reduce((sum, w) => sum + weekTotalHours(w, entries), 0);
                 const showGroupHeader = (emp.cargo || "") !== lastCargo;
@@ -4231,12 +4427,16 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
                       </td>
                       {daysIso.map(d => {
                         const entry = entries[d];
+                        const isDraftCell = draftActive && !!draftOverrides[scheduleKey(emp.id, d)];
                         const colors = entry?.code ? SPECIAL_CODE_COLORS[entry.code] : null;
                         return (
-                          <td key={d} className="px-0.5 py-1 text-center" style={{ background: colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : "transparent") }}>
+                          <td key={d} className="px-0.5 py-1 text-center" style={{
+                            background: isDraftCell ? "#fdf0da" : (colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : "transparent")),
+                            boxShadow: isDraftCell ? `inset 0 0 0 1px ${C.amber}` : "none",
+                          }}>
                             {isAdmin ? (
                               <button onClick={() => openCell(emp.id, d)} className="w-full text-xs py-1" style={{ color: colors?.fg || C.ink }}>
-                                {fmtEntryShort(entry) || "·"}
+                                {fmtEntryShort(entry) || "·"}{isDraftCell && <Sparkles size={9} style={{ display: "inline", marginLeft: 2, verticalAlign: "1px", color: "#8a5a00" }} />}
                               </button>
                             ) : (
                               <span className="text-xs" style={{ color: colors?.fg || C.ink }}>{fmtEntryShort(entry)}</span>
@@ -4502,6 +4702,98 @@ const ONBOARDING_STEPS = [
   { title: "Busca lo que necesites", body: "Arriba hay un buscador — te ayuda a encontrar cualquier equipo rápido, sin tener que navegar por los menús. Busca justo donde estés trabajando." },
   { title: "¡Listo para empezar!", body: "Puedes volver a ver esta guía cuando quieras desde el botón de ayuda (?) arriba, junto al resto de íconos." },
 ];
+
+/* ============================================================
+   ESCÁNER DE QR (con la cámara, para saltar directo a un equipo/estantería)
+   ============================================================ */
+function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
+  const videoRef = useRef(null);
+  const rafRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [found, setFound] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let jsQR = null;
+    (async () => {
+      try {
+        jsQR = (await import("jsqr")).default;
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        scanLoop();
+      } catch {
+        setError("No se pudo acceder a la cámara — revisa que le hayas dado permiso a la app en la configuración del celular.");
+      }
+    })();
+
+    const canvas = document.createElement("canvas");
+    function scanLoop() {
+      const video = videoRef.current;
+      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) { rafRef.current = requestAnimationFrame(scanLoop); return; }
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR ? jsQR(imgData.data, imgData.width, imgData.height) : null;
+      if (code && code.data) {
+        try {
+          const url = new URL(code.data);
+          const equipoId = url.searchParams.get("equipo");
+          const shelfId = url.searchParams.get("shelf");
+          if (equipoId || shelfId) {
+            setFound(true);
+            setTimeout(() => { equipoId ? onFoundEquipo(equipoId) : onFoundShelf(shelfId); }, 300);
+            return; // deja de escanear, ya encontró algo
+          }
+        } catch { /* el QR no era una URL válida de esta app — sigue escaneando */ }
+      }
+      rafRef.current = requestAnimationFrame(scanLoop);
+    }
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center" style={{ background: "#000" }}>
+      <button onClick={onClose} className="absolute top-4 right-4 z-10 p-2 rounded-full" style={{ background: "rgba(255,255,255,0.15)" }}>
+        <X size={22} color="#fff" />
+      </button>
+      {error ? (
+        <div className="text-center px-6">
+          <AlertTriangle size={32} color={C.amber} className="mx-auto mb-3" />
+          <p className="text-sm text-white mb-4">{error}</p>
+          <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+        </div>
+      ) : (
+        <>
+          <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="rounded-2xl" style={{
+              width: 240, height: 240,
+              border: `3px solid ${found ? C.green : "#fff"}`,
+              boxShadow: "0 0 0 2000px rgba(0,0,0,0.45)",
+              transition: "border-color 0.2s ease",
+            }} />
+          </div>
+          <div className="absolute bottom-8 left-0 right-0 text-center px-6">
+            <p className="text-sm text-white font-medium">{found ? "✓ Código encontrado" : "Apunta la cámara al código QR del equipo o estantería"}</p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function OnboardingTour({ onClose }) {
   const [step, setStep] = useState(0);
@@ -6811,6 +7103,7 @@ export default function App() {
 
   const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem("pm-local:theme") === "dark"; } catch { return false; } });
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
+  const [showQrScanner, setShowQrScanner] = useState(false);
   const closeOnboarding = () => {
     setShowOnboarding(false);
     try { localStorage.setItem("pm-local:onboarded", "1"); } catch { /* noop */ }
@@ -7436,6 +7729,23 @@ export default function App() {
   };
 
   /**
+   * Guarda de una sola vez todas las celdas de un borrador de horario generado con IA (o ya
+   * editado a mano por el usuario sobre ese borrador). "overrides" viene en el mismo formato que
+   * scheduleEntries: { "empleadoId::AAAA-MM-DD": {entrada,salida} | {code} }. Es un solo guardado,
+   * no uno por celda, para que sea rápido aunque sea un mes completo.
+   */
+  const applyAiScheduleDraft = async (overrides) => {
+    const next = { ...scheduleEntries };
+    Object.entries(overrides || {}).forEach(([key, patch]) => {
+      const isEmpty = !patch || (!patch.code && patch.entrada == null && patch.salida == null);
+      if (isEmpty) { delete next[key]; return; }
+      next[key] = { entrada: patch.entrada ?? null, salida: patch.salida ?? null, code: patch.code || null, note: patch.note || "Generado con IA", updatedBy: displayName, updatedAt: nowIso() };
+    });
+    setScheduleEntries(next);
+    await sSet("schedule-entries", next, true);
+  };
+
+  /**
    * Importa (una sola vez, o las veces que quieras — es seguro repetirlo) el horario real
    * que se sacó del Excel "11__Horario_Julio2_2026.xlsx": crea los empleados que falten
    * (ya con su cargo asignado) y carga las 396 lecturas de entrada/salida del 16/07 al 02/08/2026.
@@ -7968,6 +8278,13 @@ export default function App() {
   return (
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
+      {showQrScanner && (
+        <QrScannerView
+          onClose={() => setShowQrScanner(false)}
+          onFoundEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); setShowQrScanner(false); }}
+          onFoundShelf={(id) => { setPendingShelfId(id); setView("inventory"); setShowQrScanner(false); }}
+        />
+      )}
       {needRefresh && (
         <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
           style={{ background: C.steelDark, borderTop: `2px solid ${C.amber}` }}>
@@ -8051,11 +8368,16 @@ export default function App() {
             )}
           </div>
           {isAdmin && (
-            <GlobalSearch currentView={view} mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
-              onNavigate={setView}
-              onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
-              onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }}
-              onOpenFloor={(id) => { setFloorId(id); setView("ronda"); }} />
+            <>
+              <GlobalSearch currentView={view} mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
+                onNavigate={setView}
+                onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
+                onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }}
+                onOpenFloor={(id) => { setFloorId(id); setView("ronda"); }} />
+              <button onClick={() => setShowQrScanner(true)} title="Escanear código QR" className="p-1.5 rounded-md shrink-0" style={{ background: C.bg }}>
+                <QrCode size={16} color={C.ink} />
+              </button>
+            </>
           )}
           <div className="flex items-center gap-2">
             {pendingSync > 0 && (
@@ -8198,7 +8520,7 @@ export default function App() {
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
-              onImportJuly={importJulySchedule2026} reportEmail={reportEmail} onLogSent={logSentReport} />
+              onImportJuly={importJulySchedule2026} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={accounts} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}

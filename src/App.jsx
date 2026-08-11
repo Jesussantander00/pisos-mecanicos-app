@@ -8,7 +8,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -524,6 +524,40 @@ function validateRoundEntries(items, entries) {
 }
 
 /** Lleva la pantalla directo al equipo (usado al hacer clic en la lista de pendientes) y lo resalta un momento. */
+/** Comprime una foto y la convierte a base64 (sin el prefijo "data:...") — lista para mandar a la
+ *  función que lee el número del medidor. Más liviana que la de subir a Supabase (no hace falta
+ *  tanta resolución solo para leer un número). */
+function imageFileToBase64ForReading(file, maxWidth = 900, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxWidth / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve(dataUrl.split(",")[1]); // solo el base64, sin el "data:image/jpeg;base64,"
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("No se pudo leer la imagen.")); };
+    img.src = url;
+  });
+}
+
+/** Le pide a la función serverless que lea el número que muestra un medidor en la foto. */
+async function readMeterFromPhoto(file) {
+  const imageBase64 = await imageFileToBase64ForReading(file);
+  const resp = await fetch("/api/read-meter", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageBase64, mediaType: "image/jpeg" }),
+  });
+  return resp.json();
+}
+
 function scrollToItem(itemId) {
   const el = document.getElementById(`item-row-${itemId}`);
   if (!el) return;
@@ -1380,7 +1414,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
           observation: lv.observation, damaged: !!activeIssues[item.id],
         };
       } else if (activeIssues[item.id]) {
-        seeded[item.id] = { damaged: true, observation: activeIssues[item.id].observation };
+        seeded[item.id] = { damaged: true }; // sin precargar la observación: hay que escribir algo nuevo o marcar "Continúa igual"
       }
     });
     setEntries(seeded);
@@ -1492,7 +1526,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
       if (lv) {
         seeded[item.id] = { status: lv.status, value: lv.value, observation: lv.observation, damaged: !!activeIssues[item.id] };
       } else if (activeIssues[item.id]) {
-        seeded[item.id] = { damaged: true, observation: activeIssues[item.id].observation };
+        seeded[item.id] = { damaged: true }; // sin precargar la observación: hay que escribir algo nuevo o marcar "Continúa igual"
       }
     });
     setEntries(seeded);
@@ -1679,6 +1713,18 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
 function MeterRow({ meter, entry, onChange, previous }) {
   const subs = meter.subs || ["value"];
   const update = (sub, v) => onChange(meter.id, { ...entry, [sub]: v });
+  const [reading, setReading] = useState(null); // qué "sub" está leyendo ahora mismo, o null
+  const [readMsg, setReadMsg] = useState(null);
+
+  const doRead = async (sub, file) => {
+    setReading(sub); setReadMsg(null);
+    try {
+      const res = await readMeterFromPhoto(file);
+      if (res.ok) { update(sub, res.lectura); setReadMsg({ ok: true, text: `Leído: ${res.lectura}` }); }
+      else setReadMsg({ ok: false, text: res.message || "No se pudo leer." });
+    } catch { setReadMsg({ ok: false, text: "No se pudo leer (revisa la conexión)." }); }
+    setReading(null);
+  };
 
   return (
     <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -1694,8 +1740,15 @@ function MeterRow({ meter, entry, onChange, previous }) {
               <label className="text-xs mb-1" style={{ color: C.gray }}>
                 {meter.subs ? sub : "Lectura"}{meter.u ? ` (${meter.u})` : ""}
               </label>
-              <input type="number" step="any" value={val ?? ""} onChange={e => update(sub, e.target.value)}
-                placeholder="valor" className="w-32 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <div className="flex items-center gap-1">
+                <input type="number" step="any" value={val ?? ""} onChange={e => update(sub, e.target.value)}
+                  placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <label className="flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer shrink-0" style={{ background: C.blueSoft, color: C.blue }}>
+                  {reading === sub ? "…" : <Camera size={13} />}
+                  <input type="file" accept="image/*" capture="environment" className="hidden" disabled={reading !== null}
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) doRead(sub, f); }} />
+                </label>
+              </div>
               {consumo !== null ? (
                 <span className="text-xs mt-1" style={{ color: consumo < 0 ? C.red : C.green }}>
                   Consumo: {consumo.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{meter.u ? ` ${meter.u}` : ""}
@@ -1707,6 +1760,11 @@ function MeterRow({ meter, entry, onChange, previous }) {
           );
         })}
       </div>
+      {readMsg && (
+        <div className="text-xs font-medium mt-1" style={{ color: readMsg.ok ? C.green : C.red }}>
+          {readMsg.ok ? "✓" : "⚠"} {readMsg.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -1798,7 +1856,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
     allItems.forEach(item => {
       const lv = latestValues[item.id];
       if (lv) seeded[item.id] = { status: lv.status, value: lv.value, observation: lv.observation, damaged: !!activeIssues[item.id] };
-      else if (activeIssues[item.id]) seeded[item.id] = { damaged: true, observation: activeIssues[item.id].observation };
+      else if (activeIssues[item.id]) seeded[item.id] = { damaged: true }; // sin precargar la observación: hay que escribir algo nuevo o marcar "Continúa igual"
     });
     setEntries(seeded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7899,7 +7957,7 @@ export default function App() {
             </button>
           </div>
         </div>
-        <div className="p-3 space-y-1 shrink-0">
+        <div className="floor-scroll p-3 space-y-1" style={{ overflowY: "auto", flex: "1 1 auto", minHeight: 0 }}>
           {NAV.map(n => (
             <button key={n.id} onClick={() => { setView(n.id); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] ${view === n.id ? "" : "hover:bg-white/5 active:bg-white/10"}`}
@@ -7911,7 +7969,7 @@ export default function App() {
           ))}
         </div>
         {view === "ronda" && (
-          <div className="p-3 pt-2 border-t flex flex-col min-h-0 flex-1" style={{ borderColor: "#2a3f56" }}>
+          <div className="p-3 pt-2 border-t flex flex-col shrink-0" style={{ borderColor: "#2a3f56", maxHeight: "40vh" }}>
             <div className="text-xs font-semibold uppercase tracking-wide px-2 mb-1 shrink-0" style={{ color: "#8fa3b8" }}>
               Pisos ({FLOORS.length}) — desliza para ver todos
             </div>

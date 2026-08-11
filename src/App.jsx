@@ -8,7 +8,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -576,6 +576,91 @@ async function requestAiScheduleDraft({ monthLabel, days, employees, existingEnt
     body: JSON.stringify({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget }),
   });
   return resp.json();
+}
+
+/** Una celda de hora de Excel se guarda como una fracción del día (0.354166... = 8:30). Se pasa
+ *  a decimal (8.5) multiplicando por 24 — más simple y sin líos de zona horaria que usar fechas. */
+function excelSerialToDecimalHour(serial) {
+  return Math.round(serial * 24 * 100) / 100;
+}
+
+/**
+ * Lee un archivo Excel de horario EN EL MISMO FORMATO que ya se ha usado siempre (una fila
+ * "Hora" con los números de día por columna, una fila de nombres de día de la semana, y debajo
+ * una fila por empleado con hora de entrada/salida por día, o texto como "Vacaciones"). Puede
+ * tener uno o dos bloques de quincena en la misma hoja — los detecta solos, no hace falta que
+ * sean siempre dos. year/month1based dicen a qué mes pertenecen los números de día del archivo
+ * (se usa el mes que esté seleccionado en pantalla al momento de importar).
+ */
+function parseHorarioExcelWorkbook(workbook, year, month1based) {
+  const sheetName = workbook.SheetNames[0];
+  const ws = workbook.Sheets[sheetName];
+  if (!ws || !ws["!ref"]) return { entries: [], names: [], warnings: ["El archivo no tiene datos en la primera hoja."] };
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+
+  const codeMap = {
+    "vacaciones": "VAC", "libre": "LIBRE", "incapacidad": "INC",
+    "alterno": "ALT", "alterno / cambio": "ALT",
+    "lic. paternidad": "LIC_PAT", "licencia de paternidad": "LIC_PAT", "lic paternidad": "LIC_PAT",
+  };
+
+  const cellAt = (r, c) => {
+    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+    return cell ? cell.v : null;
+  };
+
+  // Filas de encabezado: cualquier fila donde la columna B diga "Hora" (una por cada quincena/bloque)
+  const headerRows = [];
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const v = cellAt(r, 1);
+    if (typeof v === "string" && v.trim().toLowerCase() === "hora") headerRows.push(r);
+  }
+
+  const entries = [];
+  const namesSet = new Set();
+  const warnings = [];
+
+  headerRows.forEach(headerRow => {
+    const dayCols = []; // [{entradaCol, salidaCol, day}]
+    for (let c = 2; c <= range.e.c; c++) {
+      const v = cellAt(headerRow, c);
+      if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 31) {
+        dayCols.push({ entradaCol: c, salidaCol: c + 1, day: v });
+      }
+    }
+    if (dayCols.length === 0) return;
+
+    let r = headerRow + 2; // se salta la fila de encabezado y la de nombres de día (LUNES, MARTES…)
+    while (r <= range.e.r) {
+      const rawName = cellAt(r, 1);
+      if (rawName == null || typeof rawName !== "string" || !rawName.trim()) break;
+      const lower = rawName.trim().toLowerCase();
+      if (lower === "fecha" || lower === "hora") break;
+      const name = rawName.trim();
+      namesSet.add(name);
+
+      dayCols.forEach(({ entradaCol, salidaCol, day }) => {
+        const eVal = cellAt(r, entradaCol);
+        const sVal = cellAt(r, salidaCol);
+        if (eVal == null && sVal == null) return;
+        const dateIso = `${year}-${String(month1based).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        if (typeof eVal === "string") {
+          const code = codeMap[eVal.trim().toLowerCase()];
+          if (!code) { warnings.push(`${name}, día ${day}: texto "${eVal}" no reconocido — ese día se dejó vacío, agrégalo a mano.`); return; }
+          entries.push({ name, date: dateIso, code });
+        } else if (typeof eVal === "number") {
+          const entrada = excelSerialToDecimalHour(eVal);
+          const salida = typeof sVal === "number" ? excelSerialToDecimalHour(sVal) : null;
+          if (salida == null) { warnings.push(`${name}, día ${day}: tiene hora de entrada pero no de salida — ese día se dejó vacío, agrégalo a mano.`); return; }
+          entries.push({ name, date: dateIso, entrada, salida });
+        }
+      });
+      r++;
+    }
+  });
+
+  if (headerRows.length === 0) warnings.unshift("No se encontró ninguna fila \"Hora\" — ¿es el mismo formato de siempre?");
+  return { entries, names: Array.from(namesSet), warnings };
 }
 
 function scrollToItem(itemId) {
@@ -4009,7 +4094,7 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onApplyAiDraft, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onImportExcel, onApplyAiDraft, reportEmail, onLogSent }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
   const [editingCell, setEditingCell] = useState(null);
@@ -4035,6 +4120,28 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
   const [draftActive, setDraftActive] = useState(false);
   const [draftOverrides, setDraftOverrides] = useState({}); // { [scheduleKey]: {entrada,salida} | {code} }
   const [applyingDraft, setApplyingDraft] = useState(false);
+
+  // ---- Al entrar, si ya hay un mes con datos cargados (ej. agosto), arranca de una vez mostrando
+  // el mes SIGUIENTE a ese (ej. septiembre) en vez del mes calendario actual — así el panel de IA
+  // ya aparece listo para el mes que realmente falta por armar. Solo pasa una vez, al cargar; si
+  // el usuario navega a otro mes después, eso ya no se toca. ----
+  const autoAdjustedMonthRef = useRef(false);
+  useEffect(() => {
+    if (autoAdjustedMonthRef.current) return;
+    const dates = Object.keys(scheduleEntries || {}).map(k => k.split("::")[1]).filter(Boolean);
+    if (dates.length === 0) return;
+    const maxDate = dates.reduce((a, b) => (b > a ? b : a));
+    const [y, m] = maxDate.split("-").map(Number); // m es 1-indexado (ej. 8 = agosto)
+    setMonthDate(new Date(y, m, 1)); // new Date(y, m, 1) con m tal cual = el mes SIGUIENTE (0-indexado)
+    autoAdjustedMonthRef.current = true;
+  }, [scheduleEntries]);
+
+  // ---- Subir un Excel de horario (mismo formato de siempre) para el mes que está en pantalla ----
+  const [excelParsing, setExcelParsing] = useState(false);
+  const [excelParsed, setExcelParsed] = useState(null); // { entries, names, warnings }
+  const [excelParseError, setExcelParseError] = useState(null);
+  const [excelApplying, setExcelApplying] = useState(false);
+  const excelInputRef = useRef(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -4133,6 +4240,38 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     setImporting(false);
   };
 
+  const handleExcelFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setExcelParseError(null); setExcelParsed(null); setExcelParsing(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const parsed = parseHorarioExcelWorkbook(wb, year, month + 1);
+      if (parsed.entries.length === 0) {
+        setExcelParseError("No se encontró ningún dato reconocible en el archivo — revisa que sea el mismo formato de siempre (filas \"Hora\" con los días por columna).");
+      } else {
+        setExcelParsed(parsed);
+      }
+    } catch {
+      setExcelParseError("No se pudo leer el archivo. ¿Es un .xlsx válido?");
+    }
+    setExcelParsing(false);
+    if (excelInputRef.current) excelInputRef.current.value = "";
+  };
+
+  const doApplyExcelImport = async () => {
+    setExcelApplying(true);
+    try {
+      const res = await onImportExcel(excelParsed);
+      setImportMsg({ ok: true, text: `Excel importado a ${monthLabel}: ${res.newEmployeesCount} empleado(s) nuevo(s), ${res.entriesCount} registros cargados.` });
+      setExcelParsed(null); setExcelParseError(null);
+    } catch {
+      setExcelParseError("No se pudo guardar la importación. Intenta de nuevo.");
+    }
+    setExcelApplying(false);
+  };
+
   const doDownload = async () => {
     setDownloading(true);
     try {
@@ -4153,19 +4292,18 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
   const doGenerateAiDraft = async () => {
     setAiGenerating(true); setAiError(null); setAiNotes(null);
     try {
-      // Ejemplo reciente de cómo trabaja cada quien: los 14 días reales justo antes de este mes,
-      // para que la IA copie el mismo tipo de turno de cada persona.
-      const refStart = new Date(daysIso[0] + "T00:00:00");
-      refStart.setDate(refStart.getDate() - 14);
+      // Ejemplo de cómo trabaja cada quien: TODO el mes calendario anterior completo (ej. si se
+      // arma septiembre, se manda agosto entero), para que la IA vea la secuencia real de turnos
+      // de cada persona (incluye rotaciones que cambian semana a semana) y la continúe con lógica.
+      const prevMonthFirstDay = new Date(year, month - 1, 1);
+      const prevDaysIso = daysInMonthIso(prevMonthFirstDay.getFullYear(), prevMonthFirstDay.getMonth());
       const referenceEntries = {};
       activeEmployees.forEach(emp => {
         const list = [];
-        for (let i = 0; i < 14; i++) {
-          const dt = new Date(refStart); dt.setDate(dt.getDate() + i);
-          const iso = dt.toISOString().slice(0, 10);
+        prevDaysIso.forEach(iso => {
           const e = scheduleEntries[scheduleKey(emp.id, iso)];
           if (isWorkedDay(e)) list.push({ date: iso, entrada: e.entrada, salida: e.salida });
-        }
+        });
         if (list.length) referenceEntries[emp.id] = list;
       });
 
@@ -4236,11 +4374,46 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       )}
 
       {isAdmin && (
-        <div className="rounded-md p-2 mb-3 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, color: "#7a5405" }}>
-          <span>¿Primera vez usando esto? Importa de una vez el horario real ya trabajado, para tener la base sobre la que la IA arma los siguientes meses.</span>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" disabled={importing} onClick={() => doImport(onImportJuly, "16 jul – 2 ago 2026")}>{importing ? "Importando…" : "Importar julio 2026"}</Button>
-            <Button size="sm" disabled={importing} onClick={() => doImport(onImportAugust, "3 ago – 30 ago 2026")}>{importing ? "Importando…" : "Importar agosto 2026"}</Button>
+        <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.amberSoft, color: "#7a5405" }}>
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+            <span>¿Primera vez usando esto? Importa de una vez el horario real ya trabajado, para tener la base sobre la que la IA arma los siguientes meses.</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" disabled={importing} onClick={() => doImport(onImportJuly, "16 jul – 2 ago 2026")}>{importing ? "Importando…" : "Importar julio 2026"}</Button>
+              <Button size="sm" disabled={importing} onClick={() => doImport(onImportAugust, "3 ago – 30 ago 2026")}>{importing ? "Importando…" : "Importar agosto 2026"}</Button>
+            </div>
+          </div>
+
+          <div className="pt-2" style={{ borderTop: `1px solid ${C.amber}` }}>
+            <div className="mb-2">O sube tu propio Excel (el mismo formato de siempre — filas "Hora" con los días por columna) y se carga al mes que tienes seleccionado arriba: <b>{monthLabel}</b>.</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input ref={excelInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelFileChange} disabled={excelParsing}
+                className="text-xs" style={{ color: "#7a5405" }} />
+              {excelParsing && <span>Leyendo archivo…</span>}
+            </div>
+            {excelParseError && <div className="mt-2" style={{ color: C.red }}>{excelParseError}</div>}
+
+            {excelParsed && (
+              <div className="mt-2 rounded-md p-2" style={{ background: C.panel }}>
+                <div className="mb-1" style={{ color: C.ink }}>
+                  Se cargarán <b>{excelParsed.entries.length}</b> registros para <b>{excelParsed.names.length}</b> persona(s) en <b>{monthLabel}</b>.
+                </div>
+                {excelParsed.warnings.length > 0 && (
+                  <div className="mb-1" style={{ color: "#a31245" }}>
+                    {excelParsed.warnings.length} aviso(s) — estos días se dejaron vacíos, revísalos a mano después:
+                    <ul className="list-disc pl-4 mt-1">
+                      {excelParsed.warnings.slice(0, 8).map((w, i) => <li key={i}>{w}</li>)}
+                      {excelParsed.warnings.length > 8 && <li>…y {excelParsed.warnings.length - 8} más.</li>}
+                    </ul>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-1">
+                  <Button size="sm" icon={Upload} disabled={excelApplying} onClick={doApplyExcelImport}>
+                    {excelApplying ? "Guardando…" : `Confirmar e importar a ${monthLabel}`}
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={excelApplying} onClick={() => { setExcelParsed(null); setExcelParseError(null); }}>Cancelar</Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -7751,6 +7924,45 @@ export default function App() {
   };
 
   /**
+   * Guarda lo que se sacó de un Excel de horario que el usuario subió desde la pantalla (mismo
+   * formato de siempre — ver parseHorarioExcelWorkbook). Crea los empleados que hagan falta
+   * (sin cargo asignado si son nuevos del todo, para que el admin lo complete después en
+   * "Gestionar empleados") y guarda todos los registros de una sola vez.
+   */
+  const importScheduleFromParsedExcel = async (parsed) => {
+    const { entries, names } = parsed;
+    const existingByName = {};
+    employees.forEach(e => { existingByName[e.name.trim().toLowerCase()] = e; });
+
+    const newEmployees = [];
+    names.forEach(name => {
+      const key = name.trim().toLowerCase();
+      if (!existingByName[key]) {
+        const rec = { id: uid("emp"), name, cargo: "", fixedRestDay: null, active: true, createdBy: displayName, createdAt: nowIso() };
+        newEmployees.push(rec);
+        existingByName[key] = rec;
+      }
+    });
+    const allEmployees = [...employees, ...newEmployees];
+    if (newEmployees.length) { setEmployees(allEmployees); await sSet("employees", allEmployees, true); }
+
+    const nextEntries = { ...scheduleEntries };
+    entries.forEach(rec => {
+      const emp = existingByName[rec.name.trim().toLowerCase()];
+      if (!emp) return;
+      const key = scheduleKey(emp.id, rec.date);
+      nextEntries[key] = {
+        entrada: rec.entrada ?? null, salida: rec.salida ?? null, code: rec.code || null,
+        note: "Importado de Excel", updatedBy: displayName, updatedAt: nowIso(),
+      };
+    });
+    setScheduleEntries(nextEntries);
+    await sSet("schedule-entries", nextEntries, true);
+
+    return { newEmployeesCount: newEmployees.length, entriesCount: entries.length };
+  };
+
+  /**
    * Importa (una sola vez, o las veces que quieras — es seguro repetirlo) el horario real
    * que se sacó del Excel "11__Horario_Julio2_2026.xlsx": crea los empleados que falten
    * (ya con su cargo asignado) y carga las 396 lecturas de entrada/salida del 16/07 al 02/08/2026.
@@ -8569,7 +8781,7 @@ export default function App() {
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
-              onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
+              onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onImportExcel={importScheduleFromParsedExcel} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={accounts} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}

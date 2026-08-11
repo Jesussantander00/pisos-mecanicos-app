@@ -534,18 +534,32 @@ function scrollToItem(itemId) {
 }
 
 /** Aviso de "faltan estos equipos", con cada nombre clickeable para saltar directo a esa fila. */
-function PendingItemsAlert({ msg }) {
+function PendingItemsAlert({ msg, onClose }) {
   if (!msg) return null;
+  const jumpTo = (id) => {
+    onClose();
+    setTimeout(() => scrollToItem(id), 60); // deja que la ventana se cierre antes de saltar, para que se vea bien
+  };
   return (
-    <div className="rounded-md p-2 mt-2 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>
-      ⚠ {msg.prefix}{" "}
-      {msg.items.map((it, i) => (
-        <span key={it.id}>
-          <button onClick={() => scrollToItem(it.id)} className="underline font-semibold" style={{ color: C.red }}>{it.n}</button>
-          {i < msg.items.length - 1 ? ", " : ""}
-        </span>
-      ))}
-      {msg.suffix ? ` ${msg.suffix}` : "."}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+      <div className="pm-animate-in rounded-xl max-w-sm w-full p-5 max-h-[80vh] overflow-y-auto" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle size={20} color={C.red} />
+          <h3 className="text-base font-semibold" style={{ color: C.ink }}>Antes de continuar</h3>
+        </div>
+        <p className="text-sm mb-3" style={{ color: C.inkSoft }}>{msg.prefix}</p>
+        <div className="flex flex-col gap-1.5 mb-4">
+          {msg.items.map(it => (
+            <button key={it.id} onClick={() => jumpTo(it.id)}
+              className="text-left text-sm px-3 py-2 rounded-md font-semibold"
+              style={{ background: C.redSoft, color: C.red }}>
+              {it.n} →
+            </button>
+          ))}
+        </div>
+        {msg.suffix && <p className="text-xs mb-4" style={{ color: C.gray }}>{msg.suffix}</p>}
+        <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+      </div>
     </div>
   );
 }
@@ -1437,7 +1451,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
-      <PendingItemsAlert msg={validationMsg} />
+      <PendingItemsAlert msg={validationMsg} onClose={() => setValidationMsg(null)} />
 
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Vo.Bo. pendiente de supervisor</div>
@@ -1627,17 +1641,10 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1 mb-3" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
-      {sendMsg && !sendMsg.ok && (
-        <div className="rounded-md p-2 mt-1 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>
-          ⚠ {sendMsg.text}{" "}
-          {sendMsg.items ? sendMsg.items.map((it, i) => (
-            <span key={it.id}>
-              <button onClick={() => scrollToItem(it.id)} className="underline font-semibold" style={{ color: C.red }}>{it.n}</button>
-              {i < sendMsg.items.length - 1 ? ", " : "."}
-            </span>
-          )) : null}
-        </div>
+      {sendMsg && !sendMsg.ok && !sendMsg.items && (
+        <div className="rounded-md p-2 mt-1 mb-3 text-xs font-medium" style={{ background: C.redSoft, color: C.red }}>⚠ {sendMsg.text}</div>
       )}
+      <PendingItemsAlert msg={sendMsg?.items ? { prefix: sendMsg.text, items: sendMsg.items } : null} onClose={() => setSendMsg(null)} />
 
       {lastColdRound && !todayIsSunday && (
         <div className="rounded-md p-2 text-xs" style={{ background: C.bg, color: C.inkSoft }}>
@@ -1863,7 +1870,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
-      <PendingItemsAlert msg={validationMsg} />
+      <PendingItemsAlert msg={validationMsg} onClose={() => setValidationMsg(null)} />
 
       <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
@@ -2720,11 +2727,11 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
 
       {filtered.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Nada por aquí — todo al día.</p>
-      ) : filtered.map(t => {
+      ) : filtered.map((t, i) => {
         const stateColors = TASK_STATE_COLORS[t.estado];
         const canDelete = isAdmin || t.createdBy === currentUser;
         return (
-          <div key={t.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div key={t.id} className="pm-stagger-in rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink, animationDelay: `${Math.min(i, 12) * 35}ms` }}>
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div className="flex-1 min-w-[200px]">
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
@@ -4241,7 +4248,7 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
               <div className="p-3 text-xs" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
             ) : results.map((r, i) => (
               <button key={i} onClick={() => { r.action(); setOpen(false); setQ(""); }}
-                className="block w-full text-left px-3 py-2 border-b last:border-0" style={{ borderColor: C.line }}>
+                className="pm-stagger-in block w-full text-left px-3 py-2 border-b last:border-0" style={{ borderColor: C.line, animationDelay: `${Math.min(i, 10) * 25}ms` }}>
                 <div className="text-xs font-semibold" style={{ color: C.amber }}>{r.tipo}</div>
                 <div className="text-sm" style={{ color: C.ink }}>{r.label}</div>
                 {r.sub && <div className="text-xs" style={{ color: C.gray }}>{r.sub}</div>}
@@ -4254,13 +4261,28 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
   );
 }
 
-function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
+/** Equipos que llevan reportados como dañados más de X días sin que nadie los marque como resueltos
+ *  ni confirme "Sigue igual" — para que no se queden ahí "quietos" sin que nadie se dé cuenta. */
+function computeStaleIssues(activeIssues, thresholdDays = 15) {
+  const now = Date.now();
+  return Object.values(activeIssues)
+    .map(iss => {
+      const checkins = iss.checkins || [];
+      const lastTouch = checkins.length ? checkins[checkins.length - 1].at : iss.openedAt;
+      const daysOpen = Math.floor((now - new Date(lastTouch).getTime()) / (1000 * 60 * 60 * 24));
+      return { ...iss, daysOpen };
+    })
+    .filter(iss => iss.daysOpen >= thresholdDays)
+    .sort((a, b) => b.daysOpen - a.daysOpen);
+}
+
+function NotificationBell({ alerts, maintenanceDue, staleIssues, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
     "Check List Caldera": "boiler", "Equipos de Lavandería": "laundry",
   };
-  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0);
+  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0);
   return (
     <div className="relative">
       <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
@@ -4296,6 +4318,22 @@ function NotificationBell({ alerts, maintenanceDue, onNavigate }) {
                 ))}
               </div>
             ))}
+
+            {staleIssues && staleIssues.length > 0 && (
+              <>
+                <div className="p-3 pb-1 border-t text-xs font-semibold uppercase tracking-wide" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
+                  Llevan mucho tiempo sin resolverse
+                </div>
+                <div className="px-3 pb-3">
+                  {staleIssues.map((iss, i) => (
+                    <button key={i} onClick={() => { onNavigate("issues"); setOpen(false); }}
+                      className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
+                      · #{iss.code} {iss.name} <span style={{ color: C.gray }}>({iss.floorName})</span> — lleva {iss.daysOpen} días
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             {maintenanceDue && (
               <>
@@ -7715,6 +7753,7 @@ export default function App() {
     () => computeUpcomingMaintenance(nowClock, mttoEquipos, mttoCronograma),
     [nowClock, mttoEquipos, mttoCronograma]
   );
+  const staleIssues = useMemo(() => computeStaleIssues(activeIssues, 15), [activeIssues, nowClock]);
 
   useEffect(() => {
     if (!isAdmin || pushSubscriptions.length === 0) return;
@@ -7941,7 +7980,7 @@ export default function App() {
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
             {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
-            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} onNavigate={setView} />}
+            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>

@@ -31,6 +31,19 @@
   * { scroll-behavior: auto !important; }
 }
 
+/* Entrada en cascada para listas (tareas, resultados de búsqueda): cada elemento entra un poco
+   después del anterior, usando "animation-delay" calculado por índice en cada fila. */
+@keyframes pm-fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pm-stagger-in {
+  animation: pm-fade-in-up 240ms var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pm-stagger-in { animation: none; }
+}
+
 /* Anillo de enfoque global: le da a cualquier campo una señal clara de "aquí estás escribiendo". */
 input, select, textarea {
   transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out) !important;

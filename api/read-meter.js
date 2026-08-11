@@ -1,10 +1,9 @@
-// Función serverless de Vercel. Recibe la foto de un medidor y le pide a Claude (Sonnet, para
-// mayor precisión leyendo dígitos pequeños/ruedas mecánicas) que lea el número que muestra —
-// así el técnico no tiene que transcribirlo a mano. Corre en el servidor, así que aquí sí se
-// puede guardar de forma segura la clave secreta.
+// Función serverless de Vercel. Recibe la foto de un medidor y le pide a Gemini que lea el
+// número que muestra — así el técnico no tiene que transcribirlo a mano. Corre en el servidor,
+// así que aquí sí se puede guardar de forma segura la clave secreta.
 //
 // Configúrala en Vercel → tu proyecto → Settings → Environment Variables:
-//   ANTHROPIC_API_KEY  = tu clave secreta de console.anthropic.com (empieza con "sk-ant-")
+//   GEMINI_API_KEY  = tu clave gratuita de aistudio.google.com/apikey (no hace falta tarjeta)
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -18,9 +17,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ ok: false, message: "Falta configurar ANTHROPIC_API_KEY en Vercel." });
+    res.status(500).json({ ok: false, message: "Falta configurar GEMINI_API_KEY en Vercel." });
     return;
   }
 
@@ -28,25 +27,7 @@ export default async function handler(req, res) {
     ? `\n\nDATO DE CONTEXTO IMPORTANTE: la última lectura registrada para este mismo medidor${meterName ? ` (${meterName})` : ""} fue ${previousReading}. Los medidores de consumo casi siempre SUBEN con el tiempo (nunca bajan, salvo casos raros de reinicio del contador) — así que la lectura nueva debería ser igual o mayor a ese número, y normalmente no muy distinta (el consumo de unos días no suele ser enorme). Usa este dato como referencia para revisar tu propia lectura: si lo que lees es mucho menor a ${previousReading}, o muchísimo mayor, vuelve a fijarte con cuidado en la foto antes de responder — es más probable que te hayas confundido de dígito que un salto así de grande.`
     : "";
 
-  try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 500,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: imageBase64 } },
-              {
-                type: "text",
-                text: `Esta es una foto de un medidor de consumo (agua, luz o gas). Necesito que leas la lectura EXACTA que muestra, con mucho cuidado, ya que se usa para calcular consumo y facturación.
+  const promptText = `Esta es una foto de un medidor de consumo (agua, luz o gas). Necesito que leas la lectura EXACTA que muestra, con mucho cuidado, ya que se usa para calcular consumo y facturación.
 
 Ten en cuenta estos formatos comunes de medidores, y fíjate cuál aplica en esta foto:
 - Muchos medidores mecánicos de agua tienen una fila de RUEDAS/RODILLOS con números: las ruedas de fondo NEGRO (o blanco) son el número entero, y las últimas 1-2 ruedas de fondo ROJO son los decimales — el número completo se lee de corrido, con un punto decimal antes de las ruedas rojas. Ejemplo: si ves ruedas negras "032973" y luego ruedas rojas "59", la lectura es 32973.59 (los ceros a la izquierda del todo normalmente no se escriben).
@@ -55,16 +36,34 @@ Ten en cuenta estos formatos comunes de medidores, y fíjate cuál aplica en est
 - Si hay varias filas o ventanas de números, la lectura principal casi siempre es la fila más grande/prominente, normalmente cerca del centro del medidor.
 ${contextLine}
 
-Antes de responder, primero describe en 1-2 frases qué tipo de medidor ves y dónde está la lectura principal. Luego responde con el número exacto.
+Responde ÚNICAMENTE con este JSON, sin texto antes ni después:
+{"descripcion": "1-2 frases: qué tipo de medidor es y dónde está la lectura principal", "lectura": "el número exacto que leíste (con el punto decimal si aplica), o null si no se alcanza a leer con seguridad"}`;
 
-Termina tu respuesta ÚNICAMENTE con este JSON en la última línea, nada más después:
-{"lectura": "el número exacto que leíste (con el punto decimal si aplica), o null si no se alcanza a leer con seguridad"}`,
-              },
-            ],
+  try {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { inline_data: { mime_type: mediaType || "image/jpeg", data: imageBase64 } },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig: {
+            maxOutputTokens: 500,
+            responseMimeType: "application/json",
+            // "low" en vez del nivel por defecto: gasta menos crédito sin sacrificar la precisión
+            // de la lectura (la precisión viene de la foto, no de cuánto "piense" antes de leerla).
+            thinkingConfig: { thinkingLevel: "low" },
           },
-        ],
-      }),
-    });
+        }),
+      }
+    );
 
     const data = await resp.json();
     if (!resp.ok) {
@@ -72,14 +71,22 @@ Termina tu respuesta ÚNICAMENTE con este JSON en la última línea, nada más d
       return;
     }
 
-    const raw = data?.content?.[0]?.text || "";
+    const candidate = data?.candidates?.[0];
+    const raw = (candidate?.content?.parts || [])
+      .filter(p => p && p.text && !p.thought)
+      .map(p => p.text)
+      .join("");
+
     let lectura = null;
     try {
-      const matches = raw.match(/\{[^{}]*\}/g); // toma el ÚLTIMO bloque {...} de la respuesta (después de la descripción)
-      const lastMatch = matches ? matches[matches.length - 1] : null;
-      lectura = lastMatch ? JSON.parse(lastMatch).lectura : null;
+      lectura = JSON.parse(raw.trim()).lectura;
     } catch {
-      lectura = null;
+      // Por si acaso quedó algo de texto extra alrededor pese a pedir solo JSON.
+      const first = raw.indexOf("{");
+      const last = raw.lastIndexOf("}");
+      if (first !== -1 && last !== -1 && last > first) {
+        try { lectura = JSON.parse(raw.slice(first, last + 1)).lectura; } catch { lectura = null; }
+      }
     }
 
     if (!lectura || lectura === "null") {

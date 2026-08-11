@@ -1,12 +1,12 @@
 // Función serverless de Vercel. Recibe el mes a programar, la lista de empleados, lo que YA
 // está en el horario (vacaciones, incapacidades, turnos ya puestos a mano — esto NUNCA se toca),
 // un ejemplo de cómo trabajó cada quien en los últimos días (para copiar el mismo patrón de
-// turnos) y las reglas que escribió el usuario en español normal. Le pide a Claude que arme
+// turnos) y las reglas que escribió el usuario en español normal. Le pide a Gemini que arme
 // SOLO los días que están vacíos, respetando todo lo anterior, y devuelve un borrador para
 // revisar — nunca guarda nada por su cuenta, eso lo hace la app cuando el usuario confirma.
 //
 // Configúrala en Vercel → tu proyecto → Settings → Environment Variables:
-//   ANTHROPIC_API_KEY  = tu clave secreta de console.anthropic.com (empieza con "sk-ant-")
+//   GEMINI_API_KEY  = tu clave gratuita de aistudio.google.com/apikey (no hace falta tarjeta)
 //
 // Le pide a Vercel el máximo de tiempo posible para esta función (60 segundos — es el tope del
 // plan gratuito; en un plan de pago se puede subir más). Aun así, quien llama a esta función
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget } = req.body || {};
+  const { monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget, sundaysAlreadyWorked } = req.body || {};
 
   if (!Array.isArray(days) || days.length === 0) {
     res.status(400).json({ ok: false, message: "Faltan los días del mes." });
@@ -31,17 +31,24 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ ok: false, message: "Falta configurar ANTHROPIC_API_KEY en Vercel." });
+    res.status(500).json({ ok: false, message: "Falta configurar GEMINI_API_KEY en Vercel." });
     return;
   }
 
   const prompt = `Eres un asistente que arma borradores de horario mensual para el equipo de ingeniería/mantenimiento de un hotel (Hyatt Regency Cartagena). Trabajas con datos en bruto, no le hables al usuario directamente en el JSON final, solo en el campo "notas".
 
 MES A PROGRAMAR: ${monthLabel}
-DÍAS DEL MES (cada uno con su fecha ISO y si es domingo/festivo — trabajar domingo/festivo cuenta contra el límite recomendado de 3 al mes por persona, salvo que las reglas del usuario den un número distinto para un cargo o una persona en concreto, en cuyo caso ese número manda):
+IMPORTANTE: este pedido cubre SOLO UNA PARTE del mes (los días de la lista de abajo), no el mes completo — el resto se arma en otro(s) pedido(s) aparte. No asumas que los días que no aparecen aquí no existen; simplemente no son tu responsabilidad en este pedido.
+
+DÍAS A PROGRAMAR EN ESTE PEDIDO (cada uno con su fecha ISO y si es domingo/festivo):
 ${JSON.stringify(days, null, 0)}
+
+REGLA DE DOMINGOS/FESTIVOS: por defecto cada persona puede trabajar hasta 3 domingos/festivos en el MES COMPLETO (no solo en esta parte) — salvo que las reglas del usuario den un número distinto para un cargo o una persona en concreto, en cuyo caso ese número manda. Los SÁBADOS que NO sean festivo no tienen ningún tope de cantidad — cúbrelos con toda normalidad siguiendo el patrón del mes de referencia, igual que cualquier día entre semana; no los dejes vacíos por precaución.
+
+DOMINGOS/FESTIVOS QUE CADA PERSONA YA TIENE TRABAJADOS EN OTRAS PARTES DE ESTE MISMO MES (ya sea porque ya estaban en el horario, o porque ya se generaron en otro pedido de este mismo mes) — súmalos al decidir si a alguien todavía le queda "cupo" de domingos en los días que tú vas a programar:
+${JSON.stringify(sundaysAlreadyWorked || {}, null, 0)}
 
 EMPLEADOS (id, nombre, cargo, día de descanso fijo si tiene uno — 0=domingo, 1=lunes... 6=sábado, null si no tiene uno fijo):
 ${JSON.stringify(employees, null, 0)}
@@ -49,42 +56,46 @@ ${JSON.stringify(employees, null, 0)}
 DÍAS QUE YA ESTÁN LLENOS EN EL HORARIO (vacaciones, incapacidades, turnos ya puestos a mano, etc.) — NO LOS TOQUES, NO LOS REPITAS EN TU RESPUESTA, son un dato fijo para que sepas quién ya no está disponible ese día:
 ${JSON.stringify(existingEntries || {}, null, 0)}
 
-EJEMPLO DE CÓMO TRABAJÓ CADA EMPLEADO EN EL MES ANTERIOR COMPLETO (para que copies el mismo tipo de turno/horario y las mismas rotaciones de cada persona — hora de entrada y salida en formato decimal, ej. 8.5 = 8:30 a.m., 22.0 = 10:00 p.m., un turno puede cruzar la medianoche si la salida es menor que la entrada):
+EJEMPLO DE CÓMO TRABAJÓ CADA EMPLEADO EN EL MES ANTERIOR COMPLETO (para que copies el mismo tipo de turno/horario y las mismas rotaciones de cada persona, INCLUYENDO cómo cubría normalmente los sábados y domingos — hora de entrada y salida en formato decimal, ej. 8.5 = 8:30 a.m., 22.0 = 10:00 p.m., un turno puede cruzar la medianoche si la salida es menor que la entrada):
 ${JSON.stringify(referenceEntries || {}, null, 0)}
 
-REGLAS QUE ESCRIBIÓ EL USUARIO PARA ESTE MES (tienen prioridad sobre todo lo demás — incluido el límite de 3 domingos/festivos — síguelas literalmente, y si mencionan a alguien por nombre parcial, búscalo en la lista de empleados):
+REGLAS QUE ESCRIBIÓ EL USUARIO PARA ESTE MES (tienen prioridad sobre todo lo demás — incluido el límite de domingos/festivos — síguelas literalmente, y si mencionan a alguien por nombre parcial, búscalo en la lista de empleados):
 """
 ${rulesText || "(sin reglas adicionales — sigue el patrón habitual de cada empleado)"}
 """
 
 QUÉ HACER:
-- Llena SOLO los días de cada empleado que NO aparecen ya en "DÍAS QUE YA ESTÁN LLENOS". No incluyas en tu respuesta ningún día que ya esté ahí.
+- Llena SOLO los días de la lista "DÍAS A PROGRAMAR EN ESTE PEDIDO" que además NO aparecen ya en "DÍAS QUE YA ESTÁN LLENOS". No incluyas en tu respuesta ningún día que ya esté ahí.
 - Para cada día que llenes, decide si la persona trabaja (con hora de entrada y salida) o descansa (simplemente no la incluyas ese día — un día sin turno es un día libre, no hace falta ningún código para eso).
-- Copia el mismo tipo de horario que cada persona ya tenía en el mes de ejemplo (mismo cargo, turno parecido, misma rotación si la tiene), salvo que las reglas del usuario digan otra cosa.
+- Copia el mismo tipo de horario que cada persona ya tenía en el mes de ejemplo (mismo cargo, turno parecido, misma rotación si la tiene, incluyendo su patrón normal de sábados/domingos), salvo que las reglas del usuario digan otra cosa.
 - Respeta el día de descanso fijo de cada empleado si lo tiene (no le pongas turno ese día, salvo que las reglas digan explícitamente lo contrario).
 - Intenta que cada empleado llegue cerca de ${weeklyHoursTarget || 42} horas por semana en promedio, como ya viene trabajando.
 - Si una regla habla de "horas acumuladas" o "compensatorios" para armar un día de descanso, no inventes la fecha exacta del descanso por tu cuenta — dilo en "notas" para que el usuario decida cuándo, salvo que las reglas te den una fecha concreta.
 - Si las reglas del usuario piden un mínimo de personas por turno o por día, priorízalo por encima de las horas objetivo.
 - Si hay un conflicto que no puedas resolver bien (ej. no hay suficiente personal para cubrir algo), dilo en el campo "notas" en vez de inventar una solución forzada.
-- IMPORTANTE — formato de salida compacto (el mes puede tener cientos de turnos, así que cada uno debe ocupar lo menos posible): agrupa por empleado, y dentro de cada empleado usa la fecha como llave. El valor de cada día es un texto: "8.5-16.5" para un turno normal (entrada-salida), o "C:VAC" para un código especial (usa VAC, LIBRE, INC, ALT o LIC_PAT). No repitas el id del empleado en cada día, va una sola vez como llave del objeto exterior.
+- IMPORTANTE — formato de salida compacto (esta parte del mes puede tener bastantes turnos, así que cada uno debe ocupar lo menos posible): agrupa por empleado, y dentro de cada empleado usa la fecha como llave. El valor de cada día es un texto: "8.5-16.5" para un turno normal (entrada-salida), o "C:VAC" para un código especial (usa VAC, LIBRE, INC, ALT o LIC_PAT). No repitas el id del empleado en cada día, va una sola vez como llave del objeto exterior.
 
 Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin \`\`\`, sin espacios ni saltos de línea extra:
 {"e":{"id-del-empleado":{"2026-09-01":"8.5-16.5","2026-09-02":"C:VAC"}},"notas":"2-4 frases en español explicando decisiones importantes o advertencias, o vacío si no hay nada que avisar"}`;
 
   try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 32000, // Sonnet 4.6 permite hasta 64k en la API síncrona — se deja bastante margen
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 32000,
+            responseMimeType: "application/json", // obliga a que la respuesta sea JSON válido, sin texto ni ``` alrededor
+            // "low" gasta menos y responde más rápido — de sobra para esta tarea mecánica de llenar
+            // casillas; Gemini 3 Flash no permite apagar el pensamiento del todo, pero sí bajarlo.
+            thinkingConfig: { thinkingLevel: "low" },
+          },
+        }),
+      }
+    );
 
     const data = await resp.json();
     if (!resp.ok) {
@@ -92,8 +103,12 @@ Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin \`\`\`, sin
       return;
     }
 
-    const wasTruncated = data?.stop_reason === "max_tokens";
-    const raw = data?.content?.[0]?.text || "";
+    const candidate = data?.candidates?.[0];
+    const wasTruncated = candidate?.finishReason === "MAX_TOKENS";
+    const raw = (candidate?.content?.parts || [])
+      .filter(p => p && p.text && !p.thought)
+      .map(p => p.text)
+      .join("");
 
     // Primero se intenta el camino rápido: el JSON completo y bien formado.
     let parsed = null;

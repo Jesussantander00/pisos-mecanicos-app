@@ -6689,25 +6689,27 @@ export default function App() {
   }, []);
   const [pendingSync, setPendingSync] = useState(() => getPendingCount());
   const [justSynced, setJustSynced] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const tryFlush = useCallback(async () => {
+    const res = await flushOfflineQueue();
+    const remaining = getPendingCount();
+    setPendingSync(remaining);
+    if (res.synced > 0 && remaining === 0) {
+      setJustSynced(true);
+      setTimeout(() => setJustSynced(false), 4000);
+    }
+    return res;
+  }, []);
   useEffect(() => {
     let cancelled = false;
-    const tryFlush = async () => {
-      const res = await flushOfflineQueue();
-      if (cancelled) return;
-      const remaining = getPendingCount();
-      setPendingSync(remaining);
-      if (res.synced > 0 && remaining === 0) {
-        setJustSynced(true);
-        setTimeout(() => setJustSynced(false), 4000);
-      }
-    };
-    tryFlush(); // por si quedó algo pendiente de una sesión anterior sin señal
-    window.addEventListener("online", tryFlush);
+    const run = async () => { if (!cancelled) await tryFlush(); };
+    run(); // por si quedó algo pendiente de una sesión anterior sin señal
+    window.addEventListener("online", run);
     const onQueueChanged = () => setPendingSync(getPendingCount());
     window.addEventListener("pm-queue-changed", onQueueChanged);
-    const id = setInterval(tryFlush, 20000); // reintento silencioso, por si "online" no se dispara bien
-    return () => { cancelled = true; window.removeEventListener("online", tryFlush); window.removeEventListener("pm-queue-changed", onQueueChanged); clearInterval(id); };
-  }, []);
+    const id = setInterval(run, 20000); // reintento silencioso, por si "online" no se dispara bien
+    return () => { cancelled = true; window.removeEventListener("online", run); window.removeEventListener("pm-queue-changed", onQueueChanged); clearInterval(id); };
+  }, [tryFlush]);
   const [floorId, setFloorIdRaw] = useState(() => {
     try {
       const saved = localStorage.getItem("pm-local:last-floor");
@@ -7916,8 +7918,15 @@ export default function App() {
           )}
           <div className="flex items-center gap-2">
             {pendingSync > 0 && (
-              <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }}>
+              <span className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }}>
                 <AlertTriangle size={12} /> {pendingSync} sin subir
+                <button
+                  onClick={async () => { setRetrying(true); await tryFlush(); setRetrying(false); }}
+                  disabled={retrying}
+                  className="underline font-semibold disabled:opacity-60"
+                  style={{ color: "#7a5405" }}>
+                  {retrying ? "Subiendo…" : "Reintentar ahora"}
+                </button>
               </span>
             )}
             {justSynced && pendingSync === 0 && (

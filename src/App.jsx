@@ -569,11 +569,11 @@ async function readMeterFromPhoto(file, previousReading, meterName) {
  * recibe el borrador, lo muestra para revisar/editar, y solo se guarda de verdad cuando el
  * usuario confirma.
  */
-async function requestAiScheduleDraft({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget }) {
+async function requestAiScheduleDraft({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget, sundaysAlreadyWorked }) {
   const resp = await fetch("/api/generate-schedule", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget }),
+    body: JSON.stringify({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget, sundaysAlreadyWorked }),
   });
   return resp.json();
 }
@@ -4024,6 +4024,19 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
    HORARIOS — componentes de vista
    ============================================================ */
 const CARGOS = ["Administrativo", "Turnista", "Apoyo", "Mecánico", "Practicante", "Pintor", "Carpintero", "Albañil", "Jardinero"];
+// Un color por cargo, solo para que el PDF del horario sea más fácil de leer de un vistazo
+// (el nombre de cada quien sale en el color de su cargo). No afecta nada más de la app.
+const CARGO_PDF_COLORS = {
+  "Administrativo": "#1e4fa3",
+  "Turnista": "#a31245",
+  "Apoyo": "#1c7a34",
+  "Mecánico": "#8a5a00",
+  "Practicante": "#6b21a8",
+  "Pintor": "#0e7490",
+  "Carpintero": "#9a3412",
+  "Albañil": "#4d7c0f",
+  "Jardinero": "#166534",
+};
 
 function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, onDeleteEmployee }) {
   const [name, setName] = useState("");
@@ -4083,6 +4096,9 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
                   <option value="">Sin descanso fijo</option>
                   {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
                 </select>
+                <input defaultValue={emp.badge || ""} onBlur={e => { if (e.target.value !== (emp.badge || "")) onUpdateEmployee(emp.id, { badge: e.target.value.trim() }); }}
+                  placeholder="Etiqueta (ej: acum. reducción)" title="Aparece como una marca de color junto al nombre, en pantalla y en el PDF"
+                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, width: 160 }} />
                 <Button size="sm" variant="ghost" onClick={() => onUpdateEmployee(emp.id, { active: !emp.active })}>{emp.active ? "Desactivar" : "Activar"}</Button>
                 <button onClick={() => onDeleteEmployee(emp.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
               </div>
@@ -4310,19 +4326,41 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       const days = daysIso.map(d => ({ date: d, isSundayOrHoliday: isSundayOrHoliday(d) }));
       const employeesForApi = activeEmployees.map(e => ({ id: e.id, name: e.name, cargo: e.cargo || "", fixedRestDay: e.fixedRestDay ?? null }));
 
+      // Cuántos domingos/festivos tiene YA trabajados cada persona este mismo mes (lo que ya
+      // estaba guardado antes de generar). Esto se le manda a cada tanda y se va actualizando
+      // según lo que la IA vaya generando, para que ninguna tanda le ponga a alguien más domingos
+      // de los que le quedan — sin esto, cada tanda decide "a ciegas" y pueden pasarse entre todas.
+      const sundaysWorked = {};
+      activeEmployees.forEach(emp => {
+        let count = 0;
+        daysIso.forEach(d => { if (isSundayOrHoliday(d) && isWorkedDay(entriesByEmployee[emp.id]?.[d])) count++; });
+        sundaysWorked[emp.id] = count;
+      });
+
       // Pedir el mes completo de una sola vez puede tardar tanto que Vercel corte la función a la
-      // mitad. En vez de eso, se pide en tandas de máximo 15 días, todas al tiempo — cada tanda es
-      // rápida por separado, y entre todas arman el mes igual. Si alguna tanda falla, las demás
-      // igual quedan aplicadas (no se pierde todo por un problema en una sola parte).
+      // mitad. En vez de eso, se pide en tandas de máximo 15 días. Van UNA POR UNA (no todas al
+      // tiempo) para poder pasarle a cada tanda cuántos domingos ya usó cada persona en la tanda
+      // anterior — así entre todas respetan el mismo límite mensual en vez de calcularlo cada una
+      // por su cuenta. Si alguna tanda falla, las demás igual quedan aplicadas.
       const CHUNK_SIZE = 15;
       const dayChunks = [];
       for (let i = 0; i < days.length; i += CHUNK_SIZE) dayChunks.push(days.slice(i, i + CHUNK_SIZE));
 
-      const results = await Promise.all(dayChunks.map(chunkDays => requestAiScheduleDraft({
-        monthLabel, days: chunkDays, employees: employeesForApi,
-        existingEntries: entriesByEmployee, referenceEntries,
-        rulesText: aiRulesText, weeklyHoursTarget: WEEKLY_HOURS_TARGET,
-      }).catch(() => ({ ok: false, message: "No se pudo conectar con el servicio de IA para esta parte del mes." }))));
+      const results = [];
+      for (const chunkDays of dayChunks) {
+        const res = await requestAiScheduleDraft({
+          monthLabel, days: chunkDays, employees: employeesForApi,
+          existingEntries: entriesByEmployee, referenceEntries,
+          rulesText: aiRulesText, weeklyHoursTarget: WEEKLY_HOURS_TARGET,
+          sundaysAlreadyWorked: sundaysWorked,
+        }).catch(() => ({ ok: false, message: "No se pudo conectar con el servicio de IA para esta parte del mes." }));
+        results.push(res);
+        if (res && res.ok) {
+          res.entries.forEach(e => {
+            if (!e.code && isSundayOrHoliday(e.date)) sundaysWorked[e.employeeId] = (sundaysWorked[e.employeeId] || 0) + 1;
+          });
+        }
+      }
 
       const okResults = results.filter(r => r && r.ok);
       const failedCount = results.length - okResults.length;
@@ -4621,6 +4659,11 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
                     <tr style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                       <td className="px-2 py-1.5" style={{ color: C.ink, fontWeight: 500 }}>
                         {emp.name}
+                        {emp.badge && (
+                          <span className="text-[10px] font-normal ml-1.5 px-1.5 py-0.5 rounded-full" style={{ background: "#f0e6fb", color: "#6b21a8" }}>
+                            {emp.badge}
+                          </span>
+                        )}
                         {warnings.length > 0 && <AlertTriangle size={12} style={{ display: "inline", color: C.red, marginLeft: 4, verticalAlign: "-1px" }} />}
                       </td>
                       {daysIso.map(d => {
@@ -6491,34 +6534,78 @@ function fmtEntryShort(entry) {
 async function generateSchedulePdf(monthLabel, employees, daysIso, entriesByEmployee, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "landscape" });
-  let y = pdfLetterhead(doc, "Horario Mensual", [monthLabel, `Generado por ${generatedBy || "—"}`]);
 
-  const weeks = weeksInRange(daysIso);
-  const head = ["Empleado", ...daysIso.map(d => {
+  // Un mes completo (28-31 columnas de día) no cabe en una sola página ancha — por eso antes se
+  // veía "cortado" a partir del día 15 o 16 (esas columnas quedaban dibujadas fuera del borde de
+  // la hoja). La solución: partir el mes en dos quincenas, cada una en su propia tabla/página,
+  // igual que ya venías acostumbrado a verlo en Excel.
+  const midPoint = Math.ceil(daysIso.length / 2);
+  const halves = [daysIso.slice(0, midPoint), daysIso.slice(midPoint)].filter(h => h.length > 0);
+
+  const dayHeadLabel = (d) => {
     const dd = new Date(d + "T00:00:00");
     return `${String(dd.getDate()).padStart(2, "0")}${isSundayOrHoliday(d) ? "*" : ""}`;
-  }), ...weeks.map((w, i) => `Sem${i + 1}`), "Total"];
+  };
+  const cargoColor = (cargo) => CARGO_PDF_COLORS[cargo] || PDF_C.gray;
 
-  const body = employees.map(emp => {
+  let y = pdfLetterhead(doc, "Horario Mensual", [monthLabel, `Generado por ${generatedBy || "—"}`]);
+
+  halves.forEach((half, hi) => {
+    if (hi > 0) {
+      doc.addPage();
+      const d0 = new Date(half[0] + "T00:00:00"), d1 = new Date(half[half.length - 1] + "T00:00:00");
+      y = pdfLetterhead(doc, "Horario Mensual (continuación)", [monthLabel, `Del ${d0.getDate()} al ${d1.getDate()}`]);
+    } else {
+      const d0 = new Date(half[0] + "T00:00:00"), d1 = new Date(half[half.length - 1] + "T00:00:00");
+      doc.setFontSize(8.5); doc.setTextColor(...PDF_C.gray);
+      doc.text(`Primera quincena: del ${d0.getDate()} al ${d1.getDate()}`, 14, y); y += 5;
+      doc.setTextColor(...PDF_C.ink);
+    }
+
+    const weeks = weeksInRange(half);
+    const head = ["Empleado", ...half.map(dayHeadLabel), ...weeks.map((w, i) => `Sem${i + 1}`), "Total quinc."];
+
+    const body = employees.map(emp => {
+      const entries = entriesByEmployee[emp.id] || {};
+      const weekTotals = weeks.map(w => weekTotalHours(w, entries));
+      const halfTotal = weekTotals.reduce((a, b) => a + b, 0);
+      const nameCell = emp.badge ? `${emp.name} (${emp.badge})` : emp.name;
+      return [nameCell, ...half.map(d => fmtEntryShort(entries[d])), ...weekTotals.map(t => t || ""), halfTotal || ""];
+    });
+
+    y = pdfTable(doc, y, head, body, {
+      columnStyles: { 0: { cellWidth: 40 } },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        if (data.column.index === 0) {
+          const emp = employees[data.row.index];
+          if (emp?.cargo) data.cell.styles.textColor = hexToRgb(cargoColor(emp.cargo));
+          return;
+        }
+        const raw = String(data.cell.raw || "");
+        const colors = SPECIAL_CODE_COLORS[raw];
+        if (colors) data.cell.styles.fillColor = hexToRgb(colors.bg);
+      },
+    });
+  });
+
+  // Resumen final: el total del mes completo por persona, en un solo lugar fácil de mirar.
+  if (doc.lastAutoTable.finalY > doc.internal.pageSize.getHeight() - 60) { doc.addPage(); y = 18; }
+  else y = doc.lastAutoTable.finalY + 8;
+  y = pdfSectionTitle(doc, y, "Resumen — total de horas del mes completo");
+  const summaryBody = employees.map(emp => {
     const entries = entriesByEmployee[emp.id] || {};
-    const weekTotals = weeks.map(w => weekTotalHours(w, entries));
-    const monthTotal = weekTotals.reduce((a, b) => a + b, 0);
-    return [emp.name, ...daysIso.map(d => fmtEntryShort(entries[d])), ...weekTotals.map(t => t || ""), monthTotal || ""];
+    const monthTotal = weeksInRange(daysIso).reduce((sum, w) => sum + weekTotalHours(w, entries), 0);
+    return [emp.name, emp.cargo || "—", emp.badge || "—", `${monthTotal}h`];
+  });
+  pdfTable(doc, y, ["Empleado", "Cargo", "Nota", "Total del mes"], summaryBody, {
+    columnStyles: { 0: { cellWidth: 55 }, 3: { cellWidth: 30 } },
   });
 
-  pdfTable(doc, y, head, body, {
-    columnStyles: { 0: { cellWidth: 38 } },
-    didParseCell: (data) => {
-      if (data.section !== "body" || data.column.index === 0) return;
-      const raw = String(data.cell.raw || "");
-      const colors = SPECIAL_CODE_COLORS[raw];
-      if (colors) data.cell.styles.fillColor = hexToRgb(colors.bg);
-    },
-  });
-
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.5); doc.setTextColor(...PDF_C.gray);
   const finalY = doc.lastAutoTable.finalY + 6;
-  doc.text(`* Domingo o festivo. Las celdas muestran hora de entrada-salida (ej. 8.5-16.5). Objetivo semanal: ${WEEKLY_HOURS_TARGET}h. VAC = vacaciones · LIBRE = descanso · INC = incapacidad · ALT = alterno/cambio.`, 14, finalY);
+  doc.text(`* Domingo o festivo. Las celdas muestran hora de entrada-salida (ej. 8.5-16.5). Objetivo semanal: ${WEEKLY_HOURS_TARGET}h. VAC = vacaciones · LIBRE = descanso · INC = incapacidad · ALT = alterno/cambio · LIC_PAT = licencia de paternidad.`, 14, finalY);
+  doc.setTextColor(...PDF_C.ink);
 
   pdfFooterAll(doc);
   return doc;

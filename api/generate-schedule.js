@@ -75,7 +75,7 @@ Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin \`\`\`, sin
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 16000, // Sonnet 4.6 permite hasta 64k en la API síncrona — 16k sobra para un mes
+        max_tokens: 32000, // Sonnet 4.6 permite hasta 64k en la API síncrona — se deja bastante margen
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -88,46 +88,104 @@ Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin \`\`\`, sin
 
     const wasTruncated = data?.stop_reason === "max_tokens";
     const raw = data?.content?.[0]?.text || "";
+
+    // Primero se intenta el camino rápido: el JSON completo y bien formado.
     let parsed = null;
     try {
       parsed = JSON.parse(raw.trim());
-    } catch {
-      // Por si el modelo agregó algo de texto extra pese a la instrucción: toma el bloque {...} más grande.
-      const first = raw.indexOf("{");
-      const last = raw.lastIndexOf("}");
-      if (first !== -1 && last !== -1 && last > first) {
-        try { parsed = JSON.parse(raw.slice(first, last + 1)); } catch { parsed = null; }
-      }
+    } catch { parsed = null; }
+
+    let cleanEntries = [];
+    let notes = "";
+
+    if (parsed && typeof parsed.e === "object" && parsed.e !== null) {
+      Object.entries(parsed.e).forEach(([employeeId, byDate]) => {
+        if (!byDate || typeof byDate !== "object") return;
+        Object.entries(byDate).forEach(([date, val]) => {
+          const e = compactValueToEntry(employeeId, date, val);
+          if (e) cleanEntries.push(e);
+        });
+      });
+      notes = parsed.notas || "";
+    } else {
+      // El JSON no quedó completo (normalmente porque la respuesta se cortó a la mitad por ser muy
+      // larga). En vez de descartar todo, se rescata cada bloque de empleado que SÍ quedó completo
+      // — solo se pierde el último empleado que estaba a la mitad cuando se acabó el espacio.
+      cleanEntries = rescuePartialEntries(raw);
+      const m = raw.match(/"notas"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      notes = m ? m[1] : "";
     }
 
-    if (!parsed || typeof parsed.e !== "object" || parsed.e === null) {
+    if (cleanEntries.length === 0) {
       const truncMsg = wasTruncated
-        ? "El borrador quedó a la mitad porque era muy largo. Intenta de nuevo — si sigue pasando, prueba con reglas más cortas."
+        ? "El borrador quedó a la mitad porque era muy largo y no se pudo rescatar nada legible. Intenta de nuevo, o genera el mes en dos partes (por ejemplo, pide primero solo del 1 al 15 en las reglas)."
         : "La IA no devolvió un borrador legible. Intenta de nuevo, o simplifica las reglas escritas.";
       res.status(200).json({ ok: false, message: truncMsg });
       return;
     }
 
-    // Convierte el formato compacto {e:{empId:{fecha:"8.5-16.5"|"C:VAC"}}} a la lista plana que espera la app.
-    const cleanEntries = [];
-    Object.entries(parsed.e).forEach(([employeeId, byDate]) => {
-      if (!byDate || typeof byDate !== "object") return;
-      Object.entries(byDate).forEach(([date, val]) => {
-        if (typeof val !== "string" || !date) return;
-        if (val.startsWith("C:")) {
-          const code = val.slice(2).trim();
-          if (code) cleanEntries.push({ employeeId, date, code });
-        } else {
-          const [ea, sa] = val.split("-");
-          const entrada = Number(ea), salida = Number(sa);
-          if (Number.isFinite(entrada) && Number.isFinite(salida)) cleanEntries.push({ employeeId, date, entrada, salida });
-        }
-      });
-    });
+    if (wasTruncated && !parsed) {
+      notes = (notes ? notes + " " : "") + "Aviso: la respuesta se cortó por ser muy larga — este borrador puede no cubrir a todo el personal. Revisa que no falte nadie y, si hace falta, genera de nuevo.";
+    }
 
-    res.status(200).json({ ok: true, entries: cleanEntries, notes: parsed.notas || "" });
+    res.status(200).json({ ok: true, entries: cleanEntries, notes });
   } catch (e) {
     console.error("Error generando borrador de horario:", e);
     res.status(500).json({ ok: false, message: "No se pudo conectar con el servicio de IA. Intenta de nuevo." });
   }
+}
+
+/** Convierte un valor del formato compacto ("8.5-16.5" o "C:VAC") a un registro {employeeId,date,...}. */
+function compactValueToEntry(employeeId, date, val) {
+  if (typeof val !== "string" || !date) return null;
+  if (val.startsWith("C:")) {
+    const code = val.slice(2).trim();
+    return code ? { employeeId, date, code } : null;
+  }
+  const [ea, sa] = val.split("-");
+  const entrada = Number(ea), salida = Number(sa);
+  return Number.isFinite(entrada) && Number.isFinite(salida) ? { employeeId, date, entrada, salida } : null;
+}
+
+/**
+ * Recorre el texto crudo de la respuesta (que puede haber quedado a la mitad) y saca cada bloque
+ * de empleado "id":{...} que haya quedado completo, ignorando el resto. Así, si la respuesta se
+ * corta por ser muy larga, no se pierde TODO el trabajo — solo el último empleado a medio escribir.
+ */
+function rescuePartialEntries(raw) {
+  const entries = [];
+  const eKeyIdx = raw.indexOf('"e"');
+  if (eKeyIdx === -1) return entries;
+  const braceStart = raw.indexOf("{", eKeyIdx + 3);
+  if (braceStart === -1) return entries;
+
+  let i = braceStart + 1;
+  while (i < raw.length) {
+    while (i < raw.length && /[\s,]/.test(raw[i])) i++;
+    if (i >= raw.length || raw[i] === "}") break;
+    if (raw[i] !== '"') break;
+    const keyEnd = raw.indexOf('"', i + 1);
+    if (keyEnd === -1) break; // se cortó a mitad del id del empleado
+    const employeeId = raw.slice(i + 1, keyEnd);
+    i = keyEnd + 1;
+    while (i < raw.length && /[\s:]/.test(raw[i])) i++;
+    if (raw[i] !== "{") break;
+    let depth = 1, j = i + 1;
+    while (j < raw.length && depth > 0) {
+      if (raw[j] === "{") depth++;
+      else if (raw[j] === "}") depth--;
+      j++;
+    }
+    if (depth !== 0) break; // este empleado quedó a la mitad — se descarta solo este, se detiene aquí
+    const block = raw.slice(i, j);
+    try {
+      const byDate = JSON.parse(block);
+      Object.entries(byDate).forEach(([date, val]) => {
+        const e = compactValueToEntry(employeeId, date, val);
+        if (e) entries.push(e);
+      });
+    } catch { /* bloque de este empleado no se pudo leer, se salta */ }
+    i = j;
+  }
+  return entries;
 }

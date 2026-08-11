@@ -1007,12 +1007,14 @@ const SPECIAL_CODES = [
   { code: "LIBRE", label: "Libre" },
   { code: "INC", label: "Incapacidad" },
   { code: "ALT", label: "Alterno / cambio" },
+  { code: "LIC_PAT", label: "Licencia de paternidad" },
 ];
 const SPECIAL_CODE_COLORS = {
   VAC: { bg: "#dff5e3", fg: "#1c7a34" },
   LIBRE: { bg: "#eef1f4", fg: "#5c6b7a" },
   INC: { bg: "#ffe3ea", fg: "#a31245" },
   ALT: { bg: "#fff3d6", fg: "#8a5a00" },
+  LIC_PAT: { bg: "#e0ecff", fg: "#1e4fa3" },
 };
 const WEEKLY_HOURS_TARGET = 42; // igual al que ya usa tu Excel en las columnas "Diferencia semana"
 
@@ -4007,7 +4009,7 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onApplyAiDraft, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onApplyAiDraft, reportEmail, onLogSent }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
   const [editingCell, setEditingCell] = useState(null);
@@ -4120,11 +4122,11 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingCell, draftMode, draftEntrada, draftSalida, draftCode, viewEntriesByEmployee]);
 
-  const doImport = async () => {
+  const doImport = async (importFn, label) => {
     setImporting(true); setImportMsg(null);
     try {
-      const res = await onImportJuly();
-      setImportMsg({ ok: true, text: `Listo: ${res.newEmployeesCount} empleado(s) nuevo(s) creados, ${res.entriesCount} registros de horario cargados (16 jul – 2 ago 2026).` });
+      const res = await importFn();
+      setImportMsg({ ok: true, text: `Listo: ${res.newEmployeesCount} empleado(s) nuevo(s) creados, ${res.entriesCount} registros de horario cargados (${label}).` });
     } catch {
       setImportMsg({ ok: false, text: "No se pudo importar. Intenta de nuevo." });
     }
@@ -4235,8 +4237,11 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 
       {isAdmin && (
         <div className="rounded-md p-2 mb-3 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, color: "#7a5405" }}>
-          <span>¿Primera vez usando esto? Importa de una vez el horario real de julio (16 jul – 2 ago 2026) desde el Excel que ya me diste.</span>
-          <Button size="sm" disabled={importing} onClick={doImport}>{importing ? "Importando…" : "Importar horario de julio 2026"}</Button>
+          <span>¿Primera vez usando esto? Importa de una vez el horario real ya trabajado, para tener la base sobre la que la IA arma los siguientes meses.</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" disabled={importing} onClick={() => doImport(onImportJuly, "16 jul – 2 ago 2026")}>{importing ? "Importando…" : "Importar julio 2026"}</Button>
+            <Button size="sm" disabled={importing} onClick={() => doImport(onImportAugust, "3 ago – 30 ago 2026")}>{importing ? "Importando…" : "Importar agosto 2026"}</Button>
+          </div>
         </div>
       )}
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
@@ -7787,6 +7792,50 @@ export default function App() {
     return { newEmployeesCount: newEmployees.length, entriesCount: JULY2026_IMPORT_ENTRIES.length };
   };
 
+  /**
+   * Importa (una sola vez, o las veces que quieras — es seguro repetirlo) el horario real
+   * que se sacó del Excel "12__Horario_Agosto_2026.xlsx": crea los empleados que falten
+   * (ya con su cargo asignado) y carga las 601 lecturas de entrada/salida del 03/08 al 30/08/2026.
+   * Esta es la base real sobre la que trabaja después el generador de horario con IA (usa estos
+   * mismos días como ejemplo del patrón de turnos de cada persona).
+   */
+  const importAugustSchedule2026 = async () => {
+    const { AUGUST2026_IMPORT_NAMES, AUGUST2026_IMPORT_ENTRIES, AUGUST2026_IMPORT_CARGOS } = await import("./data/augustScheduleImportData.js");
+    const existingByName = {};
+    employees.forEach(e => { existingByName[e.name.trim().toLowerCase()] = e; });
+
+    const newEmployees = [];
+    AUGUST2026_IMPORT_NAMES.forEach(name => {
+      const key = name.trim().toLowerCase();
+      if (!existingByName[key]) {
+        const rec = {
+          id: uid("emp"), name, cargo: AUGUST2026_IMPORT_CARGOS[name] || "",
+          fixedRestDay: name === "Quintana Jesus Daniel" ? 6 : null,
+          active: true, createdBy: displayName, createdAt: nowIso(),
+        };
+        newEmployees.push(rec);
+        existingByName[key] = rec;
+      }
+    });
+    const allEmployees = [...employees, ...newEmployees];
+    if (newEmployees.length) { setEmployees(allEmployees); await sSet("employees", allEmployees, true); }
+
+    const nextEntries = { ...scheduleEntries };
+    AUGUST2026_IMPORT_ENTRIES.forEach(rec => {
+      const emp = existingByName[rec.name.trim().toLowerCase()];
+      if (!emp) return;
+      const key = scheduleKey(emp.id, rec.date);
+      nextEntries[key] = {
+        entrada: rec.entrada ?? null, salida: rec.salida ?? null, code: rec.code || null,
+        note: "", updatedBy: displayName, updatedAt: nowIso(),
+      };
+    });
+    setScheduleEntries(nextEntries);
+    await sSet("schedule-entries", nextEntries, true);
+
+    return { newEmployeesCount: newEmployees.length, entriesCount: AUGUST2026_IMPORT_ENTRIES.length };
+  };
+
   /** Manda push a los administradores suscritos cuando aparece un equipo dañado NUEVO (no repite si ya estaba). */
   const notifyNewDamagedEquipment = (prevActive, newActiveObj) => {
     if (pushSubscriptions.length === 0) return;
@@ -8520,7 +8569,7 @@ export default function App() {
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
-              onImportJuly={importJulySchedule2026} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
+              onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={accounts} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}

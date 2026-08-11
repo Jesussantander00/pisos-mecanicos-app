@@ -1762,8 +1762,8 @@ function MeterRow({ meter, entry, onChange, previous }) {
         })}
       </div>
       {readMsg && (
-        <div className="text-xs font-medium mt-1" style={{ color: readMsg.ok ? C.green : C.red }}>
-          {readMsg.ok ? "✓" : "⚠"} {readMsg.text}
+        <div className="text-xs font-medium mt-1" style={{ color: readMsg.ok ? C.amber : C.red }}>
+          {readMsg.ok ? "📷" : "⚠"} {readMsg.text}{readMsg.ok ? " — revisa que coincida con el medidor antes de guardar." : ""}
         </div>
       )}
     </div>

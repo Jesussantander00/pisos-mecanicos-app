@@ -1,6 +1,7 @@
-// Función serverless de Vercel. Recibe la foto de un medidor y le pide a Claude (el modelo más
-// económico, Haiku) que lea el número que muestra — así el técnico no tiene que transcribirlo
-// a mano. Corre en el servidor, así que aquí sí se puede guardar de forma segura la clave secreta.
+// Función serverless de Vercel. Recibe la foto de un medidor y le pide a Claude (Sonnet, para
+// mayor precisión leyendo dígitos pequeños/ruedas mecánicas) que lea el número que muestra —
+// así el técnico no tiene que transcribirlo a mano. Corre en el servidor, así que aquí sí se
+// puede guardar de forma segura la clave secreta.
 //
 // Configúrala en Vercel → tu proyecto → Settings → Environment Variables:
 //   ANTHROPIC_API_KEY  = tu clave secreta de console.anthropic.com (empieza con "sk-ant-")
@@ -32,8 +33,8 @@ export default async function handler(req, res) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 50,
+        model: "claude-sonnet-4-6",
+        max_tokens: 500,
         messages: [
           {
             role: "user",
@@ -41,10 +42,18 @@ export default async function handler(req, res) {
               { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: imageBase64 } },
               {
                 type: "text",
-                text: "Esta es una foto de un medidor (agua, luz, gas, etc). Lee el número que muestra el " +
-                  "medidor, tal cual aparece (solo dígitos, sin unidades ni texto). " +
-                  "Responde ÚNICAMENTE con este formato JSON, sin nada más, sin explicación: " +
-                  '{"lectura": "el número que leíste, o null si no se alcanza a leer con seguridad"}',
+                text: `Esta es una foto de un medidor de consumo (agua, luz o gas). Necesito que leas la lectura EXACTA que muestra, con mucho cuidado, ya que se usa para calcular consumo y facturación.
+
+Ten en cuenta estos formatos comunes de medidores, y fíjate cuál aplica en esta foto:
+- Muchos medidores mecánicos de agua tienen una fila de RUEDAS/RODILLOS con números: las ruedas de fondo NEGRO (o blanco) son el número entero, y las últimas 1-2 ruedas de fondo ROJO son los decimales — el número completo se lee de corrido, con un punto decimal antes de las ruedas rojas. Ejemplo: si ves ruedas negras "032973" y luego ruedas rojas "59", la lectura es 32973.59 (los ceros a la izquierda del todo normalmente no se escriben).
+- Otros medidores son digitales, con una sola pantalla de números.
+- Ignora cualquier otro número que veas en la foto que NO sea la lectura (números de serie, modelo, año de fabricación, códigos de barra, etc.) — esos suelen estar en una etiqueta aparte, más pequeños, y no son la lectura de consumo.
+- Si hay varias filas o ventanas de números, la lectura principal casi siempre es la fila más grande/prominente, normalmente cerca del centro del medidor.
+
+Antes de responder, primero describe en 1-2 frases qué tipo de medidor ves y dónde está la lectura principal. Luego responde con el número exacto.
+
+Termina tu respuesta ÚNICAMENTE con este JSON en la última línea, nada más después:
+{"lectura": "el número exacto que leíste (con el punto decimal si aplica), o null si no se alcanza a leer con seguridad"}`,
               },
             ],
           },
@@ -61,13 +70,14 @@ export default async function handler(req, res) {
     const raw = data?.content?.[0]?.text || "";
     let lectura = null;
     try {
-      const match = raw.match(/\{[\s\S]*\}/); // por si Claude agrega texto de más alrededor del JSON
-      lectura = match ? JSON.parse(match[0]).lectura : null;
+      const matches = raw.match(/\{[^{}]*\}/g); // toma el ÚLTIMO bloque {...} de la respuesta (después de la descripción)
+      const lastMatch = matches ? matches[matches.length - 1] : null;
+      lectura = lastMatch ? JSON.parse(lastMatch).lectura : null;
     } catch {
       lectura = null;
     }
 
-    if (!lectura) {
+    if (!lectura || lectura === "null") {
       res.status(200).json({ ok: false, message: "No se logró leer el número con seguridad. Escríbelo a mano." });
       return;
     }

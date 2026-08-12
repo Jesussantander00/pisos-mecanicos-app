@@ -8208,7 +8208,14 @@ export default function App() {
       return;
     }
     setCurrentUser(session.user.id);
-    const map = await loadAllProfiles();
+    let map = await loadAllProfiles();
+    if (!map[session.user.id]) {
+      // No tiene fila en "profiles" todavía — pasa si el correo se confirmó por fuera del flujo
+      // normal de registro (a mano desde Supabase, por ejemplo), o si algo se cortó a mitad de
+      // camino la primera vez. Se crea aquí mismo, para que nadie quede "colgado" sin rol.
+      await requestCreateProfile(session.access_token);
+      map = await loadAllProfiles();
+    }
     const mine = map[session.user.id];
     if (mine?.approved) {
       await loadAll();

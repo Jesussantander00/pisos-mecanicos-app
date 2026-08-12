@@ -8,7 +8,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -553,6 +553,21 @@ async function requestReorderNotes({ items }) {
     body: JSON.stringify({ items }),
   });
   return resp.json();
+}
+
+/**
+ * Suma 1 al contador de uso de IA que corresponda (fotos de medidores leídas, horarios generados,
+ * resúmenes semanales, notas de reorden) — solo para el panel de "Salud de la app" del admin, un
+ * estimado aproximado, no el número exacto de Google. Se guarda directo en la base de datos sin
+ * pasar por el estado de React, para no tener que enchufar esta función en cada componente que la
+ * necesita — es más simple así, y no pasa nada si dos conteos casi al tiempo se pisan un poco.
+ */
+async function bumpAiUsage(field) {
+  try {
+    const current = (await sGet("ai-usage-stats", true)) || {};
+    const next = { ...current, [field]: (current[field] || 0) + 1, lastUpdated: nowIso() };
+    await sSet("ai-usage-stats", next, true);
+  } catch { /* es solo una estadística informativa, no pasa nada si falla */ }
 }
 
 /** Revisa una ronda antes de guardar: qué ítems faltan por llenar, y cuáles están dañados sin comentario. */
@@ -1552,9 +1567,12 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
         </div>
       </div>
 
-      <textarea value={entry?.observation ?? ""} onChange={e => update({ observation: e.target.value })}
-        placeholder="Observaciones…" rows={1}
-        className="w-full mt-2 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      <div className="flex items-start gap-1.5 mt-2">
+        <textarea value={entry?.observation ?? ""} onChange={e => update({ observation: e.target.value })}
+          placeholder="Observaciones…" rows={1}
+          className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+        <VoiceInputButton onResult={text => update({ observation: ((entry?.observation ?? "") ? (entry?.observation ?? "") + " " : "") + text })} />
+      </div>
 
       {activeIssue && (
         <div className="mt-2 rounded-md p-2 flex items-start justify-between gap-2" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
@@ -1918,6 +1936,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
         update(sub, res.lectura);
         setConfirmedSubs(prev => ({ ...prev, [sub]: true }));
         setReadMsg({ ok: true, text: `Leído: ${res.lectura}` });
+        bumpAiUsage("meterReadings");
       } else setReadMsg({ ok: false, text: res.message || "No se pudo leer." });
     } catch { setReadMsg({ ok: false, text: "No se pudo leer (revisa la conexión)." }); }
     setReading(null);
@@ -2886,7 +2905,7 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
         nombre: f.name, cantidadActual: f.quantity, unidad: f.unit, consumidoUltimos30dias: f.consumedInWindow,
         diasEstimadosRestantes: f.daysUntilOut, yaEstaBajoElMinimo: f.alreadyLow, cantidadSugerida: f.suggestedQty,
       })) });
-      if (res.ok) setReorderNotes(res.notes);
+      if (res.ok) { setReorderNotes(res.notes); bumpAiUsage("reorderNotes"); }
       else setReorderError(res.message || "No se pudo redactar la nota.");
     } catch {
       setReorderError("No se pudo conectar con el servicio de IA. Intenta de nuevo.");
@@ -3586,8 +3605,11 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
             <input type="number" min="0" value={costo} onChange={e => setCosto(e.target.value)} placeholder="Costo (opcional)"
               className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
-          <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={3} placeholder="¿Qué se hizo?"
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <div className="flex items-start gap-1.5 mb-2">
+            <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={3} placeholder="¿Qué se hizo?"
+              className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <VoiceInputButton onResult={text => setDescripcion(d => (d ? d + " " : "") + text)} />
+          </div>
           <div className="text-xs mb-1" style={{ color: C.gray }}>Fotos (opcional, hasta 2)</div>
           <PhotoPicker photos={photos} onChange={setPhotos} />
           <div className="mt-2">
@@ -4272,9 +4294,10 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onImportExcel, onApplyAiDraft, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onImportExcel, onApplyAiDraft, reportEmail, onLogSent }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
+  const [showEditLog, setShowEditLog] = useState(false);
   const [editingCell, setEditingCell] = useState(null);
   const [draftMode, setDraftMode] = useState("hours"); // "hours" | "special"
   const [draftEntrada, setDraftEntrada] = useState("");
@@ -4578,6 +4601,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       }
 
       setDraftOverrides(overrides);
+      bumpAiUsage("scheduleGenerations");
       setDraftActive(true);
       let notes = okResults.map(r => r.notes).filter(Boolean).join(" ");
       if (failedCount > 0) {
@@ -4619,8 +4643,31 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
           <span className="text-sm font-medium capitalize" style={{ color: C.ink }}>{monthLabel}</span>
           <Button size="sm" variant="ghost" onClick={() => setMonthDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>Mes siguiente ›</Button>
         </div>
-        {isAdmin && <Button size="sm" variant="ghost" onClick={() => setShowManage(v => !v)}>{showManage ? "Ocultar gestión" : "Gestionar empleados"}</Button>}
+        <div className="flex items-center gap-2">
+          {isAdmin && <Button size="sm" variant="ghost" onClick={() => setShowManage(v => !v)}>{showManage ? "Ocultar gestión" : "Gestionar empleados"}</Button>}
+          {isAdmin && <Button size="sm" variant="ghost" icon={History} onClick={() => setShowEditLog(v => !v)}>{showEditLog ? "Ocultar historial" : "Historial de cambios"}</Button>}
+        </div>
       </div>
+
+      {isAdmin && showEditLog && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Historial de cambios del horario</div>
+          {scheduleEditLog.length === 0 ? (
+            <p className="text-xs" style={{ color: C.gray }}>Todavía no hay cambios registrados.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-80 overflow-y-auto">
+              {scheduleEditLog.slice(0, 100).map(e => (
+                <div key={e.id} className="text-xs rounded-md px-2 py-1.5" style={{ background: C.bg, color: C.ink }}>
+                  <b>{e.by}</b> cambió el turno de <b>{e.employeeName}</b> del {new Date(e.date + "T00:00:00").toLocaleDateString("es-CO", { day: "numeric", month: "short" })}:{" "}
+                  <span style={{ color: C.gray }}>{e.before}</span> → <span style={{ color: C.amber, fontWeight: 600 }}>{e.after}</span>
+                  {e.source === "ia" && <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded" style={{ background: "#f0e6fb", color: "#6b21a8" }}>IA</span>}
+                  <span className="ml-1.5" style={{ color: C.gray }}>· {fmtDT(e.at)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {!isAdmin && (
         <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
@@ -5338,6 +5385,27 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
       </p>
 
+      {!gerenciaLocked && (
+        <div className="mb-4">
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { id: "ronda", label: "Nueva ronda", icon: ClipboardList, color: C.amber },
+              { id: "issues", label: "Fuera de servicio", icon: Wrench, color: C.red },
+              { id: "maintenance", label: "Mantenimiento", icon: PlusCircle, color: C.green },
+              { id: "tasks", label: "Nueva tarea", icon: ClipboardCheck, color: C.blue },
+            ].map(qa => (
+              <button key={qa.id} onClick={() => onNavigate(qa.id)}
+                className="flex items-center gap-2 rounded-lg p-3 transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
+                style={{ background: qa.color, color: "#fff" }}>
+                <qa.icon size={18} />
+                <span className="text-sm font-semibold">{qa.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {modules.map(m => (
           <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
@@ -5419,6 +5487,7 @@ function IssueResolveCard({ iss, onResolve, onCheckIn }) {
         <div className="flex items-center gap-2 mt-2">
           <input value={solution} onChange={e => setSolution(e.target.value)} placeholder="Solución aplicada…"
             className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <VoiceInputButton onResult={text => setSolution(s => (s ? s + " " : "") + text)} />
           <Button size="sm" icon={CheckCircle2} disabled={!solution.trim()}
             onClick={() => { onResolve(iss, solution.trim()); setOpen(false); setSolution(""); }}>Confirmar</Button>
           <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
@@ -5514,7 +5583,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
     try {
       const { resolved, pending, correctivos } = buildWeeklySummaryInput(issueHistory, activeIssues, mttoLog, mttoEquipos, 7);
       const res = await requestWeeklySummary({ weekLabel, resolved, pending, correctivos });
-      if (res.ok) setWeeklySummary(res.summary);
+      if (res.ok) { setWeeklySummary(res.summary); bumpAiUsage("weeklySummaries"); }
       else setWeeklyError(res.message || "No se pudo redactar el resumen.");
     } catch {
       setWeeklyError("No se pudo conectar con el servicio de IA. Intenta de nuevo.");
@@ -7688,7 +7757,7 @@ function BackupButton() {
   );
 }
 
-function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, loginLog, currentUsername }) {
+function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -7720,6 +7789,32 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
           como copia de seguridad propia — aparte de lo que ya guarda Supabase.
         </p>
         <BackupButton />
+      </div>
+
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="flex items-center gap-2 mb-1">
+          <Gauge size={15} color={C.amber} />
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Salud de la app — uso de IA</div>
+        </div>
+        <p className="text-xs mb-3" style={{ color: C.gray }}>
+          Un conteo aproximado de este dispositivo/sesión hacia adelante — no es el número exacto de Google, pero te
+          da una idea de cuánto se está usando. Para el número real y el límite de tu cuenta de Gemini, entra a{" "}
+          <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" className="underline" style={{ color: C.amber }}>aistudio.google.com</a> → tu cuenta → Usage & billing.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { label: "Fotos de medidores leídas", value: aiUsageStats?.meterReadings || 0 },
+            { label: "Horarios generados", value: aiUsageStats?.scheduleGenerations || 0 },
+            { label: "Resúmenes semanales", value: aiUsageStats?.weeklySummaries || 0 },
+            { label: "Notas de reorden", value: aiUsageStats?.reorderNotes || 0 },
+          ].map(s => (
+            <div key={s.label} className="rounded-md p-2 text-center" style={{ background: C.bg }}>
+              <div className="text-lg font-semibold" style={{ color: C.ink }}>{s.value}</div>
+              <div className="text-[10px]" style={{ color: C.gray }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {aiUsageStats?.lastUpdated && <div className="text-[10px] mt-2" style={{ color: C.gray }}>Última actividad: {fmtDT(aiUsageStats.lastUpdated)}</div>}
       </div>
 
       {pending.length > 0 && (
@@ -7862,6 +7957,14 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
   const [pendingSync, setPendingSync] = useState(() => getPendingCount());
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, []);
   const [justSynced, setJustSynced] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const tryFlush = useCallback(async () => {
@@ -7927,6 +8030,15 @@ export default function App() {
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [scheduleEntries, setScheduleEntries] = useState({});
+  const [scheduleEditLog, setScheduleEditLog] = useState([]);
+  const [aiUsageStats, setAiUsageStats] = useState(null);
+  // Se carga cada vez que se entra al Panel de administrador (no en el arranque general) porque
+  // bumpAiUsage escribe directo a la base de datos por fuera del estado de React — así siempre se
+  // ve el número más reciente al abrir el panel, sin tener que refrescar toda la app.
+  useEffect(() => {
+    if (view !== "admin") return;
+    (async () => { try { setAiUsageStats((await sGet("ai-usage-stats", true)) || {}); } catch { /* noop */ } })();
+  }, [view]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
@@ -7938,7 +8050,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog] = await Promise.all([
+      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog] = await Promise.all([
         sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -7957,6 +8069,7 @@ export default function App() {
         sGet("tasks", true),
         sGet("trash", true),
         sGet("login-log", true),
+        sGet("schedule-edit-log", true),
       ]);
       setAccounts(acc || {});
       setActiveIssues(ai || {});
@@ -7995,6 +8108,7 @@ export default function App() {
       setTasks(tsk || []);
       setTrash(trs || []);
       setLoginLog(llog || []);
+      setScheduleEditLog(schLog || []);
       if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
@@ -8485,8 +8599,17 @@ export default function App() {
     });
   };
 
+  /** Agrega entradas al historial de cambios del horario (quién cambió qué, cuándo, y qué había antes). */
+  const logScheduleEdits = async (edits) => {
+    if (!edits.length) return;
+    const next = [...edits, ...scheduleEditLog].slice(0, 2000);
+    setScheduleEditLog(next);
+    await sSet("schedule-edit-log", next, true);
+  };
+
   const setScheduleEntry = async (employeeId, dateIso, patch) => {
     const key = scheduleKey(employeeId, dateIso);
+    const before = scheduleEntries[key] || null;
     const next = { ...scheduleEntries };
     const isEmpty = !patch || (!patch.code && patch.entrada == null && patch.salida == null);
     if (isEmpty) delete next[key];
@@ -8494,6 +8617,12 @@ export default function App() {
     notifyCompDaysEarned(scheduleEntries, next, [employeeId]);
     setScheduleEntries(next);
     await sSet("schedule-entries", next, true);
+    const emp = employees.find(e => e.id === employeeId);
+    logScheduleEdits([{
+      id: uid("sel"), employeeId, employeeName: emp?.name || employeeId, date: dateIso,
+      before: fmtEntryShort(before) || "(vacío)", after: fmtEntryShort(next[key]) || "(vacío)",
+      by: displayName, at: nowIso(), source: "manual",
+    }]);
   };
 
   /**
@@ -8505,15 +8634,25 @@ export default function App() {
   const applyAiScheduleDraft = async (overrides) => {
     const next = { ...scheduleEntries };
     const affectedIds = new Set();
+    const edits = [];
     Object.entries(overrides || {}).forEach(([key, patch]) => {
+      const [employeeId, dateIso] = key.split("::");
+      const before = scheduleEntries[key] || null;
       const isEmpty = !patch || (!patch.code && patch.entrada == null && patch.salida == null);
-      if (isEmpty) { delete next[key]; return; }
-      next[key] = { entrada: patch.entrada ?? null, salida: patch.salida ?? null, code: patch.code || null, note: patch.note || "Generado con IA", updatedBy: displayName, updatedAt: nowIso() };
-      affectedIds.add(key.split("::")[0]);
+      if (isEmpty) { delete next[key]; }
+      else next[key] = { entrada: patch.entrada ?? null, salida: patch.salida ?? null, code: patch.code || null, note: patch.note || "Generado con IA", updatedBy: displayName, updatedAt: nowIso() };
+      affectedIds.add(employeeId);
+      const emp = employees.find(e => e.id === employeeId);
+      edits.push({
+        id: uid("sel"), employeeId, employeeName: emp?.name || employeeId, date: dateIso,
+        before: fmtEntryShort(before) || "(vacío)", after: fmtEntryShort(next[key]) || "(vacío)",
+        by: displayName, at: nowIso(), source: "ia",
+      });
     });
     notifyCompDaysEarned(scheduleEntries, next, Array.from(affectedIds));
     setScheduleEntries(next);
     await sSet("schedule-entries", next, true);
+    logScheduleEdits(edits);
   };
 
   /**
@@ -9140,6 +9279,14 @@ export default function App() {
           onFoundShelf={(id) => { setPendingShelfId(id); setView("inventory"); setShowQrScanner(false); }}
         />
       )}
+      {!isOnline && (
+        <div className="pm-slide-up-in fixed top-0 left-0 right-0 z-[110] flex items-center justify-center gap-2 px-4 py-2"
+          style={{ background: "#7a5405" }}>
+          <WifiOff size={14} color="#fff" />
+          <span className="text-xs font-medium text-white">Sin conexión — lo que guardes se sube solo apenas vuelva la señal.</span>
+          {pendingSync > 0 && <span className="text-xs text-white opacity-90">({pendingSync} sin subir)</span>}
+        </div>
+      )}
       {needRefresh && (
         <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
           style={{ background: C.steelDark, borderTop: `2px solid ${C.amber}` }}>
@@ -9378,7 +9525,7 @@ export default function App() {
               onResolveIssue={resolveIssue} onSaveRound={saveGymRound} />
           )}
           {view === "schedules" && (
-            <SchedulesView employees={employees} scheduleEntries={scheduleEntries} isAdmin={isAdmin} currentUser={displayName}
+            <SchedulesView employees={employees} scheduleEntries={scheduleEntries} scheduleEditLog={scheduleEditLog} isAdmin={isAdmin} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
               onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onImportExcel={importScheduleFromParsedExcel} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
@@ -9390,7 +9537,7 @@ export default function App() {
             <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
               onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
-              onApproveAccount={approveAccount} onRejectAccount={rejectAccount} loginLog={loginLog} currentUsername={currentUser} />
+              onApproveAccount={approveAccount} onRejectAccount={rejectAccount} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />
           )}
           {view === "trash" && isAdmin && (
             <TrashView trash={trash} onRestore={restoreFromTrash} onPurge={purgeFromTrash} />

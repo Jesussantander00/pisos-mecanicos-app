@@ -7,7 +7,7 @@ import {
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
-  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
+  Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
   Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload
 } from "lucide-react";
 import QRCode from "qrcode";
@@ -508,6 +508,51 @@ function equipoUrl(equipoId) {
 /** Repuestos cuya cantidad actual está en o por debajo de su mínimo configurado. */
 function computeLowStock(invItems) {
   return invItems.filter(it => it.minThreshold > 0 && it.quantity <= it.minThreshold);
+}
+
+/**
+ * Mira qué tan rápido se ha estado consumiendo cada repuesto en los últimos `windowDays` días
+ * (según los retiros registrados en invMovements) y proyecta en cuántos días se agotaría si sigue
+ * al mismo ritmo — así avisa ANTES de que llegue al mínimo, no solo cuando ya está bajo. Un
+ * repuesto que se está gastando rápido puede necesitar pedirse ya, aunque todavía le quede stock.
+ */
+function computeReorderForecast(invItems, invMovements, windowDays = 30, alertDays = 21) {
+  const since = new Date(); since.setDate(since.getDate() - windowDays);
+  const consumedByItem = {};
+  (invMovements || []).forEach(m => {
+    if (m.type !== "retiro") return;
+    if (new Date(m.at) < since) return;
+    consumedByItem[m.itemId] = (consumedByItem[m.itemId] || 0) + Math.abs(m.quantity);
+  });
+
+  const forecast = [];
+  (invItems || []).forEach(it => {
+    const consumed = consumedByItem[it.id];
+    if (!consumed) return; // sin movimiento reciente, no hay ritmo que proyectar
+    const dailyRate = consumed / windowDays;
+    if (dailyRate <= 0) return;
+    const daysUntilOut = it.quantity / dailyRate;
+    if (daysUntilOut > alertDays) return; // todavía falta bastante al ritmo actual, no hace falta avisar
+    const suggestedQty = Math.max(Math.ceil(dailyRate * windowDays) - it.quantity, Math.ceil(dailyRate * windowDays));
+    forecast.push({
+      ...it,
+      dailyRate: Math.round(dailyRate * 100) / 100,
+      consumedInWindow: consumed,
+      daysUntilOut: Math.round(daysUntilOut),
+      alreadyLow: it.minThreshold > 0 && it.quantity <= it.minThreshold,
+      suggestedQty,
+    });
+  });
+  return forecast.sort((a, b) => a.daysUntilOut - b.daysUntilOut);
+}
+
+async function requestReorderNotes({ items }) {
+  const resp = await fetch("/api/generate-reorder-notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  return resp.json();
 }
 
 /** Revisa una ronda antes de guardar: qué ítems faltan por llenar, y cuáles están dañados sin comentario. */
@@ -2809,11 +2854,16 @@ function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onC
   );
 }
 
-function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, currentUser }) {
+function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail, onLogSent, currentUser }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
+
+  // ---- Sugerencias de reorden (proyección por ritmo de consumo, no solo cuando ya está bajo) ----
+  const [reorderNotes, setReorderNotes] = useState(null);
+  const [reorderGenerating, setReorderGenerating] = useState(false);
+  const [reorderError, setReorderError] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -2822,6 +2872,27 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
     bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
     shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
   })), [invItems, bodegas, shelves]);
+
+  const forecast = useMemo(() => computeReorderForecast(invItems, invMovements).map(it => ({
+    ...it,
+    bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
+    shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
+  })), [invItems, invMovements, bodegas, shelves]);
+
+  const doGenerateReorderNotes = async () => {
+    setReorderGenerating(true); setReorderError(null); setReorderNotes(null);
+    try {
+      const res = await requestReorderNotes({ items: forecast.map(f => ({
+        nombre: f.name, cantidadActual: f.quantity, unidad: f.unit, consumidoUltimos30dias: f.consumedInWindow,
+        diasEstimadosRestantes: f.daysUntilOut, yaEstaBajoElMinimo: f.alreadyLow, cantidadSugerida: f.suggestedQty,
+      })) });
+      if (res.ok) setReorderNotes(res.notes);
+      else setReorderError(res.message || "No se pudo redactar la nota.");
+    } catch {
+      setReorderError("No se pudo conectar con el servicio de IA. Intenta de nuevo.");
+    }
+    setReorderGenerating(false);
+  };
 
   const doDownload = async () => {
     setDownloading(true);
@@ -2875,6 +2946,55 @@ function StockAlertsView({ invItems, bodegas, shelves, reportEmail, onLogSent, c
             </div>
             {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
           </div>
+
+          {forecast.length > 0 && (
+            <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.amber, background: C.panel, color: C.ink }}>
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingDown size={15} color={C.amber} />
+                <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>
+                  Se van a agotar pronto según el consumo — {forecast.length} repuesto(s)
+                </div>
+              </div>
+              <p className="text-xs mb-3" style={{ color: C.gray }}>
+                Esto no es solo "ya está bajo" — es una proyección con el ritmo real de los últimos 30 días. Algunos de estos
+                todavía tienen stock por encima del mínimo, pero se están gastando rápido.
+              </p>
+              <div className="space-y-2 mb-3">
+                {forecast.map(it => (
+                  <div key={it.id} className="rounded-md p-2 flex items-center justify-between gap-2" style={{ background: it.alreadyLow ? C.redSoft : C.amberSoft }}>
+                    <div>
+                      <div className="text-sm font-medium" style={{ color: C.ink }}>
+                        {it.name}{it.sku ? ` · ${it.sku}` : ""}
+                        {it.alreadyLow && <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: C.red, color: "#fff" }}>YA BAJO EL MÍNIMO</span>}
+                      </div>
+                      <div className="text-xs" style={{ color: C.inkSoft }}>
+                        {it.bodegaName} · Estantería {it.shelfCode} · consumo: {it.dailyRate} {it.unit}/día
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold" style={{ color: it.daysUntilOut <= 7 ? C.red : "#8a5a00" }}>
+                        {it.daysUntilOut <= 0 ? "Ya agotado" : `${it.daysUntilOut} día(s)`}
+                      </div>
+                      <div className="text-xs" style={{ color: C.gray }}>pedir ≈ {it.suggestedQty} {it.unit}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {!reorderNotes && (
+                <Button size="sm" icon={Sparkles} disabled={reorderGenerating} onClick={doGenerateReorderNotes}>
+                  {reorderGenerating ? "Redactando…" : "Redactar nota de prioridad con IA"}
+                </Button>
+              )}
+              {reorderError && <div className="text-xs mt-2" style={{ color: C.red }}>{reorderError}</div>}
+              {reorderNotes && (
+                <div className="mt-1">
+                  <div className="text-sm rounded-md p-2 mb-2" style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.ink }}>{reorderNotes}</div>
+                  <Button size="sm" variant="ghost" disabled={reorderGenerating} onClick={doGenerateReorderNotes}>Volver a generar</Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {low.map(it => (
             <div key={it.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
@@ -9211,7 +9331,7 @@ export default function App() {
               initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)} />
           )}
           {view === "inventory-alerts" && (isAdmin || isAlmacenista) && (
-            <StockAlertsView invItems={invItems} bodegas={bodegas} shelves={shelves}
+            <StockAlertsView invItems={invItems} invMovements={invMovements} bodegas={bodegas} shelves={shelves}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "inventory-movements" && (isAdmin || isAlmacenista) && (

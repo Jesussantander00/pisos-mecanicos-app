@@ -5,7 +5,7 @@ import {
   LineChart, Line, Legend
 } from "recharts";
 import {
-  AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown,
+  AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, Snowflake, Zap, CalendarDays,
   Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload
@@ -5311,7 +5311,7 @@ function IssueResolveCard({ iss, onResolve, onCheckIn }) {
 /* ============================================================
    VISTA: HISTORIAL / REPORTES
    ============================================================ */
-function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, reportEmail, reportWhatsapp, onOpenPrint, sentReports, onLogSent, currentUser }) {
+function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mttoLog, mttoEquipos, reportEmail, reportWhatsapp, onOpenPrint, sentReports, onLogSent, currentUser }) {
   const [tab, setTab] = useState("incidentes");
   const [q, setQ] = useState("");
   const [emailTo, setEmailTo] = useState(reportEmail || "");
@@ -5320,6 +5320,13 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
   const [downloadMsg, setDownloadMsg] = useState(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [sendingAutoFull, setSendingAutoFull] = useState(false);
+
+  // ---- Resumen semanal con IA ----
+  const [weeklyGenerating, setWeeklyGenerating] = useState(false);
+  const [weeklySummary, setWeeklySummary] = useState(null);
+  const [weeklyError, setWeeklyError] = useState(null);
+  const [weeklySending, setWeeklySending] = useState(false);
+  const [weeklySendMsg, setWeeklySendMsg] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setWaTo(reportWhatsapp || ""); }, [reportWhatsapp]);
@@ -5376,6 +5383,34 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
     setSendMsg({ ok: true, text: "Se abrió WhatsApp con el resumen como mensaje de texto. Adjunta el PDF descargado a mano si necesitas el detalle completo, y da enviar allá." });
   };
 
+  const weekLabel = (() => {
+    const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 7);
+    const fmt = (d) => d.toLocaleDateString("es-CO", { day: "numeric", month: "short" });
+    return `${fmt(start)} – ${fmt(end)}`;
+  })();
+
+  const doGenerateWeekly = async () => {
+    setWeeklyGenerating(true); setWeeklyError(null); setWeeklySummary(null); setWeeklySendMsg(null);
+    try {
+      const { resolved, pending, correctivos } = buildWeeklySummaryInput(issueHistory, activeIssues, mttoLog, mttoEquipos, 7);
+      const res = await requestWeeklySummary({ weekLabel, resolved, pending, correctivos });
+      if (res.ok) setWeeklySummary(res.summary);
+      else setWeeklyError(res.message || "No se pudo redactar el resumen.");
+    } catch {
+      setWeeklyError("No se pudo conectar con el servicio de IA. Intenta de nuevo.");
+    }
+    setWeeklyGenerating(false);
+  };
+
+  const doSendWeekly = async () => {
+    if (!emailTo.trim()) { setWeeklySendMsg({ ok: false, text: "Escribe un correo destino arriba." }); return; }
+    setWeeklySending(true); setWeeklySendMsg(null);
+    const res = await sendWeeklySummaryEmailAuto(emailTo.trim(), weeklySummary, weekLabel, currentUser);
+    setWeeklySendMsg({ ok: res.ok, text: res.message });
+    onLogSent({ to: emailTo.trim(), method: "Resumen semanal (correo automático con IA)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setWeeklySending(false);
+  };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Reportes</h2>
@@ -5415,6 +5450,37 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, re
           plataforma de WhatsApp, no esta app — así que ahí solo se manda el resumen en texto; el PDF hay que
           adjuntarlo a mano si lo necesitas por ese medio.
         </div>
+      </div>
+
+      <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.amber, background: C.panel, color: C.ink }}>
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles size={15} color={C.amber} />
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Resumen semanal con IA ({weekLabel})</div>
+        </div>
+        <p className="text-xs mb-2" style={{ color: C.gray }}>
+          Redacta en español natural qué se dañó, qué se resolvió y qué sigue pendiente en los últimos 7 días —
+          lo revisas antes de mandarlo, no se envía nada solo.
+        </p>
+        {!weeklySummary && (
+          <Button size="sm" icon={Sparkles} disabled={weeklyGenerating} onClick={doGenerateWeekly}>
+            {weeklyGenerating ? "Redactando…" : "Generar resumen de esta semana"}
+          </Button>
+        )}
+        {weeklyError && <div className="text-xs mt-2" style={{ color: C.red }}>{weeklyError}</div>}
+        {weeklySummary && (
+          <div className="mt-1">
+            <textarea value={weeklySummary} onChange={e => setWeeklySummary(e.target.value)} rows={6}
+              className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" icon={Mail} disabled={weeklySending} onClick={doSendWeekly}>
+                {weeklySending ? "Enviando…" : "Enviar por correo (al de arriba)"}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={weeklyGenerating} onClick={doGenerateWeekly}>Volver a generar</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setWeeklySummary(null); setWeeklySendMsg(null); }}>Descartar</Button>
+            </div>
+            {weeklySendMsg && <div className="text-xs mt-2" style={{ color: weeklySendMsg.ok ? C.green : C.red }}>{weeklySendMsg.text}</div>}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 mb-3 flex-wrap mt-3">
@@ -6040,6 +6106,72 @@ function buildWhatsAppLink(phone, text) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(short)}`;
 }
 
+/* ============================================================
+   RESUMEN SEMANAL CON IA
+   ============================================================ */
+/** Junta lo que pasó en los últimos `days` días (por defecto 7): daños resueltos, daños que
+ *  siguen pendientes, y mantenimientos correctivos — en un formato liviano, listo para mandarle
+ *  a la IA a que lo redacte en español natural. */
+function buildWeeklySummaryInput(issueHistory, activeIssues, mttoLog, mttoEquipos, days = 7) {
+  const since = new Date(); since.setDate(since.getDate() - days);
+  const resolved = (issueHistory || [])
+    .filter(h => new Date(h.resolvedAt) >= since)
+    .map(h => ({ equipo: h.name, piso: h.floorName, observacion: h.observation, solucion: h.solution, diasAbierto: Math.round(elapsedHours(h.openedAt, h.resolvedAt) / 24) }));
+  const pending = Object.values(activeIssues || {})
+    .map(iss => ({ equipo: iss.name, piso: iss.floorName, observacion: iss.observation, diasAbierto: Math.round(elapsedHours(iss.openedAt, new Date().toISOString()) / 24) }));
+  const equipoNombre = (id) => (mttoEquipos || []).find(e => e.id === id)?.nombre || "Equipo";
+  const correctivos = (mttoLog || [])
+    .filter(m => m.tipo === "correctivo" && new Date(m.fecha) >= since)
+    .map(m => ({ equipo: equipoNombre(m.equipoId), descripcion: m.descripcion, costo: m.costo || 0 }));
+  return { resolved, pending, correctivos };
+}
+function elapsedHours(fromIso, toIso) {
+  return Math.max(0, (new Date(toIso) - new Date(fromIso)) / 36e5);
+}
+
+async function requestWeeklySummary({ weekLabel, resolved, pending, correctivos }) {
+  const resp = await fetch("/api/generate-weekly-summary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ weekLabel, resolved, pending, correctivos }),
+  });
+  return resp.json();
+}
+
+/** PDF de una sola página con el resumen semanal ya redactado — es lo que se adjunta al correo. */
+async function generateWeeklySummaryPdf(summaryText, weekLabel, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "portrait" });
+  let y = pdfLetterhead(doc, "Resumen Semanal", [weekLabel, `Generado por ${generatedBy || "—"}`]);
+  y += 4;
+  doc.setFontSize(10.5); doc.setTextColor(...PDF_C.ink);
+  const lines = doc.splitTextToSize(summaryText, 182);
+  doc.text(lines, 14, y);
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendWeeklySummaryEmailAuto(to, summaryText, weekLabel, generatedBy) {
+  try {
+    const doc = await generateWeeklySummaryPdf(summaryText, weekLabel, generatedBy);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to, subject: `Resumen semanal — Pisos Mecánicos (${weekLabel})`,
+        text: summaryText, pdfBase64, filename: `resumen-semanal-${todayStr().replace(/\//g, "-")}.pdf`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: data?.message || "El servidor rechazó el envío." };
+    return data;
+  } catch {
+    return { ok: false, message: "No se pudo generar o enviar el resumen. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
+
 function PrintableReport({ activeIssues, issueHistory, roundsIndex, onClose }) {
   useEffect(() => { const t = setTimeout(() => window.print(), 400); return () => clearTimeout(t); }, []);
   const active = Object.values(activeIssues);
@@ -6150,9 +6282,10 @@ function SignaturePad({ onChange }) {
 /* ============================================================
    VISTA: MI PERFIL (firma guardada, se usa sola en cada entrega de turno)
    ============================================================ */
-function ProfileView({ currentUser, mySignature, onSaveSignature }) {
+function ProfileView({ currentUser, mySignature, onSaveSignature, employees, linkedEmployeeId, onSetLinkedEmployee }) {
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [linkSaved, setLinkSaved] = useState(false);
 
   const doSave = async () => {
     if (!draft) return;
@@ -6161,10 +6294,31 @@ function ProfileView({ currentUser, mySignature, onSaveSignature }) {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  const doSetLink = async (employeeId) => {
+    await onSetLinkedEmployee(employeeId || null);
+    setLinkSaved(true);
+    setTimeout(() => setLinkSaved(false), 2500);
+  };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mi Perfil</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{currentUser}</p>
+
+      {employees && employees.length > 0 && (
+        <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>¿Cuál eres tú en el Horario Mensual?</div>
+          <p className="text-xs mb-3" style={{ color: C.gray }}>
+            Selecciónate una vez y desde entonces "Mi horario" te muestra solo tus turnos, sin tener que buscarte en la tabla completa.
+          </p>
+          <select value={linkedEmployeeId || ""} onChange={e => doSetLink(e.target.value)}
+            className="text-sm border rounded-md px-2 py-2 outline-none w-full max-w-xs" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <option value="">No estoy en la lista / prefiero no elegir</option>
+            {[...employees].sort((a, b) => a.name.localeCompare(b.name)).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+          {linkSaved && <div className="text-xs mt-2" style={{ color: C.green }}>✓ Guardado</div>}
+        </div>
+      )}
 
       <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Mi firma</div>
@@ -6186,6 +6340,87 @@ function ProfileView({ currentUser, mySignature, onSaveSignature }) {
           <Button size="sm" disabled={!draft} onClick={doSave}>Guardar firma</Button>
           {saved && <span className="text-xs font-medium" style={{ color: C.green }}>✓ Firma guardada</span>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Vista simple, pensada para celular, de los turnos de UN SOLO empleado (el que se enlazó en
+ * Mi Perfil) — en vez de tener que buscarse en la tabla grande de todo el equipo. Muestra el mes
+ * en tarjetas, una por día trabajado, con navegación de mes.
+ */
+function MyScheduleView({ employee, scheduleEntries, onGoToProfile }) {
+  const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+
+  if (!employee) {
+    return (
+      <div>
+        <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mi horario</h2>
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
+          Todavía no te has seleccionado en el Horario Mensual.{" "}
+          <button onClick={onGoToProfile} className="underline font-medium" style={{ color: C.amber }}>Ve a Mi Perfil</button> y elige cuál eres tú en la lista.
+        </p>
+      </div>
+    );
+  }
+
+  const year = monthDate.getFullYear(), month = monthDate.getMonth();
+  const daysIso = daysInMonthIso(year, month);
+  const monthLabel = monthDate.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+  const weeks = weeksInRange(daysIso);
+  const entries = {};
+  daysIso.forEach(d => { const e = scheduleEntries[scheduleKey(employee.id, d)]; if (e) entries[d] = e; });
+  const monthTotal = weeks.reduce((sum, w) => sum + weekTotalHours(w, entries), 0);
+  const comp = employee.reductionHoursPerDay > 0 ? computeCompBalance(employee, scheduleEntries) : null;
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mi horario — {employee.name}</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{employee.cargo || "—"}</p>
+
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => setMonthDate(new Date(year, month - 1, 1))} className="p-1.5 rounded-md border" style={{ borderColor: C.line }}><ChevronLeft size={16} color={C.ink} /></button>
+        <span className="text-sm font-semibold capitalize" style={{ color: C.ink }}>{monthLabel}</span>
+        <button onClick={() => setMonthDate(new Date(year, month + 1, 1))} className="p-1.5 rounded-md border" style={{ borderColor: C.line }}><ChevronRight size={16} color={C.ink} /></button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="rounded-lg border p-3 text-center" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs" style={{ color: C.gray }}>Horas del mes</div>
+          <div className="text-lg font-semibold" style={{ color: C.ink }}>{monthTotal}h</div>
+        </div>
+        {comp && (
+          <div className="rounded-lg border p-3 text-center" style={{ borderColor: comp.fullDays >= 1 ? C.amber : C.line, background: comp.fullDays >= 1 ? "#fdf0da" : C.panel }}>
+            <div className="text-xs" style={{ color: C.gray }}>Reducción acumulada</div>
+            <div className="text-lg font-semibold" style={{ color: comp.fullDays >= 1 ? "#78350f" : C.ink }}>
+              {comp.fullDays >= 1 ? `¡${comp.fullDays} día(s)!` : `${comp.hours}h`}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {daysIso.map(d => {
+          const dd = new Date(d + "T00:00:00");
+          const entry = entries[d];
+          const colors = entry?.code ? SPECIAL_CODE_COLORS[entry.code] : null;
+          const label = SPECIAL_CODES.find(s => s.code === entry?.code)?.label;
+          return (
+            <div key={d} className="rounded-lg border px-3 py-2 flex items-center justify-between"
+              style={{ borderColor: C.line, background: colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : C.panel) }}>
+              <div>
+                <div className="text-sm font-medium capitalize" style={{ color: C.ink }}>
+                  {dd.toLocaleDateString("es-CO", { weekday: "short", day: "numeric" })}
+                  {isSundayOrHoliday(d) && <span className="ml-1 text-xs" style={{ color: C.red }}>· dom/fest</span>}
+                </div>
+              </div>
+              <div className="text-sm font-semibold" style={{ color: colors?.fg || (entry ? C.ink : C.gray) }}>
+                {entry ? (entry.code ? (label || entry.code) : fmtEntryShort(entry)) : "Libre"}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -7708,6 +7943,13 @@ export default function App() {
     await sSet("accounts", next, true);
   };
 
+  /** Guarda cuál empleado del Horario Mensual es "yo", para que "Mi horario" sepa cuáles turnos mostrar. */
+  const updateMyLinkedEmployee = async (employeeId) => {
+    const next = { ...accounts, [currentUser]: { ...accounts[currentUser], linkedEmployeeId: employeeId } };
+    setAccounts(next);
+    await sSet("accounts", next, true);
+  };
+
   const approveAccount = async (username) => {
     const next = { ...accounts, [username]: { ...accounts[username], approved: true } };
     setAccounts(next);
@@ -8106,12 +8348,30 @@ export default function App() {
     await sSet("employees", next, true);
   };
 
+  /** Si el cambio que se acaba de guardar hace que alguien complete un día nuevo de descanso por
+   *  horas de reducción (ver computeCompBalance), avisa por push a los administradores suscritos.
+   *  Compara el saldo ANTES y DESPUÉS del cambio, así solo avisa una vez por cada día ganado. */
+  const notifyCompDaysEarned = (prevEntries, nextEntries, employeeIds) => {
+    if (pushSubscriptions.length === 0) return;
+    employeeIds.forEach(id => {
+      const emp = employees.find(e => e.id === id);
+      if (!emp || !(emp.reductionHoursPerDay > 0)) return;
+      const before = computeCompBalance(emp, prevEntries).fullDays;
+      const after = computeCompBalance(emp, nextEntries).fullDays;
+      if (after > before) {
+        sendPushToSubscriptions(pushSubscriptions, "🟣 Día de descanso acumulado",
+          `${emp.name} ya completó ${after} día(s) de descanso por horas de reducción — pendiente de programar.`, "/");
+      }
+    });
+  };
+
   const setScheduleEntry = async (employeeId, dateIso, patch) => {
     const key = scheduleKey(employeeId, dateIso);
     const next = { ...scheduleEntries };
     const isEmpty = !patch || (!patch.code && patch.entrada == null && patch.salida == null);
     if (isEmpty) delete next[key];
     else next[key] = { entrada: patch.entrada ?? null, salida: patch.salida ?? null, code: patch.code || null, note: patch.note || "", updatedBy: displayName, updatedAt: nowIso() };
+    notifyCompDaysEarned(scheduleEntries, next, [employeeId]);
     setScheduleEntries(next);
     await sSet("schedule-entries", next, true);
   };
@@ -8124,11 +8384,14 @@ export default function App() {
    */
   const applyAiScheduleDraft = async (overrides) => {
     const next = { ...scheduleEntries };
+    const affectedIds = new Set();
     Object.entries(overrides || {}).forEach(([key, patch]) => {
       const isEmpty = !patch || (!patch.code && patch.entrada == null && patch.salida == null);
       if (isEmpty) { delete next[key]; return; }
       next[key] = { entrada: patch.entrada ?? null, salida: patch.salida ?? null, code: patch.code || null, note: patch.note || "Generado con IA", updatedBy: displayName, updatedAt: nowIso() };
+      affectedIds.add(key.split("::")[0]);
     });
+    notifyCompDaysEarned(scheduleEntries, next, Array.from(affectedIds));
     setScheduleEntries(next);
     await sSet("schedule-entries", next, true);
   };
@@ -8735,6 +8998,7 @@ export default function App() {
     { id: "boiler", label: "Check List Caldera", icon: Gauge },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
     { id: "schedules", label: "Horario Mensual", icon: Users },
+    { id: "my-schedule", label: "Mi horario", icon: CalendarDays },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
     { id: "profile", label: "Mi Perfil", icon: User },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
@@ -8915,7 +9179,11 @@ export default function App() {
             <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} mySignature={account.signature} />
           )}
           {view === "profile" && (
-            <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature} />
+            <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature}
+              employees={employees} linkedEmployeeId={account.linkedEmployeeId} onSetLinkedEmployee={updateMyLinkedEmployee} />
+          )}
+          {view === "my-schedule" && (
+            <MyScheduleView employee={employees.find(e => e.id === account.linkedEmployeeId)} scheduleEntries={scheduleEntries} onGoToProfile={() => setView("profile")} />
           )}
           {view === "handoff" && (
             <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
@@ -8926,6 +9194,7 @@ export default function App() {
           {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} onCheckIn={checkInIssue} />}
           {view === "reports" && (
             <ReportsView issueHistory={issueHistory} roundsIndex={roundsIndex} activeIssues={activeIssues} latestValues={latestValues}
+              mttoLog={mttoLog} mttoEquipos={mttoEquipos}
               reportEmail={reportEmail} reportWhatsapp={reportWhatsapp} onOpenPrint={() => setPrintMode(true)}
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}

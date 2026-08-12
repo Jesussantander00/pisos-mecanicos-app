@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
-import { sGet, sSet, uploadPhoto, getPendingCount, flushOfflineQueue, exportFullBackup } from "./lib/storage";
+import { sGet, sSet, uploadPhoto, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount } from "./lib/storage";
 
 /* ============================================================
    PALETA / TOKENS
@@ -546,10 +546,24 @@ function computeReorderForecast(invItems, invMovements, windowDays = 30, alertDa
   return forecast.sort((a, b) => a.daysUntilOut - b.daysUntilOut);
 }
 
+/**
+ * Encabezado que se manda en cada pedido a las funciones de IA del servidor (/api/generate-*,
+ * /api/read-meter). Si en Vercel se configuró la variable APP_SHARED_SECRET, el servidor exige
+ * que este valor coincida antes de atender el pedido — así una URL encontrada por casualidad
+ * (o un bot rastreando internet) no puede gastar la cuota gratis de la IA. No es un secreto
+ * perfecto (vive en el código del navegador), pero sí una barrera real contra abuso casual.
+ * Configúrala en tu archivo .env como VITE_APP_SECRET (el mismo valor que pongas en Vercel como
+ * APP_SHARED_SECRET) — si no la configuras, la app sigue funcionando igual, sin esta barrera.
+ */
+function aiRequestHeaders() {
+  const secret = import.meta.env.VITE_APP_SECRET;
+  return { "Content-Type": "application/json", ...(secret ? { "x-app-secret": secret } : {}) };
+}
+
 async function requestReorderNotes({ items }) {
   const resp = await fetch("/api/generate-reorder-notes", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiRequestHeaders(),
     body: JSON.stringify({ items }),
   });
   return resp.json();
@@ -616,7 +630,7 @@ async function readMeterFromPhoto(file, previousReading, meterName) {
   const imageBase64 = await imageFileToBase64ForReading(file);
   const resp = await fetch("/api/read-meter", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiRequestHeaders(),
     body: JSON.stringify({ imageBase64, mediaType: "image/jpeg", previousReading, meterName }),
   });
   return resp.json();
@@ -632,7 +646,7 @@ async function readMeterFromPhoto(file, previousReading, meterName) {
 async function requestAiScheduleDraft({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget, sundaysAlreadyWorked }) {
   const resp = await fetch("/api/generate-schedule", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiRequestHeaders(),
     body: JSON.stringify({ monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget, sundaysAlreadyWorked }),
   });
   return resp.json();
@@ -1323,16 +1337,49 @@ function fmtDT(iso) {
   const d = new Date(iso);
   return d.toLocaleString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
-async function hashPassword(pw) {
+/**
+ * MEJORA DE SEGURIDAD: antes las contraseñas se guardaban como SHA-256 sin "salt" (la misma
+ * contraseña siempre da el mismo hash) — eso es rápido de forzar por fuerza bruta si alguien
+ * llegara a ver la tabla de cuentas. Ahora se usa PBKDF2 con una salt aleatoria por persona y
+ * 150,000 vueltas, que es miles de veces más lento de forzar. Las cuentas creadas ANTES de este
+ * cambio se siguen reconociendo (ver verifyPassword) y se actualizan solas la próxima vez que esa
+ * persona inicie sesión — no hace falta pedirle que cambie la contraseña a mano.
+ */
+function bytesToHex(bytes) { return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(""); }
+function hexToBytes(hex) {
+  const arr = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return arr;
+}
+const PBKDF2_ITERATIONS = 150000;
+async function hashPasswordSecure(pw, saltHex) {
+  const salt = saltHex ? hexToBytes(saltHex) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" }, keyMaterial, 256);
+  return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt) };
+}
+/** El hash viejo (sin salt) — solo se usa para reconocer cuentas creadas antes de este cambio. */
+async function hashPasswordLegacy(pw) {
   try {
     const enc = new TextEncoder().encode("pisos-mecanicos-hyatt::" + pw);
     const buf = await crypto.subtle.digest("SHA-256", enc);
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
   } catch {
-    // Fallback muy básico si el navegador no soporta Web Crypto (poco probable)
     let h = 0; for (let i = 0; i < pw.length; i++) { h = (h * 31 + pw.charCodeAt(i)) | 0; }
     return "fallback-" + h;
   }
+}
+/** Revisa una contraseña contra la cuenta guardada. Funciona con el formato nuevo (con salt) y
+ *  reconoce el formato viejo de cuentas más antiguas — needsUpgrade avisa cuándo conviene volver
+ *  a guardar el hash ya en el formato seguro (se hace sola en el login, ver la función login). */
+async function verifyPassword(pw, account) {
+  if (account.passwordSalt) {
+    const { hash } = await hashPasswordSecure(pw, account.passwordSalt);
+    return { ok: hash === account.passwordHash, needsUpgrade: false };
+  }
+  const legacyHash = await hashPasswordLegacy(pw);
+  const ok = legacyHash === account.passwordHash;
+  return { ok, needsUpgrade: ok };
 }
 function elapsed(iso) {
   if (!iso) return "—";
@@ -3564,17 +3611,18 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
     if (!descripcion.trim()) { setSaveMsg({ ok: false, text: "Escribe qué se hizo." }); return; }
     setSaving(true); setSaveMsg(null);
     try {
-      const uploadedUrls = [];
-      for (const p of photos) {
-        if (typeof p === "string") { uploadedUrls.push(p); continue; }
-        const url = await uploadPhoto(p, `equipo-${equipo.id}`);
-        uploadedUrls.push(url);
-      }
-      await onLogMaintenance(equipo.id, { tipo, descripcion: descripcion.trim(), estado, costo, fotos: uploadedUrls });
+      const res = await saveRecordWithPhotos(
+        "maintenance",
+        { equipoId: equipo.id, tipo, descripcion: descripcion.trim(), estado, costo },
+        photos,
+        async (payload, urls) => { await onLogMaintenance(payload.equipoId, { ...payload, fotos: urls }); }
+      );
       setDescripcion(""); setCosto(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando");
-      setSaveMsg({ ok: true, text: "✓ Mantenimiento registrado." });
+      setSaveMsg(res.queued
+        ? { ok: true, text: "✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva, sin que tengas que escribir nada de nuevo." }
+        : { ok: true, text: "✓ Mantenimiento registrado." });
     } catch (e) {
-      setSaveMsg({ ok: false, text: e.message || "No se pudo guardar. Revisa la conexión." });
+      setSaveMsg({ ok: false, text: e.message || "No se pudo guardar." });
     }
     setSaving(false);
   };
@@ -6321,7 +6369,7 @@ function elapsedHours(fromIso, toIso) {
 async function requestWeeklySummary({ weekLabel, resolved, pending, correctivos }) {
   const resp = await fetch("/api/generate-weekly-summary", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiRequestHeaders(),
     body: JSON.stringify({ weekLabel, resolved, pending, correctivos }),
   });
   return resp.json();
@@ -7987,6 +8035,32 @@ export default function App() {
     const id = setInterval(run, 20000); // reintento silencioso, por si "online" no se dispara bien
     return () => { cancelled = true; window.removeEventListener("online", run); window.removeEventListener("pm-queue-changed", onQueueChanged); clearInterval(id); };
   }, [tryFlush]);
+
+  // ---- Cola de registros con fotos pendientes (ej. mantenimientos guardados sin señal) ----
+  const [pendingPhotoRecords, setPendingPhotoRecords] = useState(() => getPendingPhotoRecordsCount());
+  const [justSyncedPhotos, setJustSyncedPhotos] = useState(false);
+  const tryFlushPhotos = useCallback(async () => {
+    const res = await flushPhotoRecordQueue({
+      maintenance: async (payload, urls) => { await logMaintenance(payload.equipoId, { ...payload, fotos: urls }); },
+    });
+    const remaining = getPendingPhotoRecordsCount();
+    setPendingPhotoRecords(remaining);
+    if (res.synced > 0 && remaining === 0) {
+      setJustSyncedPhotos(true);
+      setTimeout(() => setJustSyncedPhotos(false), 4000);
+    }
+    return res;
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => { if (!cancelled) await tryFlushPhotos(); };
+    run(); // por si quedó algo pendiente de una sesión anterior sin señal
+    window.addEventListener("online", run);
+    const onPhotoQueueChanged = () => setPendingPhotoRecords(getPendingPhotoRecordsCount());
+    window.addEventListener("pm-photo-queue-changed", onPhotoQueueChanged);
+    const id = setInterval(run, 20000);
+    return () => { cancelled = true; window.removeEventListener("online", run); window.removeEventListener("pm-photo-queue-changed", onPhotoQueueChanged); clearInterval(id); };
+  }, [tryFlushPhotos]);
   const [floorId, setFloorIdRaw] = useState(() => {
     try {
       const saved = localStorage.getItem("pm-local:last-floor");
@@ -8125,9 +8199,9 @@ export default function App() {
     const key = username.toLowerCase();
     if (accounts[key]) { setAuthError("Ese usuario ya existe. Elige otro o inicia sesión."); setAuthBusy(false); return; }
     try {
-      const passwordHash = await hashPassword(password);
+      const { hash: passwordHash, salt: passwordSalt } = await hashPasswordSecure(password);
       const isFirstEver = Object.keys(accounts).length === 0; // el primer usuario creado es admin, y queda aprobado de una
-      const next = { ...accounts, [key]: { displayName: username, passwordHash, isAdmin: isFirstEver, approved: isFirstEver, createdAt: nowIso() } };
+      const next = { ...accounts, [key]: { displayName: username, passwordHash, passwordSalt, isAdmin: isFirstEver, approved: isFirstEver, createdAt: nowIso() } };
       await sSet("accounts", next, true);
       await sSet("session", { username: key }, false);
       setAccounts(next);
@@ -8154,8 +8228,16 @@ export default function App() {
       if (Object.keys(freshAccounts).length !== Object.keys(accounts).length) setAccounts(freshAccounts);
       const acc = freshAccounts[key];
       if (!acc) { setAuthError("Usuario no encontrado. ¿Necesitas crear una cuenta?"); setAuthBusy(false); return; }
-      const passwordHash = await hashPassword(password);
-      if (passwordHash !== acc.passwordHash) { setAuthError("Contraseña incorrecta."); setAuthBusy(false); return; }
+      const { ok, needsUpgrade } = await verifyPassword(password, acc);
+      if (!ok) { setAuthError("Contraseña incorrecta."); setAuthBusy(false); return; }
+      if (needsUpgrade) {
+        // Cuenta creada antes de la mejora de seguridad: se re-guarda ya con el formato seguro
+        // (con salt), sin que la persona tenga que hacer nada ni volver a escribir su contraseña.
+        const { hash: passwordHash, salt: passwordSalt } = await hashPasswordSecure(password);
+        const upgraded = { ...freshAccounts, [key]: { ...acc, passwordHash, passwordSalt } };
+        setAccounts(upgraded);
+        sSet("accounts", upgraded, true); // sin await, no hace falta atrasar el ingreso por esto
+      }
       await sSet("session", { username: key }, false);
       setCurrentUser(key);
       setView("home");
@@ -8234,8 +8316,8 @@ export default function App() {
   };
 
   const resetPassword = async (username, newPassword) => {
-    const passwordHash = await hashPassword(newPassword);
-    const next = { ...accounts, [username]: { ...accounts[username], passwordHash } };
+    const { hash: passwordHash, salt: passwordSalt } = await hashPasswordSecure(newPassword);
+    const next = { ...accounts, [username]: { ...accounts[username], passwordHash, passwordSalt } };
     setAccounts(next);
     await sSet("accounts", next, true);
   };
@@ -9283,8 +9365,8 @@ export default function App() {
         <div className="pm-slide-up-in fixed top-0 left-0 right-0 z-[110] flex items-center justify-center gap-2 px-4 py-2"
           style={{ background: "#7a5405" }}>
           <WifiOff size={14} color="#fff" />
-          <span className="text-xs font-medium text-white">Sin conexión — lo que guardes se sube solo apenas vuelva la señal.</span>
-          {pendingSync > 0 && <span className="text-xs text-white opacity-90">({pendingSync} sin subir)</span>}
+          <span className="text-xs font-medium text-white">Sin conexión — lo que guardes (incluidas fotos) se sube solo apenas vuelva la señal.</span>
+          {(pendingSync > 0 || pendingPhotoRecords > 0) && <span className="text-xs text-white opacity-90">({pendingSync + pendingPhotoRecords} sin subir)</span>}
         </div>
       )}
       {needRefresh && (
@@ -9394,9 +9476,20 @@ export default function App() {
                 </button>
               </span>
             )}
+            {pendingPhotoRecords > 0 && (
+              <span className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }} title="Registros guardados en este celular con fotos que faltan por subir">
+                <Camera size={12} /> {pendingPhotoRecords} foto(s) sin subir
+                <button onClick={() => tryFlushPhotos()} className="underline font-semibold" style={{ color: "#7a5405" }}>Reintentar</button>
+              </span>
+            )}
             {justSynced && pendingSync === 0 && (
               <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ background: "#dff5e3", color: C.green }}>
                 <CheckCircle2 size={12} /> Sincronizado
+              </span>
+            )}
+            {justSyncedPhotos && pendingPhotoRecords === 0 && (
+              <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ background: "#dff5e3", color: C.green }}>
+                <CheckCircle2 size={12} /> Fotos sincronizadas
               </span>
             )}
             <button onClick={() => setShowOnboarding(true)} title="Ver guía de bienvenida" className="p-1.5 rounded-md" style={{ background: C.bg }}>

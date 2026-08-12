@@ -165,3 +165,106 @@ export async function uploadPhoto(file, pathPrefix = "mtto") {
   const { data } = supabase.storage.from("maintenance-photos").getPublicUrl(path);
   return data.publicUrl;
 }
+
+/* ============================================================
+   COLA DE REGISTROS CON FOTOS (para no perder nada sin señal)
+   ============================================================
+   El problema que resuelve: guardar algo con foto necesita subir la foto primero, y eso SÍ
+   necesita señal de verdad (a diferencia de sGet/sSet, que ya tienen su propia cola). Antes, si
+   fallaba la subida de la foto, se perdía TODO lo escrito — había que volver a tomar la foto y
+   escribir todo de nuevo. Ahora, si falla, se guarda el registro COMPLETO en este celular
+   (convirtiendo la foto a texto para poder guardarla) y se reintenta solo cuando vuelva la señal.
+*/
+const PHOTO_QUEUE_KEY = "pm-local:pending-photo-records";
+
+function readPhotoQueue() {
+  try { const raw = localStorage.getItem(PHOTO_QUEUE_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+function writePhotoQueue(q) {
+  try { localStorage.setItem(PHOTO_QUEUE_KEY, JSON.stringify(q)); } catch { /* noop */ }
+  try { window.dispatchEvent(new CustomEvent("pm-photo-queue-changed")); } catch { /* noop */ }
+}
+/** Cuántos registros con foto quedaron guardados solo en este celular, esperando poder subirse. */
+export function getPendingPhotoRecordsCount() {
+  return readPhotoQueue().length;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function base64ToFile(dataUrl, name) {
+  const [header, base64] = dataUrl.split(",");
+  const mime = header.match(/data:(.*?);/)?.[1] || "image/jpeg";
+  const bin = atob(base64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new File([arr], name, { type: mime });
+}
+
+/**
+ * Guarda un registro que necesita subir fotos (ej. un mantenimiento con fotos), de forma segura
+ * incluso sin señal. Primero intenta el camino normal (subir fotos y guardar ya mismo). Si algo
+ * falla (probablemente sin señal), en vez de perderlo todo, guarda el registro COMPLETO en este
+ * celular (fotos incluidas, convertidas a texto) para reintentarlo solo más tarde.
+ *
+ * kind: una palabra que identifica qué tipo de registro es (ej. "maintenance") — se usa para saber
+ * qué función llamar al reintentar (ver flushPhotoRecordQueue).
+ * payload: los demás datos del formulario (sin las fotos).
+ * photoFiles: los archivos de foto (o URLs ya subidas de antes, se dejan tal cual).
+ * onSave(payload, photoUrls): la función que de verdad guarda el registro una vez las fotos están listas.
+ */
+export async function saveRecordWithPhotos(kind, payload, photoFiles, onSave) {
+  try {
+    const urls = [];
+    for (const f of photoFiles) {
+      if (typeof f === "string") { urls.push(f); continue; }
+      urls.push(await uploadPhoto(f, kind));
+    }
+    await onSave(payload, urls);
+    return { ok: true, queued: false };
+  } catch (e) {
+    const photosBase64 = [];
+    for (const f of photoFiles) {
+      if (typeof f === "string") { photosBase64.push({ isUrl: true, value: f }); continue; }
+      try { photosBase64.push({ isUrl: false, value: await fileToBase64(f), name: f.name || "foto.jpg" }); }
+      catch { /* si ni siquiera se puede leer el archivo (raro), se guarda el registro sin esa foto */ }
+    }
+    const rec = { id: `pr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, kind, payload, photosBase64, queuedAt: new Date().toISOString() };
+    writePhotoQueue([...readPhotoQueue(), rec]);
+    return { ok: true, queued: true };
+  }
+}
+
+/**
+ * Reintenta subir todos los registros con fotos que quedaron pendientes por falta de señal.
+ * "handlers" es un objeto { [kind]: async (payload, photoUrls) => {...} } — una función por cada
+ * tipo de registro que sepa guardarlo de verdad una vez las fotos ya están subidas.
+ */
+export async function flushPhotoRecordQueue(handlers) {
+  const q = readPhotoQueue();
+  if (q.length === 0) return { synced: 0, remaining: 0 };
+  let synced = 0;
+  const stillPending = [];
+  for (const rec of q) {
+    const handler = handlers[rec.kind];
+    if (!handler) { stillPending.push(rec); continue; }
+    try {
+      const urls = [];
+      for (const p of rec.photosBase64) {
+        if (p.isUrl) { urls.push(p.value); continue; }
+        urls.push(await uploadPhoto(base64ToFile(p.value, p.name), rec.kind));
+      }
+      await handler(rec.payload, urls);
+      synced++;
+    } catch {
+      stillPending.push(rec);
+    }
+  }
+  writePhotoQueue(stillPending);
+  return { synced, remaining: stillPending.length };
+}

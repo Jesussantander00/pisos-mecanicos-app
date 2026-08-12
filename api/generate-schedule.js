@@ -20,6 +20,17 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Barrera básica: si se configuró APP_SHARED_SECRET en Vercel, solo se atienden pedidos que
+  // manden ese mismo valor en el encabezado x-app-secret (la app ya lo manda sola, ver App.jsx).
+  // No es un sistema de autenticación de verdad (el valor vive en el código del navegador, así
+  // que alguien con muchas ganas podría sacarlo) — pero sí evita que bots o curiosos que solo
+  // encuentren la URL por casualidad puedan usarla para gastar la cuota gratis de la IA.
+  const expectedSecret = process.env.APP_SHARED_SECRET;
+  if (expectedSecret && req.headers["x-app-secret"] !== expectedSecret) {
+    res.status(401).json({ ok: false, message: "No autorizado." });
+    return;
+  }
+
   const { monthLabel, days, employees, existingEntries, referenceEntries, rulesText, weeklyHoursTarget, sundaysAlreadyWorked } = req.body || {};
 
   if (!Array.isArray(days) || days.length === 0) {

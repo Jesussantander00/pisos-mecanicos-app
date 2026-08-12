@@ -1132,6 +1132,16 @@ function computeCompBalance(employee, scheduleEntries) {
 }
 const WEEKLY_HOURS_TARGET = 42; // igual al que ya usa tu Excel en las columnas "Diferencia semana"
 
+/**
+ * Punto de partida de las "reglas generales del equipo" — se guarda editable en la base de datos
+ * (ver standingRules en SchedulesView), esto es solo lo que se precarga la primera vez, con todo
+ * lo que ya se había acordado en conversaciones anteriores, para no perderlo.
+ */
+const DEFAULT_STANDING_RULES = `- Quintana Jesus Daniel: descansa todos los sábados (ya tiene su día de descanso fijo puesto en el sistema — nunca se le pone turno un sábado, ni siquiera si otras reglas hablan de cubrir sábados con normalidad). Si por su rotación le tocaría turno de noche un sábado, ese turno de noche se pasa al domingo siguiente en su lugar.
+- Turnistas en general: máximo 1 domingo trabajado al mes cada uno, y se alternan entre sí — un domingo trabaja uno, el siguiente domingo trabaja otro (no el mismo dos domingos seguidos).
+- Cada domingo debe quedar cubierto por UN SOLO turnista (no varios al tiempo), más un turno de apoyo intermedio aparte de 9:00 a.m. a 5:30 p.m. ese mismo día.
+- Esalas Felix Jose y Durant Zarith Elias: no pueden coincidir trabajando el mismo domingo — se alternan entre ellos (mientras uno trabaja un domingo, el otro descansa ese domingo, y al siguiente domingo se cambian).`;
+
 function isHoliday2026(dateIso) { return COLOMBIA_HOLIDAYS_2026.includes(dateIso); }
 function isSundayOrHoliday(dateIso) {
   const d = new Date(dateIso + "T00:00:00");
@@ -4161,13 +4171,40 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 
   // ---- Borrador de horario generado con IA (no se guarda hasta que el usuario lo confirma) ----
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [aiRulesText, setAiRulesText] = useState("");
+  // Reglas GENERALES del equipo: se guardan en la base de datos y se usan SIEMPRE, en todos los
+  // meses, sin que haga falta volver a escribirlas cada vez (antes esto se perdía cada vez que se
+  // generaba un mes nuevo, por eso reglas que ya se habían dado — como lo de Quintana los sábados,
+  // o lo de Félix y Zarith los domingos — no se estaban aplicando si no se volvían a escribir).
+  const [standingRules, setStandingRules] = useState("");
+  const [standingRulesLoaded, setStandingRulesLoaded] = useState(false);
+  const [standingRulesSaving, setStandingRulesSaving] = useState(false);
+  const [standingRulesSaved, setStandingRulesSaved] = useState(false);
+  const [aiRulesText, setAiRulesText] = useState(""); // solo algo puntual de ESTE mes, no se guarda
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [aiNotes, setAiNotes] = useState(null);
   const [draftActive, setDraftActive] = useState(false);
   const [draftOverrides, setDraftOverrides] = useState({}); // { [scheduleKey]: {entrada,salida} | {code} }
   const [applyingDraft, setApplyingDraft] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      let saved = null;
+      try { saved = await sGet("schedule-standing-rules", true); } catch { /* usa el texto por defecto */ }
+      setStandingRules(saved || DEFAULT_STANDING_RULES);
+      setStandingRulesLoaded(true);
+    })();
+  }, []);
+
+  const saveStandingRules = async () => {
+    setStandingRulesSaving(true);
+    try {
+      await sSet("schedule-standing-rules", standingRules, true);
+      setStandingRulesSaved(true);
+      setTimeout(() => setStandingRulesSaved(false), 2500);
+    } catch { setAiError("No se pudieron guardar las reglas generales. Intenta de nuevo."); }
+    setStandingRulesSaving(false);
+  };
 
   // ---- Al entrar, si ya hay un mes con datos cargados (ej. agosto), arranca de una vez mostrando
   // el mes SIGUIENTE a ese (ej. septiembre) en vez del mes calendario actual — así el panel de IA
@@ -4381,12 +4418,17 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
       const dayChunks = [];
       for (let i = 0; i < days.length; i += CHUNK_SIZE) dayChunks.push(days.slice(i, i + CHUNK_SIZE));
 
+      // Las reglas generales del equipo (guardadas, siempre aplican) van primero, y lo que se haya
+      // escrito solo para este mes se agrega después — así nunca se pierden las reglas de siempre
+      // por no volver a escribirlas.
+      const combinedRules = [standingRules, aiRulesText].map(t => (t || "").trim()).filter(Boolean).join("\n\n");
+
       const results = [];
       for (const chunkDays of dayChunks) {
         const res = await requestAiScheduleDraft({
           monthLabel, days: chunkDays, employees: employeesForApi,
           existingEntries: entriesByEmployee, referenceEntries,
-          rulesText: aiRulesText, weeklyHoursTarget: WEEKLY_HOURS_TARGET,
+          rulesText: combinedRules, weeklyHoursTarget: WEEKLY_HOURS_TARGET,
           sundaysAlreadyWorked: sundaysWorked,
         }).catch(() => ({ ok: false, message: "No se pudo conectar con el servicio de IA para esta parte del mes." }));
         results.push(res);
@@ -4524,18 +4566,35 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
 
           {showAiPanel && !draftActive && (
             <div className="mt-3">
-              <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-                Escribe las reglas de este mes en español normal (quién libra qué día, mínimo de personas por turno, cambios especiales, etc.).
-                La IA solo llena los días que todavía están vacíos — lo que ya tengas puesto (vacaciones, turnos ya asignados) no se toca,
-                y copia el mismo tipo de turno que cada quien ya venía trabajando.
+              <div className="mb-3">
+                <div className="text-xs font-semibold mb-1" style={{ color: C.ink }}>Reglas generales del equipo (se guardan y se usan SIEMPRE, en todos los meses)</div>
+                <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+                  Esto no hay que volver a escribirlo cada mes — se guarda una sola vez y la IA lo tiene en cuenta siempre que generes un horario, hasta que tú lo cambies aquí.
+                </div>
+                {standingRulesLoaded ? (
+                  <>
+                    <textarea value={standingRules} onChange={e => setStandingRules(e.target.value)} rows={5}
+                      className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-1" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="ghost" disabled={standingRulesSaving} onClick={saveStandingRules}>
+                        {standingRulesSaving ? "Guardando…" : "Guardar reglas generales"}
+                      </Button>
+                      {standingRulesSaved && <span className="text-xs" style={{ color: C.green }}>Guardado ✓</span>}
+                    </div>
+                  </>
+                ) : <div className="text-xs" style={{ color: C.inkSoft }}>Cargando…</div>}
               </div>
-              <textarea value={aiRulesText} onChange={e => setAiRulesText(e.target.value)} rows={4}
-                placeholder="Ej: Martelo libra los domingos. Mínimo 2 personas en el turno de noche siempre. Barrios está de vacaciones del 10 al 15."
-                className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-              <Button size="sm" icon={Sparkles} disabled={aiGenerating} onClick={doGenerateAiDraft}>
-                {aiGenerating ? "Generando borrador…" : "Generar borrador"}
-              </Button>
-              {aiError && <div className="text-xs mt-2" style={{ color: C.red }}>{aiError}</div>}
+
+              <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+                <div className="text-xs font-semibold mb-1 mt-2" style={{ color: C.ink }}>¿Algo especial solo para {monthLabel}? (opcional, no se guarda)</div>
+                <textarea value={aiRulesText} onChange={e => setAiRulesText(e.target.value)} rows={3}
+                  placeholder="Ej: Barrios está de vacaciones del 10 al 15. Esta semana hace falta un refuerzo extra el jueves."
+                  className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <Button size="sm" icon={Sparkles} disabled={aiGenerating} onClick={doGenerateAiDraft}>
+                  {aiGenerating ? "Generando borrador…" : "Generar borrador"}
+                </Button>
+                {aiError && <div className="text-xs mt-2" style={{ color: C.red }}>{aiError}</div>}
+              </div>
             </div>
           )}
 
@@ -4660,7 +4719,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
         <table className="text-xs" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
-              <th className="text-left px-2 py-2" style={{ minWidth: 150 }}>Empleado</th>
+              <th className="text-left px-2 py-2" style={{ minWidth: 150, position: "sticky", left: 0, zIndex: 2, background: C.steelDark, boxShadow: "2px 0 4px rgba(0,0,0,0.15)" }}>Empleado</th>
               {daysIso.map(d => {
                 const dd = new Date(d + "T00:00:00");
                 return (
@@ -4692,7 +4751,7 @@ function SchedulesView({ employees, scheduleEntries, isAdmin, currentUser, onCre
                       </tr>
                     )}
                     <tr style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
-                      <td className="px-2 py-1.5" style={{ color: C.ink, fontWeight: 500 }}>
+                      <td className="px-2 py-1.5" style={{ color: C.ink, fontWeight: 500, position: "sticky", left: 0, zIndex: 1, background: i % 2 ? C.cardAlt : C.panel, boxShadow: "2px 0 4px rgba(0,0,0,0.08)" }}>
                         {emp.name}
                         {emp.badge && (
                           <span className="text-[10px] font-normal ml-1.5 px-1.5 py-0.5 rounded-full" style={{ background: "#f0e6fb", color: "#6b21a8" }}>

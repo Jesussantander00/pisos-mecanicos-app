@@ -13,6 +13,7 @@ import {
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
 import { sGet, sSet, uploadPhoto, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount } from "./lib/storage";
+import { supabase } from "./lib/supabaseClient";
 
 /* ============================================================
    PALETA / TOKENS
@@ -558,6 +559,29 @@ function computeReorderForecast(invItems, invMovements, windowDays = 30, alertDa
 function aiRequestHeaders() {
   const secret = import.meta.env.VITE_APP_SECRET;
   return { "Content-Type": "application/json", ...(secret ? { "x-app-secret": secret } : {}) };
+}
+
+/** Le pide al servidor que cree la fila de "perfil" (rol, aprobación) justo después de que
+ *  alguien se registra con Supabase Auth — ver register-profile.js. */
+async function requestCreateProfile(accessToken) {
+  const resp = await fetch("/api/register-profile", {
+    method: "POST",
+    headers: aiRequestHeaders(),
+    body: JSON.stringify({ accessToken }),
+  });
+  return resp.json();
+}
+
+/** Le pide al servidor que haga una acción de administrador (aprobar, roles, reset de
+ *  contraseña, eliminar) — ver admin-actions.js. El servidor comprueba ahí, de verdad, que
+ *  quien llama es un administrador aprobado antes de hacer nada. */
+async function requestAdminAction(accessToken, action, targetUserId, extra = {}) {
+  const resp = await fetch("/api/admin-actions", {
+    method: "POST",
+    headers: aiRequestHeaders(),
+    body: JSON.stringify({ accessToken, action, targetUserId, ...extra }),
+  });
+  return resp.json();
 }
 
 async function requestReorderNotes({ items }) {
@@ -1338,49 +1362,11 @@ function fmtDT(iso) {
   return d.toLocaleString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 /**
- * MEJORA DE SEGURIDAD: antes las contraseñas se guardaban como SHA-256 sin "salt" (la misma
- * contraseña siempre da el mismo hash) — eso es rápido de forzar por fuerza bruta si alguien
- * llegara a ver la tabla de cuentas. Ahora se usa PBKDF2 con una salt aleatoria por persona y
- * 150,000 vueltas, que es miles de veces más lento de forzar. Las cuentas creadas ANTES de este
- * cambio se siguen reconociendo (ver verifyPassword) y se actualizan solas la próxima vez que esa
- * persona inicie sesión — no hace falta pedirle que cambie la contraseña a mano.
+ * NOTA DE SEGURIDAD: las contraseñas ya NO se manejan a mano en este archivo — desde la
+ * migración a Supabase Auth, Supabase se encarga de guardar y verificar las contraseñas de
+ * forma segura (con su propio hash con salt, mejor de lo que se podía hacer aquí). Ver las
+ * funciones register/login más abajo, que usan supabase.auth.signUp / signInWithPassword.
  */
-function bytesToHex(bytes) { return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(""); }
-function hexToBytes(hex) {
-  const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return arr;
-}
-const PBKDF2_ITERATIONS = 150000;
-async function hashPasswordSecure(pw, saltHex) {
-  const salt = saltHex ? hexToBytes(saltHex) : crypto.getRandomValues(new Uint8Array(16));
-  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" }, keyMaterial, 256);
-  return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt) };
-}
-/** El hash viejo (sin salt) — solo se usa para reconocer cuentas creadas antes de este cambio. */
-async function hashPasswordLegacy(pw) {
-  try {
-    const enc = new TextEncoder().encode("pisos-mecanicos-hyatt::" + pw);
-    const buf = await crypto.subtle.digest("SHA-256", enc);
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-  } catch {
-    let h = 0; for (let i = 0; i < pw.length; i++) { h = (h * 31 + pw.charCodeAt(i)) | 0; }
-    return "fallback-" + h;
-  }
-}
-/** Revisa una contraseña contra la cuenta guardada. Funciona con el formato nuevo (con salt) y
- *  reconoce el formato viejo de cuentas más antiguas — needsUpgrade avisa cuándo conviene volver
- *  a guardar el hash ya en el formato seguro (se hace sola en el login, ver la función login). */
-async function verifyPassword(pw, account) {
-  if (account.passwordSalt) {
-    const { hash } = await hashPasswordSecure(pw, account.passwordSalt);
-    return { ok: hash === account.passwordHash, needsUpgrade: false };
-  }
-  const legacyHash = await hashPasswordLegacy(pw);
-  const ok = legacyHash === account.passwordHash;
-  return { ok, needsUpgrade: ok };
-}
 function elapsed(iso) {
   if (!iso) return "—";
   const ms = Date.now() - new Date(iso).getTime();
@@ -1456,21 +1442,21 @@ function Button({ children, onClick, variant = "primary", size = "md", disabled,
    de acceso para el equipo, NO un sistema de autenticación de nivel
    empresarial (no hay servidor propio, recuperación de contraseña, etc.).
    ============================================================ */
-function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
+function AuthScreen({ onLogin, onRegister, error, busy }) {
   const [mode, setMode] = useState("login"); // login | register
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const hasAccounts = Object.keys(accounts).length > 0;
 
   const submit = () => {
-    if (!username.trim() || !password) return;
+    if (!email.trim() || !password) return;
     if (mode === "register") {
-      if (password !== password2) return;
-      onRegister(username.trim(), password);
+      if (!displayName.trim() || password !== password2) return;
+      onRegister(email.trim(), password, displayName.trim());
     } else {
-      onLogin(username.trim(), password);
+      onLogin(email.trim(), password);
     }
   };
 
@@ -1482,7 +1468,7 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
             <Gauge size={26} color="#fff" />
           </div>
           <h1 className="text-white text-lg font-semibold tracking-tight">Revisión Diaria de Equipos</h1>
-          <p className="text-sm" style={{ color: "#8fa3b8" }}>Pisos Mecánicos · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu usuario de operador"}</p>
+          <p className="text-sm" style={{ color: "#8fa3b8" }}>Pisos Mecánicos · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
         </div>
         <div className="rounded-xl p-5" style={{ background: C.panel }}>
           <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -1493,8 +1479,13 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
           </div>
 
           <div className="space-y-2.5">
-            <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Usuario"
-              autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username"
+            {mode === "register" && (
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Tu nombre completo"
+                autoComplete="name"
+                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            )}
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Correo" type="email"
+              autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="email"
               className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             <div className="relative">
               <input value={password} onChange={e => setPassword(e.target.value)} type={showPw ? "text" : "password"} placeholder="Contraseña"
@@ -1516,9 +1507,9 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
               <div className="text-xs" style={{ color: C.red }}>Las contraseñas no coinciden.</div>
             )}
             {error && <div className="text-xs" style={{ color: C.red }}>{error}</div>}
-            {mode === "register" && !hasAccounts && (
+            {mode === "register" && (
               <div className="text-xs rounded-md p-2" style={{ background: C.amberSoft, color: "#7a5405" }}>
-                Esta será la primera cuenta del sistema y quedará como <b>administrador</b>.
+                Tu cuenta queda pendiente de aprobación por un administrador (salvo que seas la primera persona en registrarse en todo el sistema).
               </div>
             )}
             <Button icon={mode === "login" ? User : PlusCircle} disabled={busy} onClick={submit} size="md">
@@ -1532,7 +1523,7 @@ function AuthScreen({ accounts, onLogin, onRegister, error, busy }) {
           </div>
         </div>
         <p className="text-center text-xs mt-4" style={{ color: "#657c92" }}>
-          Acceso básico por usuario y contraseña para identificar cada recorrido. No sustituye un sistema de seguridad corporativo.
+          Acceso por correo y contraseña para identificar cada recorrido. No sustituye un sistema de seguridad corporativo.
           Una vez inicias sesión en este navegador, queda recordada aquí — no hace falta volver a entrar cada vez que abres la página,
           salvo que borres los datos de navegación o uses una pestaña de incógnito.
         </p>
@@ -3171,7 +3162,7 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
             <select value={form.asignadoA} onChange={e => setForm(f => ({ ...f, asignadoA: e.target.value }))}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <option value="">Sin asignar</option>
-              {usernames.map(u => <option key={u} value={u}>{accounts[u]?.displayName || u}</option>)}
+              {usernames.map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
             </select>
             <select value={form.recurrencia} onChange={e => setForm(f => ({ ...f, recurrencia: e.target.value }))}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -3210,7 +3201,7 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
                 </div>
                 {t.descripcion && <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{t.descripcion}</div>}
                 <div className="text-xs mt-1" style={{ color: C.gray }}>
-                  Por {t.createdBy} · {fmtDT(t.createdAt)}{t.asignadoA ? ` · Asignado a ${accounts[t.asignadoA]?.displayName || t.asignadoA}` : ""}
+                  Por {t.createdBy} · {fmtDT(t.createdAt)}{t.asignadoA ? ` · Asignado a ${accounts[t.asignadoA]?.display_name || t.asignadoA}` : ""}
                   {t.recurrencia && ` · 🔁 Se repite ${t.recurrencia === "semanal" ? "cada semana" : "cada mes"}`}
                 </div>
               </div>
@@ -7813,14 +7804,14 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
   const [resettingUser, setResettingUser] = useState(null);
   const [newPw, setNewPw] = useState("");
   const [resetMsg, setResetMsg] = useState("");
-  const list = Object.entries(accounts).sort((a, b) => (a[1].createdAt || "").localeCompare(b[1].createdAt || ""));
-  const adminCount = list.filter(([, a]) => a.isAdmin).length;
+  const list = Object.entries(accounts).sort((a, b) => (a[1].created_at || "").localeCompare(b[1].created_at || ""));
+  const adminCount = list.filter(([, a]) => a.is_admin).length;
   const pending = list.filter(([, a]) => a.approved === false);
 
-  const doReset = async (uname) => {
+  const doReset = async (uid) => {
     if (!newPw || newPw.length < 4) { setResetMsg("La contraseña debe tener al menos 4 caracteres."); return; }
-    await onResetPassword(uname, newPw);
-    setResetMsg(`✓ Contraseña de "${uname}" actualizada. Avísale la nueva contraseña.`);
+    await onResetPassword(uid, newPw);
+    setResetMsg(`✓ Contraseña de "${accounts[uid]?.display_name || accounts[uid]?.email || uid}" actualizada. Avísale la nueva contraseña.`);
     setNewPw("");
     setTimeout(() => { setResettingUser(null); setResetMsg(""); }, 2500);
   };
@@ -7870,12 +7861,12 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.red }}>
             {pending.length} cuenta{pending.length !== 1 ? "s" : ""} esperando aprobación
           </div>
-          {pending.map(([uname, acc]) => (
-            <div key={uname} className="flex items-center justify-between gap-2 py-1.5 flex-wrap">
-              <div className="text-sm" style={{ color: C.ink }}>{acc.displayName || uname} <span style={{ color: C.gray }}>({uname})</span></div>
+          {pending.map(([uid, acc]) => (
+            <div key={uid} className="flex items-center justify-between gap-2 py-1.5 flex-wrap">
+              <div className="text-sm" style={{ color: C.ink }}>{acc.display_name || acc.email} <span style={{ color: C.gray }}>({acc.email})</span></div>
               <div className="flex items-center gap-2">
-                <Button size="sm" onClick={() => onApproveAccount(uname)}>Aprobar</Button>
-                <Button size="sm" variant="red" onClick={() => onRejectAccount(uname)}>Rechazar</Button>
+                <Button size="sm" onClick={() => onApproveAccount(uid)}>Aprobar</Button>
+                <Button size="sm" variant="red" onClick={() => onRejectAccount(uid)}>Rechazar</Button>
               </div>
             </div>
           ))}
@@ -7904,45 +7895,48 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
 
       <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Usuarios ({list.length})</div>
-        {list.map(([uname, acc]) => (
-          <div key={uname} className="py-2 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        {list.map(([uid, acc]) => (
+          <div key={uid} className="py-2 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <div className="text-sm font-medium" style={{ color: C.ink }}>{uname} {uname === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}</div>
-                <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.createdAt)}</div>
+                <div className="text-sm font-medium" style={{ color: C.ink }}>
+                  {acc.display_name || acc.email} {uid === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}
+                </div>
+                <div className="text-xs" style={{ color: C.gray }}>{acc.email}</div>
+                <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.created_at)}</div>
                 <div className="text-xs" style={{ color: C.gray }}>
                   {(() => {
-                    const entries = (loginLog || []).filter(l => l.username === uname);
+                    const entries = (loginLog || []).filter(l => l.userId === uid);
                     if (entries.length === 0) return "Nunca ha entrado";
                     return `Último ingreso: ${fmtDT(entries[0].at)} · ${entries.length} ingreso${entries.length !== 1 ? "s" : ""} en total`;
                   })()}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {acc.isAdmin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
-                {acc.isAlmacenista && <Pill tone="blue">Almacenista</Pill>}
-                {acc.isGerencia && <Pill tone="green">Gerencia</Pill>}
-                <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uname ? null : uname); setNewPw(""); setResetMsg(""); }}>
+                {acc.is_admin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
+                {acc.is_almacenista && <Pill tone="blue">Almacenista</Pill>}
+                {acc.is_gerencia && <Pill tone="green">Gerencia</Pill>}
+                <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uid ? null : uid); setNewPw(""); setResetMsg(""); }}>
                   Restablecer contraseña
                 </Button>
-                <Button size="sm" variant="ghost" disabled={acc.isAdmin && adminCount === 1} onClick={() => onToggleAdmin(uname)}>
-                  {acc.isAdmin ? "Quitar admin" : "Hacer admin"}
+                <Button size="sm" variant="ghost" disabled={acc.is_admin && adminCount === 1} onClick={() => onToggleAdmin(uid)}>
+                  {acc.is_admin ? "Quitar admin" : "Hacer admin"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => onToggleAlmacenista(uname)}>
-                  {acc.isAlmacenista ? "Quitar almacenista" : "Hacer almacenista"}
+                <Button size="sm" variant="ghost" onClick={() => onToggleAlmacenista(uid)}>
+                  {acc.is_almacenista ? "Quitar almacenista" : "Hacer almacenista"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => onToggleGerencia(uname)}>
-                  {acc.isGerencia ? "Quitar gerencia" : "Hacer gerencia (solo consulta)"}
+                <Button size="sm" variant="ghost" onClick={() => onToggleGerencia(uid)}>
+                  {acc.is_gerencia ? "Quitar gerencia" : "Hacer gerencia (solo consulta)"}
                 </Button>
-                <Button size="sm" variant="red" disabled={uname === currentUsername} onClick={() => onDeleteAccount(uname)}>Eliminar</Button>
+                <Button size="sm" variant="red" disabled={uid === currentUsername} onClick={() => onDeleteAccount(uid)}>Eliminar</Button>
               </div>
             </div>
-            {resettingUser === uname && (
+            {resettingUser === uid && (
               <div className="mt-2 flex items-center gap-2 flex-wrap">
                 <input value={newPw} onChange={e => setNewPw(e.target.value)} type="text" placeholder="Nueva contraseña (mínimo 4 caracteres)"
                   className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 220 }}
-                  onKeyDown={e => { if (e.key === "Enter") doReset(uname); }} />
-                <Button size="sm" onClick={() => doReset(uname)}>Guardar nueva contraseña</Button>
+                  onKeyDown={e => { if (e.key === "Enter") doReset(uid); }} />
+                <Button size="sm" onClick={() => doReset(uid)}>Guardar nueva contraseña</Button>
                 {resetMsg && <span className="text-xs" style={{ color: resetMsg.startsWith("✓") ? C.green : C.red }}>{resetMsg}</span>}
               </div>
             )}
@@ -7959,8 +7953,9 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [accounts, setAccounts] = useState({}); // { username: { passwordHash, isAdmin, createdAt } }
-  const [currentUser, setCurrentUser] = useState(null); // username string
+  const [profiles, setProfiles] = useState({}); // { [id de Supabase Auth]: { display_name, is_admin, is_almacenista, is_gerencia, approved, created_at, email } }
+  const [currentUser, setCurrentUser] = useState(null); // id de Supabase Auth (uuid), o null
+  const [authReady, setAuthReady] = useState(false); // true una vez ya se revisó si había sesión guardada
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [reportEmail, setReportEmail] = useState("");
@@ -8124,8 +8119,8 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [acc, sess, ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog] = await Promise.all([
-        sGet("accounts", true), sGet("session", false), sGet("active-issues", true),
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog] = await Promise.all([
+        sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
         sGet("report-whatsapp", true), sGet("last-tour", true), sGet("tour-history", true),
@@ -8145,7 +8140,6 @@ export default function App() {
         sGet("login-log", true),
         sGet("schedule-edit-log", true),
       ]);
-      setAccounts(acc || {});
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
       setRoundsIndex(ri || []);
@@ -8183,7 +8177,6 @@ export default function App() {
       setTrash(trs || []);
       setLoginLog(llog || []);
       setScheduleEditLog(schLog || []);
-      if (sess?.username && acc && acc[sess.username]) setCurrentUser(sess.username);
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);
@@ -8192,23 +8185,85 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  /** Trae los perfiles de TODOS los usuarios (para el Panel de administrador, listas, etc.) —
+   *  cualquiera con sesión iniciada puede verlos (ver política "profiles_select_authenticated"),
+   *  aunque su propia cuenta todavía no esté aprobada. */
+  const loadAllProfiles = useCallback(async () => {
+    const { data } = await supabase.from("profiles").select("*");
+    const map = {};
+    (data || []).forEach(p => { map[p.id] = p; });
+    setProfiles(map);
+    return map;
+  }, []);
 
-  const register = async (username, password) => {
+  /** Se llama cada vez que cambia la sesión de Supabase Auth (al abrir la app, al iniciar
+   *  sesión, al cerrarla, o si el token se refresca solo). Decide qué cargar según si hay
+   *  sesión y si esa cuenta ya está aprobada — para no intentar leer datos que las reglas de
+   *  Supabase van a rechazar de todas formas si la cuenta no está aprobada todavía. */
+  const handleAuthChange = useCallback(async (session) => {
+    if (!session?.user) {
+      setCurrentUser(null);
+      setProfiles({});
+      setLoading(false);
+      return;
+    }
+    setCurrentUser(session.user.id);
+    const map = await loadAllProfiles();
+    const mine = map[session.user.id];
+    if (mine?.approved) {
+      await loadAll();
+    } else {
+      setLoading(false); // cuenta todavía no aprobada: no se intenta cargar el resto de la app
+    }
+  }, [loadAllProfiles, loadAll]);
+
+  useEffect(() => {
+    let subscription;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      await handleAuthChange(session);
+      setAuthReady(true);
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => { handleAuthChange(newSession); });
+      subscription = sub.subscription;
+    })();
+    return () => { if (subscription) subscription.unsubscribe(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const register = async (email, password, fullName) => {
     setAuthError(""); setAuthBusy(true);
-    const key = username.toLowerCase();
-    if (accounts[key]) { setAuthError("Ese usuario ya existe. Elige otro o inicia sesión."); setAuthBusy(false); return; }
     try {
-      const { hash: passwordHash, salt: passwordSalt } = await hashPasswordSecure(password);
-      const isFirstEver = Object.keys(accounts).length === 0; // el primer usuario creado es admin, y queda aprobado de una
-      const next = { ...accounts, [key]: { displayName: username, passwordHash, passwordSalt, isAdmin: isFirstEver, approved: isFirstEver, createdAt: nowIso() } };
-      await sSet("accounts", next, true);
-      await sSet("session", { username: key }, false);
-      setAccounts(next);
-      setCurrentUser(key);
+      const { data, error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { display_name: fullName } },
+      });
+      if (error) {
+        setAuthError(
+          error.message?.includes("already registered") || error.message?.includes("already been registered")
+            ? "Ese correo ya tiene una cuenta. Inicia sesión en vez de crear una nueva."
+            : (error.message || "No se pudo crear la cuenta.")
+        );
+        setAuthBusy(false);
+        return;
+      }
+      const accessToken = data?.session?.access_token;
+      if (!accessToken) {
+        // Algunos proyectos de Supabase piden confirmar el correo antes de dar una sesión — en
+        // ese caso no hay token todavía para crear el perfil de una vez.
+        setAuthError("Cuenta creada. Si tu proyecto pide confirmar el correo, revisa tu bandeja antes de iniciar sesión.");
+        setAuthBusy(false);
+        return;
+      }
+      const profRes = await requestCreateProfile(accessToken);
+      if (!profRes.ok) {
+        setAuthError(profRes.message || "La cuenta se creó, pero no se pudo terminar de configurar. Intenta iniciar sesión.");
+        setAuthBusy(false);
+        return;
+      }
+      await handleAuthChange(data.session);
       setView("home");
-      if (!isFirstEver && pushSubscriptions.length > 0) {
-        sendPushToSubscriptions(pushSubscriptions, "👤 Cuenta nueva esperando aprobación", `"${username}" se registró y necesita que la aprueben.`, "/");
+      if (!profRes.isFirstEver && pushSubscriptions.length > 0) {
+        sendPushToSubscriptions(pushSubscriptions, "👤 Cuenta nueva esperando aprobación", `"${fullName}" se registró y necesita que la aprueben.`, "/");
       }
     } catch (e) {
       console.error("Error creando cuenta:", e);
@@ -8217,32 +8272,19 @@ export default function App() {
     setAuthBusy(false);
   };
 
-  const login = async (username, password) => {
+  const login = async (email, password) => {
     setAuthError(""); setAuthBusy(true);
-    const key = username.toLowerCase();
     try {
-      // Se vuelve a pedir la lista de cuentas fresca antes de decidir "usuario no encontrado",
-      // por si el estado en memoria quedó desactualizado (otro dispositivo creó la cuenta después
-      // de que esta pestaña cargó, o esta pestaña lleva mucho tiempo abierta).
-      const freshAccounts = (await sGet("accounts", true)) || {};
-      if (Object.keys(freshAccounts).length !== Object.keys(accounts).length) setAccounts(freshAccounts);
-      const acc = freshAccounts[key];
-      if (!acc) { setAuthError("Usuario no encontrado. ¿Necesitas crear una cuenta?"); setAuthBusy(false); return; }
-      const { ok, needsUpgrade } = await verifyPassword(password, acc);
-      if (!ok) { setAuthError("Contraseña incorrecta."); setAuthBusy(false); return; }
-      if (needsUpgrade) {
-        // Cuenta creada antes de la mejora de seguridad: se re-guarda ya con el formato seguro
-        // (con salt), sin que la persona tenga que hacer nada ni volver a escribir su contraseña.
-        const { hash: passwordHash, salt: passwordSalt } = await hashPasswordSecure(password);
-        const upgraded = { ...freshAccounts, [key]: { ...acc, passwordHash, passwordSalt } };
-        setAccounts(upgraded);
-        sSet("accounts", upgraded, true); // sin await, no hace falta atrasar el ingreso por esto
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setAuthError(error.message?.includes("Invalid login") ? "Correo o contraseña incorrectos." : (error.message || "No se pudo iniciar sesión."));
+        setAuthBusy(false);
+        return;
       }
-      await sSet("session", { username: key }, false);
-      setCurrentUser(key);
+      await handleAuthChange(data.session);
       setView("home");
       // Registra el ingreso para poder ver, como admin, quién está usando la app y con qué frecuencia.
-      const logEntry = { username: key, at: nowIso() };
+      const logEntry = { userId: data.session.user.id, at: nowIso() };
       const nextLog = [logEntry, ...loginLog].slice(0, 2000);
       setLoginLog(nextLog);
       sSet("login-log", nextLog, true); // no se espera (await) a propósito, para no atrasar el ingreso
@@ -8254,32 +8296,39 @@ export default function App() {
   };
 
   const updateMySignature = async (dataUrl) => {
-    const next = { ...accounts, [currentUser]: { ...accounts[currentUser], signature: dataUrl } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
+    await supabase.from("profiles").update({ signature: dataUrl }).eq("id", currentUser);
+    setProfiles(p => ({ ...p, [currentUser]: { ...p[currentUser], signature: dataUrl } }));
   };
 
   /** Guarda cuál empleado del Horario Mensual es "yo", para que "Mi horario" sepa cuáles turnos mostrar. */
   const updateMyLinkedEmployee = async (employeeId) => {
-    const next = { ...accounts, [currentUser]: { ...accounts[currentUser], linkedEmployeeId: employeeId } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
+    await supabase.from("profiles").update({ linked_employee_id: employeeId }).eq("id", currentUser);
+    setProfiles(p => ({ ...p, [currentUser]: { ...p[currentUser], linked_employee_id: employeeId } }));
   };
 
-  const approveAccount = async (username) => {
-    const next = { ...accounts, [username]: { ...accounts[username], approved: true } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
+  /** Estas cuatro pasan por el servidor (api/admin-actions.js) porque cambiar el rol o aprobar
+   *  a OTRA persona no se puede hacer directo desde el navegador — a propósito, para que ni
+   *  siquiera alguien con la clave pública pueda auto-asignarse un rol. El servidor comprueba
+   *  ahí, de verdad, que quien llama ya es un administrador aprobado. */
+  const callAdminAction = async (action, targetUserId, extra) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await requestAdminAction(session?.access_token, action, targetUserId, extra);
+    if (res.ok) await loadAllProfiles();
+    return res;
+  };
+  const approveAccount = (userId) => callAdminAction("approve", userId);
+  const rejectAccount = (userId) => callAdminAction("reject", userId);
+  const toggleAdmin = (userId) => callAdminAction("toggle-admin", userId);
+  const toggleAlmacenista = (userId) => callAdminAction("toggle-almacenista", userId);
+  const toggleGerencia = (userId) => callAdminAction("toggle-gerencia", userId);
+  const resetPassword = (userId, newPassword) => callAdminAction("reset-password", userId, { newPassword });
+  const deleteAccount = async (userId) => {
+    const data = profiles[userId];
+    if (data) await moveToTrash("account", { userId, ...data }, `${data.display_name || data.email || userId} (usuario)`);
+    return callAdminAction("delete", userId);
   };
 
-  const rejectAccount = async (username) => {
-    const next = { ...accounts };
-    delete next[username];
-    setAccounts(next);
-    await sSet("accounts", next, true);
-  };
-
-  const logout = async () => { setCurrentUser(null); await sSet("session", null, false); };
+  const logout = async () => { await supabase.auth.signOut(); setCurrentUser(null); setProfiles({}); };
 
   const saveReportEmail = async (email) => {
     setReportEmail(email);
@@ -8297,30 +8346,6 @@ export default function App() {
     await sSet("sent-reports", next, true);
   };
 
-  const toggleAdmin = async (username) => {
-    const next = { ...accounts, [username]: { ...accounts[username], isAdmin: !accounts[username].isAdmin } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
-  };
-
-  const toggleAlmacenista = async (username) => {
-    const next = { ...accounts, [username]: { ...accounts[username], isAlmacenista: !accounts[username].isAlmacenista } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
-  };
-
-  const toggleGerencia = async (username) => {
-    const next = { ...accounts, [username]: { ...accounts[username], isGerencia: !accounts[username].isGerencia } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
-  };
-
-  const resetPassword = async (username, newPassword) => {
-    const { hash: passwordHash, salt: passwordSalt } = await hashPasswordSecure(newPassword);
-    const next = { ...accounts, [username]: { ...accounts[username], passwordHash, passwordSalt } };
-    setAccounts(next);
-    await sSet("accounts", next, true);
-  };
   /* ---- Papelera ---- */
   const moveToTrash = async (tipo, data, label) => {
     const entry = { id: uid("trash"), tipo, data, label: label || data.titulo || data.nombre || data.displayName || data.username || "—", deletedBy: displayName, deletedAt: nowIso() };
@@ -8335,8 +8360,10 @@ export default function App() {
     if (entry.tipo === "task") {
       const next = [entry.data, ...tasks]; setTasks(next); await sSet("tasks", next, true);
     } else if (entry.tipo === "account") {
-      const { username, ...acc } = entry.data;
-      const next = { ...accounts, [username]: acc }; setAccounts(next); await sSet("accounts", next, true);
+      // Una cuenta eliminada no se puede "restaurar" sola — la persona tiene que volver a
+      // registrarse con su correo (el inicio de sesión de Supabase Auth ya no existe una vez
+      // se elimina). Esta entrada de la papelera queda solo como registro de quién era.
+      return;
     } else if (entry.tipo === "employee") {
       const next = [entry.data, ...employees]; setEmployees(next); await sSet("employees", next, true);
     } else if (entry.tipo === "mttoEquipo") {
@@ -8355,15 +8382,6 @@ export default function App() {
     const nextTrash = trash.filter(t => t.id !== trashId);
     setTrash(nextTrash);
     await sSet("trash", nextTrash, true);
-  };
-
-  const deleteAccount = async (username) => {
-    const data = { username, ...accounts[username] };
-    await moveToTrash("account", data, `${data.displayName || username} (usuario)`);
-    const next = { ...accounts };
-    delete next[username];
-    setAccounts(next);
-    await sSet("accounts", next, true);
   };
 
   const resolveIssue = async (iss, solution) => {
@@ -9219,17 +9237,17 @@ export default function App() {
   };
 
 
-  const account = accounts[currentUser] || {};
-  const displayName = account.displayName || currentUser;
-  const isAdmin = !!account.isAdmin;
-  const isAlmacenista = !!account.isAlmacenista;
-  const isGerencia = !!account.isGerencia;
+  const account = profiles[currentUser] || {};
+  const displayName = account.display_name || account.email || "—";
+  const isAdmin = !!account.is_admin;
+  const isAlmacenista = !!account.is_almacenista;
+  const isGerencia = !!account.is_gerencia;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista; // gerencia "pura": solo consulta
 
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
-  const pendingAccountsCount = useMemo(() => Object.values(accounts).filter(a => a.approved === false).length, [accounts]);
+  const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
     [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex]
@@ -9295,7 +9313,7 @@ export default function App() {
       </div>
     </div>
   );
-  if (!currentUser) return <AuthScreen accounts={accounts} onLogin={login} onRegister={register} error={authError} busy={authBusy} />;
+  if (!currentUser) return <AuthScreen onLogin={login} onRegister={register} error={authError} busy={authBusy} />;
 
   if (account.approved === false) {
     return (
@@ -9540,10 +9558,10 @@ export default function App() {
           )}
           {view === "profile" && (
             <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature}
-              employees={employees} linkedEmployeeId={account.linkedEmployeeId} onSetLinkedEmployee={updateMyLinkedEmployee} />
+              employees={employees} linkedEmployeeId={account.linked_employee_id} onSetLinkedEmployee={updateMyLinkedEmployee} />
           )}
           {view === "my-schedule" && (
-            <MyScheduleView employee={employees.find(e => e.id === account.linkedEmployeeId)} scheduleEntries={scheduleEntries} onGoToProfile={() => setView("profile")} />
+            <MyScheduleView employee={employees.find(e => e.id === account.linked_employee_id)} scheduleEntries={scheduleEntries} onGoToProfile={() => setView("profile")} />
           )}
           {view === "handoff" && (
             <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
@@ -9623,11 +9641,11 @@ export default function App() {
               onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onImportExcel={importScheduleFromParsedExcel} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "tasks" && (
-            <TasksView tasks={tasks} accounts={accounts} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
+            <TasksView tasks={tasks} accounts={profiles} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (
-            <AdminView accounts={accounts} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
+            <AdminView accounts={profiles} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
               onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
               onApproveAccount={approveAccount} onRejectAccount={rejectAccount} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />

@@ -8237,6 +8237,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Revisa cada 30 segundos si a la persona que tiene la app abierta le quitaron el acceso
+   * (la rechazaron, la eliminaron, o le quitaron la aprobación) — y si es así, la saca de la
+   * app de inmediato, sin esperar a que recargue la página. Sin esto, alguien que ya tenía la
+   * app abierta seguiría viendo (y en teoría manipulando) todo lo que ya se había cargado en su
+   * navegador, aunque su cuenta ya no exista del lado del servidor.
+   */
+  useEffect(() => {
+    if (!currentUser) return;
+    const check = async () => {
+      const { data } = await supabase.from("profiles").select("*").eq("id", currentUser).maybeSingle();
+      if (!data || !data.approved) {
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        setProfiles({});
+      } else {
+        setProfiles(p => ({ ...p, [currentUser]: data }));
+      }
+    };
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [currentUser]);
+
   const register = async (email, password, fullName) => {
     setAuthError(""); setAuthBusy(true);
     try {
@@ -9322,7 +9345,7 @@ export default function App() {
   );
   if (!currentUser) return <AuthScreen onLogin={login} onRegister={register} error={authError} busy={authBusy} />;
 
-  if (account.approved === false) {
+  if (!account.approved) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
         <div className="max-w-sm text-center rounded-xl border p-6" style={{ borderColor: C.line, background: C.panel }}>

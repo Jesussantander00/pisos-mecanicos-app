@@ -59,7 +59,14 @@ export default async function handler(req, res) {
       await supabaseAdmin.from("profiles").update({ approved: true }).eq("id", targetUserId);
     } else if (action === "reject" || action === "delete") {
       await supabaseAdmin.from("profiles").delete().eq("id", targetUserId);
-      await supabaseAdmin.auth.admin.deleteUser(targetUserId).catch(() => {}); // si ya no existe en Auth, no pasa nada
+      const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
+      if (delErr && delErr.status !== 404) {
+        // El perfil ya se borró, pero la cuenta de acceso (Supabase Auth) no se pudo eliminar —
+        // esto es importante avisarlo, porque significa que esa persona podría seguir teniendo
+        // una sesión válida por un rato más, aunque ya no tenga perfil ni permisos.
+        res.status(200).json({ ok: true, warning: "El perfil se eliminó, pero no se pudo borrar la cuenta de acceso del todo. Si esa persona tenía la app abierta, se le va a cerrar la sesión sola en menos de un minuto." });
+        return;
+      }
     } else if (action === "toggle-admin") {
       const { data: t } = await supabaseAdmin.from("profiles").select("is_admin").eq("id", targetUserId).maybeSingle();
       await supabaseAdmin.from("profiles").update({ is_admin: !t?.is_admin }).eq("id", targetUserId);

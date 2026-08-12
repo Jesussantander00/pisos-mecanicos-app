@@ -935,7 +935,7 @@ async function sendPushToSubscriptions(subscriptions, title, body, url) {
   try {
     await fetch("/api/send-push", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({ subscriptions, title, body, url }),
     });
   } catch (e) {
@@ -3286,7 +3286,7 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
       const base64 = bufferToBase64(out);
       const resp = await fetch("/api/send-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aiRequestHeaders(),
         body: JSON.stringify({
           to: emailTo.trim(),
           subject: `Movimientos de Inventario (Excel) — ${todayStr()}`,
@@ -3779,7 +3779,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
       const base64 = bufferToBase64(out);
       const resp = await fetch("/api/send-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aiRequestHeaders(),
         body: JSON.stringify({
           to: emailTo.trim(),
           subject: `Mantenimientos Realizados (Excel) — ${todayStr()}`,
@@ -4168,7 +4168,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
       const base64 = bufferToBase64(out);
       const resp = await fetch("/api/send-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aiRequestHeaders(),
         body: JSON.stringify({
           to: emailTo.trim(),
           subject: `Cronograma de Mantenimiento — ${sistemaFilter}`,
@@ -6293,7 +6293,7 @@ async function sendTourEmailAuto(to, tour, signatureDataUrl) {
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Entrega de turno ${tour.shift} - ${tour.date}`,
@@ -6320,7 +6320,7 @@ async function sendFullReportEmailAuto(to, latestValues, activeIssues, issueHist
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Informe de equipos - Pisos Mecánicos (${todayStr()})`,
@@ -6394,7 +6394,7 @@ async function sendWeeklySummaryEmailAuto(to, summaryText, weekLabel, generatedB
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to, subject: `Resumen semanal — Pisos Mecánicos (${weekLabel})`,
         text: summaryText, pdfBase64, filename: `resumen-semanal-${todayStr().replace(/\//g, "-")}.pdf`,
@@ -6930,7 +6930,7 @@ async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary, generatedB
     ];
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Análisis de fallas - Pisos Mecánicos (${todayStr()})`,
@@ -7079,7 +7079,7 @@ async function sendStockAlertsEmailAuto(to, low, generatedBy) {
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Lista de compras - Inventario (${todayStr()})`,
@@ -7192,7 +7192,7 @@ async function sendScheduleEmailAuto(to, monthLabel, employees, daysIso, entries
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Horario Mensual — ${monthLabel}`,
@@ -7266,7 +7266,7 @@ async function sendColdRoomsEmailAuto(to, record, signatureDataUrl) {
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Cuartos Fríos - ${record.date} (Turno ${record.shift})`,
@@ -7370,7 +7370,7 @@ async function sendColdRoomsWeekEmailAuto(to, grid, weekLabel, generatedBy, sign
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Cuartos Fríos — Semana ${weekLabel}`,
@@ -7498,7 +7498,7 @@ async function sendMetersWeekEmailAuto(to, grid, weekLabel, generatedBy, signatu
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Lecturas de Medidores — ${weekLabel}`,
@@ -7553,7 +7553,7 @@ async function sendMetersWeekExcelEmailAuto(to, grid, weekLabel) {
     const base64 = generateMetersWeekExcelBase64(grid, weekLabel);
     const resp = await fetch("/api/send-report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: aiRequestHeaders(),
       body: JSON.stringify({
         to,
         subject: `Lecturas de Medidores (Excel) — ${weekLabel}`,

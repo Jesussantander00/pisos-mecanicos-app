@@ -14,6 +14,18 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Barrera básica: si se configuró APP_SHARED_SECRET en Vercel, solo se atienden pedidos que
+  // manden ese mismo valor en el encabezado x-app-secret (la app ya lo manda sola, ver App.jsx).
+  // Sin esto, cualquiera que encontrara esta URL podría usar TU cuenta de Resend para mandar
+  // correo a cualquier destino con cualquier adjunto — un riesgo real de que usen tu dominio
+  // verificado para spam o phishing. No es un secreto perfecto (vive en el código del
+  // navegador), pero sí frena el abuso casual/automatizado.
+  const expectedSecret = process.env.APP_SHARED_SECRET;
+  if (expectedSecret && req.headers["x-app-secret"] !== expectedSecret) {
+    res.status(401).json({ ok: false, message: "No autorizado." });
+    return;
+  }
+
   const { to, subject, text, pdfBase64, attachmentBase64, filename } = req.body || {};
   const fileBase64 = attachmentBase64 || pdfBase64; // acepta cualquiera de los dos nombres, para no romper llamadas existentes
 
@@ -73,4 +85,3 @@ export default async function handler(req, res) {
     res.status(500).json({ ok: false, message: "No se pudo conectar con el servicio de correo (Resend)." });
   }
 }
-

@@ -15,6 +15,17 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Barrera básica: si se configuró APP_SHARED_SECRET en Vercel, solo se atienden pedidos que
+  // manden ese mismo valor en el encabezado x-app-secret (la app ya lo manda sola, ver App.jsx).
+  // Sin esto, cualquiera que encontrara esta URL y consiguiera suscripciones reales (por ejemplo,
+  // porque las reglas de Supabase dejan leer "push-subscriptions" sin restricción) podría mandar
+  // notificaciones falsas a los celulares de tus administradores.
+  const expectedSecret = process.env.APP_SHARED_SECRET;
+  if (expectedSecret && req.headers["x-app-secret"] !== expectedSecret) {
+    res.status(401).json({ ok: false, message: "No autorizado." });
+    return;
+  }
+
   const { subscriptions, title, body, url } = req.body || {};
 
   if (!Array.isArray(subscriptions) || subscriptions.length === 0) {

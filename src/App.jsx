@@ -8514,7 +8514,17 @@ export default function App() {
   const [tourHistory, setTourHistory] = useState([]);
   const [justFinished, setJustFinished] = useState(false);
   const [autoSendResult, setAutoSendResult] = useState(null);
-  const tourBufferRef = useRef({}); // acumula lo guardado piso por piso durante el recorrido en curso
+  const tourBufferRef = useRef((() => {
+    // Si el recorrido se interrumpió a mitad de camino (se cerró la sesión sola, se recargó la
+    // página sin querer, etc.), esto lo recupera — así no toca empezar de cero ni se pierde la
+    // entrega de turno por un corte que no tuvo nada que ver con lo que ya se había guardado.
+    try {
+      const saved = localStorage.getItem("pm-local:tour-buffer");
+      if (!saved) return {};
+      const parsed = JSON.parse(saved);
+      return parsed.date === todayStr() && parsed.shift === shift ? parsed.buffer : {};
+    } catch { return {}; }
+  })()); // acumula lo guardado piso por piso durante el recorrido en curso
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -8652,7 +8662,9 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     const check = async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("id", currentUser).maybeSingle();
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", currentUser).maybeSingle();
+      if (error) return; // no se pudo revisar (sin señal, hotel wifi cortándose, etc.) — nunca se saca
+                          // a nadie por un problema de conexión, solo cuando de verdad ya no está aprobado
       if (!data || !data.approved) {
         await supabase.auth.signOut();
         setCurrentUser(null);
@@ -9534,6 +9546,9 @@ export default function App() {
         return acc;
       }, []),
     };
+    // Se guarda en este celular por si algo interrumpe la sesión antes de terminar el recorrido
+    // completo (ver la restauración al inicio de tourBufferRef) — así no se pierde lo ya hecho.
+    try { localStorage.setItem("pm-local:tour-buffer", JSON.stringify({ date: todayStr(), shift, buffer: tourBufferRef.current })); } catch { /* noop */ }
 
     // Si se guardó el último piso, el recorrido quedó completo: se arma y guarda la entrega de turno.
     if (floorIdx === FLOORS.length - 1) {
@@ -9554,6 +9569,7 @@ export default function App() {
         sSet("tour-history", newTourHistory, true),
       ]);
       tourBufferRef.current = {};
+      try { localStorage.removeItem("pm-local:tour-buffer"); } catch { /* noop */ }
       setView("handoff");
 
       // Envío automático real: si hay un correo configurado, se manda solo, con el PDF

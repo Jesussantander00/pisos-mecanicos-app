@@ -8,7 +8,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -1250,6 +1250,17 @@ const DEFAULT_STANDING_RULES = `- Quintana Jesus Daniel: descansa todos los sáb
 - Turnistas en general: máximo 1 domingo trabajado al mes cada uno, y se alternan entre sí — un domingo trabaja uno, el siguiente domingo trabaja otro (no el mismo dos domingos seguidos).
 - Cada domingo debe quedar cubierto por UN SOLO turnista (no varios al tiempo), más un turno de apoyo intermedio aparte de 9:00 a.m. a 5:30 p.m. ese mismo día.
 - Esalas Felix Jose y Durant Zarith Elias: no pueden coincidir trabajando el mismo domingo — se alternan entre ellos (mientras uno trabaja un domingo, el otro descansa ese domingo, y al siguiente domingo se cambian).`;
+
+/** Se precarga la primera vez que alguien abre "Novedades", con un resumen de lo construido
+ *  hasta ahora — de ahí en adelante, el admin agrega las suyas desde la misma pantalla. */
+const DEFAULT_CHANGELOG_SEED = [
+  { id: "cl-seed-6", title: "Cuentas y seguridad reforzadas", description: "Ahora se entra con correo y contraseña de verdad (Supabase Auth), con aprobación del admin. La base de datos, el correo y las notificaciones push ya exigen una sesión real — antes de esto, cualquiera con la clave pública podía leer o escribir todo.", at: "2026-08-12T20:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-5", title: "Cambio a Gemini para las funciones de IA", description: "Lectura de medidores por foto y horario mensual con IA ahora corren en Gemini en vez de Claude, para aprovechar la capa gratis.", at: "2026-08-11T23:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-4", title: "Horario Mensual con IA", description: "Generación automática del horario a partir de reglas escritas en español, respetando reglas generales guardadas, con revisión antes de guardar.", at: "2026-08-11T18:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-3", title: "Resumen semanal y sugerencias de reorden con IA", description: "Un correo semanal redactado por IA con lo que pasó, y avisos de qué repuestos se van a agotar pronto según el consumo.", at: "2026-08-12T02:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-2", title: "Modo sin señal mejorado", description: "Las fotos de mantenimiento ya no se pierden si falla la conexión — se guardan y suben solas apenas vuelva la señal.", at: "2026-08-12T01:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-1", title: "Mi horario y accesos rápidos", description: "Cada quien puede ver solo sus propios turnos, y hay botones grandes en Inicio para las acciones más comunes.", at: "2026-08-12T00:00:00.000Z", by: "Sistema" },
+];
 
 function isHoliday2026(dateIso) { return COLOMBIA_HOLIDAYS_2026.includes(dateIso); }
 function isSundayOrHoliday(dateIso) {
@@ -2777,11 +2788,13 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
   );
 }
 
-function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem, onRetiro, onEntrada }) {
+function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem, onRetiro, onEntrada, onEditItem }) {
   const [showNewItem, setShowNewItem] = useState(false);
   const [form, setForm] = useState({ name: "", sku: "", unit: "unidad", quantity: "", minThreshold: "" });
   const [busyId, setBusyId] = useState(null);
   const [qtyDraft, setQtyDraft] = useState({});
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   const doCreateItem = async () => {
     if (!form.name.trim()) return;
@@ -2792,6 +2805,12 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
 
   const openMove = (itemId, mode) => setQtyDraft(prev => ({ ...prev, [itemId]: { mode, qty: "", note: "" } }));
   const closeMove = (itemId) => setQtyDraft(prev => { const n = { ...prev }; delete n[itemId]; return n; });
+
+  const openEdit = (item) => { setEditingId(item.id); setEditForm({ name: item.name, sku: item.sku || "", unit: item.unit, minThreshold: item.minThreshold }); };
+  const doSaveEdit = async (id) => {
+    await onEditItem(id, { name: editForm.name.trim(), sku: editForm.sku.trim(), unit: editForm.unit.trim() || "unidad", minThreshold: Number(editForm.minThreshold) || 0 });
+    setEditingId(null);
+  };
 
   const doMove = async (item) => {
     const draft = qtyDraft[item.id];
@@ -2849,8 +2868,11 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
           <div key={item.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: low ? C.red : C.line, background: low ? C.redSoft : C.panel }}>
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
-                <div className="text-sm font-medium" style={{ color: C.ink }}>
+                <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
                   {item.name}{item.sku ? <span style={{ color: C.gray }}> · {item.sku}</span> : ""}
+                  {canManage && (
+                    <button onClick={() => openEdit(item)} className="p-0.5"><Pencil size={12} color={C.gray} /></button>
+                  )}
                 </div>
                 <div className="text-xs" style={{ color: C.gray }}>Mínimo: {item.minThreshold} {item.unit}</div>
                 {low && <div className="text-xs font-semibold mt-0.5" style={{ color: C.red }}>⚠ Stock bajo — hay que reponer</div>}
@@ -2859,6 +2881,25 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
                 {item.quantity} <span className="text-xs font-normal" style={{ color: C.gray }}>{item.unit}</span>
               </div>
             </div>
+
+            {editingId === item.id && (
+              <div className="rounded-md p-2 mt-2" style={{ background: C.bg }}>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre"
+                    className="text-sm border rounded-md px-2 py-1 outline-none col-span-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <input value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} placeholder="Código / SKU"
+                    className="text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <input value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} placeholder="Unidad"
+                    className="text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <input type="number" min={0} value={editForm.minThreshold} onChange={e => setEditForm(f => ({ ...f, minThreshold: e.target.value }))} placeholder="Mínimo"
+                    className="text-sm border rounded-md px-2 py-1 outline-none col-span-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={() => doSaveEdit(item.id)}>Guardar cambios</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
 
             {!draft && (
               <div className="flex items-center gap-2 mt-2">
@@ -2884,7 +2925,7 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
   );
 }
 
-function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, onImportInventory, onDeleteBodega, onDeleteShelf, initialShelfId, onConsumedInitialShelf }) {
+function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, onEditItem, onImportInventory, onDeleteBodega, onDeleteShelf, initialShelfId, onConsumedInitialShelf }) {
   const [selectedBodegaId, setSelectedBodegaId] = useState(null);
   const [selectedShelfId, setSelectedShelfId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -2904,7 +2945,7 @@ function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onC
     return (
       <ShelfDetailView bodega={bodegaForShelf} shelf={shelf} items={invItems.filter(i => i.shelfId === shelf.id)}
         canManage={canManage} onBack={() => setSelectedShelfId(null)}
-        onCreateItem={onCreateItem} onRetiro={onRetiro} onEntrada={onEntrada} />
+        onCreateItem={onCreateItem} onRetiro={onRetiro} onEntrada={onEntrada} onEditItem={onEditItem} />
     );
   }
 
@@ -5406,6 +5447,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks },
     { id: "profile", label: "Mi Perfil", icon: User, desc: "Tu firma para la entrega de turno", access: true },
+    { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
@@ -5413,6 +5455,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
+    { id: "general-history", label: "Historial de cambios", icon: History, desc: "Ediciones en empleados e inventario", access: isAdmin },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
   return (
@@ -5484,7 +5527,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 /* ============================================================
    VISTA: EQUIPOS FUERA DE SERVICIO
    ============================================================ */
-function IssuesView({ activeIssues, onResolve, onCheckIn }) {
+function IssuesView({ activeIssues, onResolve, onCheckIn, onAttachPhoto }) {
   const list = Object.values(activeIssues).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt));
   return (
     <div>
@@ -5496,15 +5539,37 @@ function IssuesView({ activeIssues, onResolve, onCheckIn }) {
           <div className="text-sm font-medium" style={{ color: C.green }}>No hay equipos reportados como dañados. Todo en orden.</div>
         </div>
       )}
-      {list.map(iss => <IssueResolveCard key={iss.equipmentId} iss={iss} onResolve={onResolve} onCheckIn={onCheckIn} />)}
+      {list.map(iss => <IssueResolveCard key={iss.equipmentId} iss={iss} onResolve={onResolve} onCheckIn={onCheckIn} onAttachPhoto={onAttachPhoto} />)}
     </div>
   );
 }
 
-function IssueResolveCard({ iss, onResolve, onCheckIn }) {
+function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
   const [open, setOpen] = useState(false);
   const [solution, setSolution] = useState("");
+  const [afterPhotoFile, setAfterPhotoFile] = useState(null);
+  const [afterPhotoPreview, setAfterPhotoPreview] = useState(null);
+  const [uploadingBefore, setUploadingBefore] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const checkins = iss.checkins || [];
+
+  const doAttachBefore = async (file) => {
+    if (!file) return;
+    setUploadingBefore(true);
+    try { await onAttachPhoto(iss.equipmentId, file); } catch { /* se puede intentar de nuevo */ }
+    setUploadingBefore(false);
+  };
+
+  const doResolve = async () => {
+    setResolving(true);
+    let afterUrl = null;
+    try {
+      if (afterPhotoFile) afterUrl = await uploadPhoto(afterPhotoFile, `issue-${iss.equipmentId}`);
+    } catch { /* si falla la foto, igual se guarda la resolución */ }
+    await onResolve(iss, solution.trim(), afterUrl);
+    setOpen(false); setSolution(""); setAfterPhotoFile(null); setAfterPhotoPreview(null); setResolving(false);
+  };
+
   return (
     <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -5525,6 +5590,17 @@ function IssueResolveCard({ iss, onResolve, onCheckIn }) {
               ))}
             </div>
           )}
+          <div className="mt-2">
+            {iss.beforePhotoUrl ? (
+              <img src={iss.beforePhotoUrl} alt="Foto del daño" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />
+            ) : (
+              <label className="text-xs font-medium px-2 py-1 rounded-md cursor-pointer inline-flex items-center gap-1" style={{ background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
+                <Camera size={12} /> {uploadingBefore ? "Subiendo…" : "Agregar foto del daño"}
+                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploadingBefore}
+                  onChange={e => doAttachBefore(e.target.files?.[0])} />
+              </label>
+            )}
+          </div>
         </div>
         {!open && (
           <div className="flex items-center gap-2">
@@ -5534,13 +5610,26 @@ function IssueResolveCard({ iss, onResolve, onCheckIn }) {
         )}
       </div>
       {open && (
-        <div className="flex items-center gap-2 mt-2">
-          <input value={solution} onChange={e => setSolution(e.target.value)} placeholder="Solución aplicada…"
-            className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-          <VoiceInputButton onResult={text => setSolution(s => (s ? s + " " : "") + text)} />
-          <Button size="sm" icon={CheckCircle2} disabled={!solution.trim()}
-            onClick={() => { onResolve(iss, solution.trim()); setOpen(false); setSolution(""); }}>Confirmar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+        <div className="mt-2">
+          <div className="flex items-center gap-2">
+            <input value={solution} onChange={e => setSolution(e.target.value)} placeholder="Solución aplicada…"
+              className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <VoiceInputButton onResult={text => setSolution(s => (s ? s + " " : "") + text)} />
+          </div>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <label className="text-xs font-medium px-2 py-1 rounded-md cursor-pointer inline-flex items-center gap-1" style={{ background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
+              <Camera size={12} /> {afterPhotoFile ? "Cambiar foto de la reparación" : "Foto de la reparación (opcional)"}
+              <input type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; setAfterPhotoFile(f || null); setAfterPhotoPreview(f ? URL.createObjectURL(f) : null); }} />
+            </label>
+            {afterPhotoPreview && <img src={afterPhotoPreview} alt="Vista previa" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 80, maxHeight: 60 }} />}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <Button size="sm" icon={CheckCircle2} disabled={!solution.trim() || resolving} onClick={doResolve}>
+              {resolving ? "Guardando…" : "Confirmar"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+          </div>
         </div>
       )}
     </div>
@@ -5550,6 +5639,30 @@ function IssueResolveCard({ iss, onResolve, onCheckIn }) {
 /* ============================================================
    VISTA: HISTORIAL / REPORTES
    ============================================================ */
+/**
+ * Comparador de fotos antes/después con un deslizador — arrastras la barra para revelar más de
+ * una foto u otra. Solo CSS, sin librerías externas: la foto "después" está encima con su ancho
+ * recortado según la posición del deslizador, y debajo se ve la de "antes" completa.
+ */
+function BeforeAfterSlider({ beforeUrl, afterUrl }) {
+  const [pos, setPos] = useState(50); // % de la izquierda que muestra la foto de "después"
+  return (
+    <div>
+      <div className="relative rounded-md overflow-hidden select-none" style={{ maxWidth: 320, aspectRatio: "4/3", background: "#000" }}>
+        <img src={beforeUrl} alt="Antes" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+        <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos}%` }}>
+          <img src={afterUrl} alt="Después" className="h-full object-cover" style={{ width: "320px", maxWidth: "none" }} draggable={false} />
+        </div>
+        <div className="absolute top-0 bottom-0" style={{ left: `${pos}%`, width: 2, background: "#fff", transform: "translateX(-1px)" }} />
+        <div className="absolute top-1.5 left-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>Después</div>
+        <div className="absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>Antes</div>
+      </div>
+      <input type="range" min={0} max={100} value={pos} onChange={e => setPos(Number(e.target.value))}
+        className="w-full mt-1" style={{ maxWidth: 320 }} />
+    </div>
+  );
+}
+
 function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mttoLog, mttoEquipos, reportEmail, reportWhatsapp, onOpenPrint, sentReports, onLogSent, currentUser }) {
   const [tab, setTab] = useState("incidentes");
   const [q, setQ] = useState("");
@@ -5566,6 +5679,11 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
   const [weeklyError, setWeeklyError] = useState(null);
   const [weeklySending, setWeeklySending] = useState(false);
   const [weeklySendMsg, setWeeklySendMsg] = useState(null);
+
+  // ---- Reporte personalizado ----
+  const [customSections, setCustomSections] = useState(["activos", "resueltos"]);
+  const [customBusy, setCustomBusy] = useState(false);
+  const [customMsg, setCustomMsg] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setWaTo(reportWhatsapp || ""); }, [reportWhatsapp]);
@@ -5650,6 +5768,27 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
     setWeeklySending(false);
   };
 
+  const toggleCustomSection = (id) => setCustomSections(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  const customReportData = { activeIssues, issueHistory, roundsIndex, latestValues, mttoLog, mttoEquipos };
+  const doDownloadCustom = async () => {
+    if (customSections.length === 0) { setCustomMsg({ ok: false, text: "Elige al menos una sección." }); return; }
+    setCustomBusy(true); setCustomMsg(null);
+    try {
+      const doc = await generateCustomReportPdf(customSections, customReportData, currentUser);
+      doc.save(`reporte-personalizado-${todayStr().replace(/\//g, "-")}.pdf`);
+    } catch { setCustomMsg({ ok: false, text: "No se pudo generar el PDF." }); }
+    setCustomBusy(false);
+  };
+  const doSendCustom = async () => {
+    if (customSections.length === 0) { setCustomMsg({ ok: false, text: "Elige al menos una sección." }); return; }
+    if (!emailTo.trim()) { setCustomMsg({ ok: false, text: "Escribe un correo destino arriba." }); return; }
+    setCustomBusy(true); setCustomMsg(null);
+    const res = await sendCustomReportEmailAuto(emailTo.trim(), customSections, customReportData, currentUser);
+    setCustomMsg({ ok: res.ok, text: res.message });
+    onLogSent({ to: emailTo.trim(), method: "Reporte personalizado", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
+    setCustomBusy(false);
+  };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Reportes</h2>
@@ -5722,6 +5861,25 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
         )}
       </div>
 
+      <div className="rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Reporte personalizado</div>
+        <p className="text-xs mb-2" style={{ color: C.gray }}>Elige qué secciones incluir, en vez de los formatos fijos de siempre.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {CUSTOM_REPORT_SECTIONS.map(s => (
+            <label key={s.id} className="text-xs font-medium px-2.5 py-1.5 rounded-md cursor-pointer select-none flex items-center gap-1.5"
+              style={{ background: customSections.includes(s.id) ? C.amberSoft : C.bg, color: customSections.includes(s.id) ? "#7a5405" : C.inkSoft, border: `1px solid ${customSections.includes(s.id) ? C.amber : C.line}` }}>
+              <input type="checkbox" checked={customSections.includes(s.id)} onChange={() => toggleCustomSection(s.id)} className="accent-current" />
+              {s.label}
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="ghost" icon={Download} disabled={customBusy} onClick={doDownloadCustom}>Descargar PDF</Button>
+          <Button size="sm" icon={Mail} disabled={customBusy} onClick={doSendCustom}>{customBusy ? "…" : "Enviar por correo (al de arriba)"}</Button>
+        </div>
+        {customMsg && <div className="text-xs mt-2" style={{ color: customMsg.ok ? C.green : C.red }}>{customMsg.text}</div>}
+      </div>
+
       <div className="flex items-center gap-2 mb-3 flex-wrap mt-3">
         <Button size="sm" variant={tab === "incidentes" ? "primary" : "ghost"} onClick={() => setTab("incidentes")}>Historial de incidentes</Button>
         <Button size="sm" variant={tab === "rondas" ? "primary" : "ghost"} onClick={() => setTab("rondas")}>Rondas registradas</Button>
@@ -5747,6 +5905,17 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
                 <div><b>Reportado:</b> {fmtDT(h.openedAt)} por {h.openedBy}<br /><span className="italic">"{h.observation}"</span></div>
                 <div><b>Resuelto:</b> {fmtDT(h.resolvedAt)} por {h.resolvedBy}<br /><span className="italic">"{h.solution}"</span></div>
               </div>
+              {h.beforePhotoUrl && h.afterPhotoUrl && (
+                <div className="mt-2">
+                  <BeforeAfterSlider beforeUrl={h.beforePhotoUrl} afterUrl={h.afterPhotoUrl} />
+                </div>
+              )}
+              {(h.beforePhotoUrl || h.afterPhotoUrl) && !(h.beforePhotoUrl && h.afterPhotoUrl) && (
+                <div className="mt-2 flex gap-2">
+                  {h.beforePhotoUrl && <img src={h.beforePhotoUrl} alt="Antes" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />}
+                  {h.afterPhotoUrl && <img src={h.afterPhotoUrl} alt="Después" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -6135,6 +6304,113 @@ function pdfTable(doc, y, head, body, opts = {}) {
   });
   return doc.lastAutoTable.finalY + 8;
 }
+/**
+ * Reporte "arma el tuyo": el usuario elige qué secciones incluir (en vez de los formatos fijos
+ * de siempre) — útil para pedidos puntuales de gerencia que no necesitan todo el informe completo.
+ */
+const CUSTOM_REPORT_SECTIONS = [
+  { id: "activos", label: "Equipos fuera de servicio ahora" },
+  { id: "resueltos", label: "Incidentes resueltos recientes" },
+  { id: "mantenimiento", label: "Mantenimientos recientes (correctivos)" },
+  { id: "rondas", label: "Rondas registradas (resumen)" },
+  { id: "detalle", label: "Detalle completo por piso y equipo" },
+];
+
+async function generateCustomReportPdf(selectedIds, { activeIssues, issueHistory, roundsIndex, latestValues, mttoLog, mttoEquipos }, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const pageH = doc.internal.pageSize.getHeight();
+  const sectionLabels = CUSTOM_REPORT_SECTIONS.filter(s => selectedIds.includes(s.id)).map(s => s.label);
+  let y = pdfLetterhead(doc, "Reporte Personalizado", [`Generado ${fmtDT(nowIso())}`, `Por ${generatedBy || "—"}`, `Incluye: ${sectionLabels.join(", ")}`]);
+
+  const ensureSpace = (min) => { if (y > pageH - min) { doc.addPage(); y = 18; } };
+  const equipoNombre = (id) => (mttoEquipos || []).find(e => e.id === id)?.nombre || "Equipo";
+
+  if (selectedIds.includes("activos")) {
+    const active = Object.values(activeIssues || {});
+    ensureSpace(40);
+    y = pdfSectionTitle(doc, y, `Equipos fuera de servicio ahora (${active.length})`, { color: PDF_C.red });
+    if (active.length === 0) { doc.setFontSize(9); doc.text("Ninguno. Todo en orden.", 14, y); y += 8; }
+    else y = pdfTable(doc, y, ["Piso", "#", "Equipo", "Reportado por", "Desde", "Observación"],
+      active.map(iss => [iss.floorName, String(iss.code), iss.name, iss.openedBy, fmtDT(iss.openedAt), iss.observation || "—"]),
+      { headColor: PDF_C.red, columnStyles: { 1: { cellWidth: 8 } } });
+  }
+
+  if (selectedIds.includes("resueltos")) {
+    ensureSpace(40);
+    y = pdfSectionTitle(doc, y, "Incidentes resueltos recientes");
+    const list = (issueHistory || []).slice(0, 25);
+    if (list.length === 0) { doc.setFontSize(9); doc.text("Sin registros.", 14, y); y += 8; }
+    else y = pdfTable(doc, y, ["Piso", "#", "Equipo", "Dañado", "Resuelto", "Duración", "Solución"],
+      list.map(h => [h.floorName, String(h.code), h.name, fmtDT(h.openedAt), fmtDT(h.resolvedAt), h.duration, h.solution || "—"]),
+      { columnStyles: { 1: { cellWidth: 8 } } });
+  }
+
+  if (selectedIds.includes("mantenimiento")) {
+    ensureSpace(40);
+    y = pdfSectionTitle(doc, y, "Mantenimientos recientes (correctivos)");
+    const list = (mttoLog || []).filter(m => m.tipo === "correctivo").slice(0, 25);
+    if (list.length === 0) { doc.setFontSize(9); doc.text("Sin registros.", 14, y); y += 8; }
+    else y = pdfTable(doc, y, ["Fecha", "Equipo", "Descripción", "Costo", "Por"],
+      list.map(m => [fmtDT(m.fecha || m.createdAt), equipoNombre(m.equipoId), m.descripcion || "—", m.costo ? `$${m.costo}` : "—", m.createdBy || "—"]));
+  }
+
+  if (selectedIds.includes("rondas")) {
+    ensureSpace(40);
+    y = pdfSectionTitle(doc, y, "Rondas registradas (resumen)");
+    const list = (roundsIndex || []).slice(0, 30);
+    if (list.length === 0) { doc.setFontSize(9); doc.text("Sin registros.", 14, y); y += 8; }
+    else y = pdfTable(doc, y, ["Fecha", "Piso", "Turno", "Por", "Ítems", "Dañados"],
+      list.map(r => [r.date, r.floorName, r.shift || "—", r.user, String(r.itemCount || 0), String(r.damagedCount || 0)]));
+  }
+
+  if (selectedIds.includes("detalle")) {
+    doc.addPage(); y = 18;
+    y = pdfSectionTitle(doc, y, "Detalle completo por piso y equipo");
+    FLOORS.forEach(floor => {
+      ensureSpace(45);
+      y = pdfSectionTitle(doc, y, floor.name);
+      const rows = floor.items.map(item => {
+        const lv = latestValues[item.id];
+        const dmg = activeIssues[item.id];
+        let valueStr = "Sin datos registrados";
+        if (lv) {
+          const parts = [];
+          if (lv.status) parts.push(lv.status);
+          if (lv.value !== undefined && lv.value !== "") parts.push(`${lv.value}${item.u ? " " + item.u : ""}`);
+          if (parts.length) valueStr = parts.join(" · ");
+        }
+        return [String(item.c), item.n, valueStr + (dmg ? "  [FUERA DE SERVICIO]" : ""), lv?.observation || dmg?.observation || "—"];
+      });
+      y = pdfTable(doc, y, ["#", "Equipo", "Última lectura", "Observación"], rows, { columnStyles: { 0: { cellWidth: 8 } } });
+    });
+  }
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
+async function sendCustomReportEmailAuto(to, selectedIds, data, generatedBy) {
+  try {
+    const doc = await generateCustomReportPdf(selectedIds, data, generatedBy);
+    const pdfBase64 = await pdfDocToBase64(doc);
+    const resp = await fetch("/api/send-report", {
+      method: "POST",
+      headers: await authHeaders(),
+      body: JSON.stringify({
+        to, subject: `Reporte personalizado — Pisos Mecánicos (${todayStr()})`,
+        text: "Se adjunta el reporte personalizado que armaste.", pdfBase64,
+        filename: `reporte-personalizado-${todayStr().replace(/\//g, "-")}.pdf`,
+      }),
+    });
+    const dataRes = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: dataRes?.message || "El servidor rechazó el envío." };
+    return dataRes;
+  } catch {
+    return { ok: false, message: "No se pudo generar o enviar el reporte. Revisa la conexión e intenta de nuevo." };
+  }
+}
+
 async function generateFullReportPdf(latestValues, activeIssues, issueHistory, roundsIndex, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
@@ -6521,10 +6797,105 @@ function SignaturePad({ onChange }) {
 /* ============================================================
    VISTA: MI PERFIL (firma guardada, se usa sola en cada entrega de turno)
    ============================================================ */
-function ProfileView({ currentUser, mySignature, onSaveSignature, employees, linkedEmployeeId, onSetLinkedEmployee }) {
+/**
+ * Muestra las novedades de la app — para que el equipo sepa qué es nuevo sin que tengas que
+ * avisarles uno por uno. Cualquiera puede verlas; solo el admin puede agregar una nueva.
+ */
+/** Historial de cambios de empleados e inventario — quién cambió qué, antes y después. */
+function GeneralHistoryView({ entries }) {
+  const [filter, setFilter] = useState("all"); // all | empleado | inventario
+  const filtered = filter === "all" ? entries : entries.filter(e => e.kind === filter);
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Historial de cambios</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Ediciones en empleados e inventario, más reciente primero.</p>
+
+      <div className="flex items-center gap-2 mb-3">
+        {[["all", "Todo"], ["empleado", "Empleados"], ["inventario", "Inventario"]].map(([id, label]) => (
+          <button key={id} onClick={() => setFilter(id)} className="text-xs px-2.5 py-1 rounded-full border"
+            style={{ borderColor: filter === id ? C.amber : C.line, background: filter === id ? C.amberSoft : C.panel, color: filter === id ? "#7a5405" : C.inkSoft }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm py-8 text-center" style={{ color: C.gray }}>No hay cambios registrados todavía.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {filtered.slice(0, 300).map(e => (
+            <div key={e.id} className="text-xs rounded-md px-2 py-1.5" style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.ink }}>
+              <b>{e.by}</b> cambió <span style={{ color: C.inkSoft }}>{e.field}</span> de <b>{e.entityLabel}</b>:{" "}
+              <span style={{ color: C.gray }}>{e.before}</span> → <span style={{ color: C.amber, fontWeight: 600 }}>{e.after}</span>
+              <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded" style={{ background: e.kind === "empleado" ? "#e0ecff" : "#dff5e3", color: e.kind === "empleado" ? "#1e4fa3" : "#1c7a34" }}>
+                {e.kind === "empleado" ? "empleado" : "inventario"}
+              </span>
+              <span className="ml-1.5" style={{ color: C.gray }}>· {fmtDT(e.at)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChangelogView({ entries, isAdmin, currentUser, onAddEntry, onDeleteEntry }) {
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const doAdd = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+    await onAddEntry({ title: title.trim(), description: description.trim() });
+    setTitle(""); setDescription(""); setShowForm(false);
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Novedades</h2>
+        {isAdmin && <Button size="sm" variant="ghost" icon={PlusCircle} onClick={() => setShowForm(v => !v)}>Agregar</Button>}
+      </div>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Qué ha ido cambiando en la app, más reciente primero.</p>
+
+      {showForm && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título (ej: Horario Mensual con IA)"
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="¿Qué cambió, en pocas palabras?"
+            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={!title.trim() || saving} onClick={doAdd}>{saving ? "Guardando…" : "Publicar"}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {entries.map(e => (
+          <div key={e.id} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-sm font-semibold" style={{ color: C.ink }}>{e.title}</div>
+              {isAdmin && <button onClick={() => onDeleteEntry(e.id)} className="p-1"><X size={14} color={C.gray} /></button>}
+            </div>
+            {e.description && <p className="text-sm mt-1" style={{ color: C.inkSoft }}>{e.description}</p>}
+            <div className="text-xs mt-2" style={{ color: C.gray }}>{fmtDT(e.at)} {e.by ? `· ${e.by}` : ""}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProfileView({ currentUser, mySignature, onSaveSignature, employees, linkedEmployeeId, onSetLinkedEmployee, onLogoutEverywhere }) {
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(false);
   const [linkSaved, setLinkSaved] = useState(false);
+  const [confirmingLogoutAll, setConfirmingLogoutAll] = useState(false);
 
   const doSave = async () => {
     if (!draft) return;
@@ -6579,6 +6950,23 @@ function ProfileView({ currentUser, mySignature, onSaveSignature, employees, lin
           <Button size="sm" disabled={!draft} onClick={doSave}>Guardar firma</Button>
           {saved && <span className="text-xs font-medium" style={{ color: C.green }}>✓ Firma guardada</span>}
         </div>
+      </div>
+
+      <div className="rounded-lg border p-4 mt-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Seguridad</div>
+        <p className="text-xs mb-3" style={{ color: C.gray }}>
+          Si perdiste un celular con la app abierta, o dejaste la sesión abierta en un equipo que ya no usas, esto la cierra
+          en TODOS los dispositivos donde esté conectada — vas a tener que volver a entrar aquí también.
+        </p>
+        {!confirmingLogoutAll ? (
+          <Button size="sm" variant="ghost" icon={LogOut} onClick={() => setConfirmingLogoutAll(true)}>Cerrar sesión en todos los dispositivos</Button>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs" style={{ color: C.red }}>¿Seguro? Vas a salir de aquí también.</span>
+            <Button size="sm" variant="red" onClick={onLogoutEverywhere}>Sí, cerrar en todos lados</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmingLogoutAll(false)}>Cancelar</Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -8111,6 +8499,8 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
   const [scheduleEntries, setScheduleEntries] = useState({});
   const [scheduleEditLog, setScheduleEditLog] = useState([]);
+  const [generalEditLog, setGeneralEditLog] = useState([]);
+  const [changelogEntries, setChangelogEntries] = useState([]);
   const [aiUsageStats, setAiUsageStats] = useState(null);
   // Se carga cada vez que se entra al Panel de administrador (no en el arranque general) porque
   // bumpAiUsage escribe directo a la base de datos por fuera del estado de React — así siempre se
@@ -8130,7 +8520,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -8150,6 +8540,8 @@ export default function App() {
         sGet("trash", true),
         sGet("login-log", true),
         sGet("schedule-edit-log", true),
+        sGet("changelog", true),
+        sGet("general-edit-log", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -8188,6 +8580,8 @@ export default function App() {
       setTrash(trs || []);
       setLoginLog(llog || []);
       setScheduleEditLog(schLog || []);
+      setChangelogEntries(chgl && chgl.length ? chgl : DEFAULT_CHANGELOG_SEED);
+      setGeneralEditLog(gel || []);
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);
@@ -8320,6 +8714,9 @@ export default function App() {
       if (error) {
         setAuthError(error.message?.includes("Invalid login") ? "Correo o contraseña incorrectos." : (error.message || "No se pudo iniciar sesión."));
         setAuthBusy(false);
+        // Se registra el intento fallido para poder avisar si se repite muchas veces seguidas —
+        // no se espera (await) la respuesta, para no atrasar el mensaje de error al usuario.
+        fetch("/api/log-failed-login", { method: "POST", headers: aiRequestHeaders(), body: JSON.stringify({ email }) }).catch(() => {});
         return;
       }
       await handleAuthChange(data.session);
@@ -8370,6 +8767,22 @@ export default function App() {
   };
 
   const logout = async () => { await supabase.auth.signOut(); setCurrentUser(null); setProfiles({}); };
+
+  const addChangelogEntry = async ({ title, description }) => {
+    const entry = { id: uid("cl"), title, description, at: nowIso(), by: displayName };
+    const next = [entry, ...changelogEntries];
+    setChangelogEntries(next);
+    await sSet("changelog", next, true);
+  };
+  const deleteChangelogEntry = async (id) => {
+    const next = changelogEntries.filter(e => e.id !== id);
+    setChangelogEntries(next);
+    await sSet("changelog", next, true);
+  };
+  /** Cierra la sesión en TODOS los dispositivos donde esa cuenta esté conectada (no solo este) —
+   *  útil si se perdió un celular con la app abierta, o se dejó la sesión abierta en un equipo
+   *  que ya no se usa. Supabase Auth ya trae esto incorporado (scope: "global"). */
+  const logoutEverywhere = async () => { await supabase.auth.signOut({ scope: "global" }); setCurrentUser(null); setProfiles({}); };
 
   const saveReportEmail = async (email) => {
     setReportEmail(email);
@@ -8425,12 +8838,13 @@ export default function App() {
     await sSet("trash", nextTrash, true);
   };
 
-  const resolveIssue = async (iss, solution) => {
+  const resolveIssue = async (iss, solution, afterPhotoUrl) => {
     const rec = {
       equipmentId: iss.equipmentId || iss.id, code: iss.code, name: iss.name, floorName: iss.floorName, floorId: iss.floorId,
       openedAt: iss.openedAt, openedBy: iss.openedBy, observation: iss.observation,
       resolvedAt: nowIso(), resolvedBy: displayName, solution,
       duration: elapsed(iss.openedAt),
+      beforePhotoUrl: iss.beforePhotoUrl || null, afterPhotoUrl: afterPhotoUrl || null,
     };
     const newHistory = [rec, ...issueHistory].slice(0, 500);
     const newActive = { ...activeIssues };
@@ -8438,6 +8852,16 @@ export default function App() {
     setIssueHistory(newHistory); setActiveIssues(newActive);
     await sSet("issue-history", newHistory, true);
     await sSet("active-issues", newActive, true);
+  };
+
+  /** Guarda una foto de "cómo está ahora" mientras el daño sigue activo (el "antes" para el
+   *  comparador antes/después que se muestra una vez resuelto). */
+  const attachIssuePhoto = async (equipmentId, file) => {
+    const url = await uploadPhoto(file, `issue-${equipmentId}`);
+    const newActive = { ...activeIssues, [equipmentId]: { ...activeIssues[equipmentId], beforePhotoUrl: url } };
+    setActiveIssues(newActive);
+    await sSet("active-issues", newActive, true);
+    return url;
   };
 
   /** "Sigue igual": deja constancia de que se revisó y el equipo sigue con la misma falla,
@@ -8700,6 +9124,25 @@ export default function App() {
   const doInvRetiro = (item, qty, note) => adjustInvStock(item, -Math.abs(qty), "retiro", note);
   const doInvEntrada = (item, qty, note) => adjustInvStock(item, Math.abs(qty), "entrada", note);
 
+  /** Edita el nombre/código/unidad/mínimo de un repuesto (no la cantidad — eso sigue siendo un
+   *  movimiento de entrada/retiro aparte, con su propio historial). Cada campo que cambie queda
+   *  en el historial general de cambios. */
+  const editInvItem = async (id, patch) => {
+    const before = invItems.find(it => it.id === id);
+    if (!before) return;
+    const next = invItems.map(it => it.id === id ? { ...it, ...patch, updatedAt: nowIso() } : it);
+    setInvItems(next);
+    await sSet("inventory-items", next, true);
+    Object.keys(patch).forEach(field => {
+      const b = before[field], a = patch[field];
+      if (String(b ?? "") === String(a ?? "")) return;
+      logGeneralEdit({
+        kind: "inventario", entityLabel: before.name, field: FIELD_LABELS[field] || field,
+        before: b === "" || b == null ? "(vacío)" : String(b), after: a === "" || a == null ? "(vacío)" : String(a),
+      });
+    });
+  };
+
   /* ---- Horarios ---- */
   const createEmployee = async (name, cargo, fixedRestDay) => {
     const rec = { id: uid("emp"), name, cargo: cargo || "", fixedRestDay: fixedRestDay === "" ? null : Number(fixedRestDay), active: true, createdBy: displayName, createdAt: nowIso() };
@@ -8709,10 +9152,33 @@ export default function App() {
     return rec;
   };
 
+  /** Historial de cambios "general" (no del horario, que ya tiene el suyo aparte): empleados e
+   *  inventario por ahora. Mismo patrón: quién cambió qué, antes y después. */
+  const logGeneralEdit = async (entry) => {
+    const next = [{ id: uid("gel"), at: nowIso(), by: displayName, ...entry }, ...generalEditLog].slice(0, 2000);
+    setGeneralEditLog(next);
+    await sSet("general-edit-log", next, true);
+  };
+
+  const FIELD_LABELS = {
+    cargo: "Cargo", fixedRestDay: "Descanso fijo", badge: "Etiqueta", reductionHoursPerDay: "Hrs. reducción/día",
+    name: "Nombre", sku: "Código", unit: "Unidad", minThreshold: "Mínimo",
+  };
   const updateEmployee = async (id, patch) => {
+    const before = employees.find(e => e.id === id);
     const next = employees.map(e => e.id === id ? { ...e, ...patch } : e);
     setEmployees(next);
     await sSet("employees", next, true);
+    if (before) {
+      Object.keys(patch).forEach(field => {
+        const b = before[field], a = patch[field];
+        if (String(b ?? "") === String(a ?? "")) return;
+        logGeneralEdit({
+          kind: "empleado", entityLabel: before.name, field: FIELD_LABELS[field] || field,
+          before: b === "" || b == null ? "(vacío)" : String(b), after: a === "" || a == null ? "(vacío)" : String(a),
+        });
+      });
+    }
   };
 
   const deleteEmployee = async (id) => {
@@ -9401,6 +9867,7 @@ export default function App() {
     { id: "my-schedule", label: "Mi horario", icon: CalendarDays },
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
     { id: "profile", label: "Mi Perfil", icon: User },
+    { id: "changelog", label: "Novedades", icon: Sparkles },
     { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
     { id: "reports", label: "Reportes", icon: History },
@@ -9408,6 +9875,7 @@ export default function App() {
     ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount }] : []),
     ...(isAdmin ? [{ id: "trash", label: "Papelera", icon: Trash2, badge: trash.length }] : []),
+    ...(isAdmin ? [{ id: "general-history", label: "Historial de cambios", icon: History }] : []),
   ].filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id));
 
   return (
@@ -9599,7 +10067,11 @@ export default function App() {
           )}
           {view === "profile" && (
             <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature}
-              employees={employees} linkedEmployeeId={account.linked_employee_id} onSetLinkedEmployee={updateMyLinkedEmployee} />
+              employees={employees} linkedEmployeeId={account.linked_employee_id} onSetLinkedEmployee={updateMyLinkedEmployee} onLogoutEverywhere={logoutEverywhere} />
+          )}
+          {view === "changelog" && (
+            <ChangelogView entries={changelogEntries} isAdmin={isAdmin} currentUser={displayName}
+              onAddEntry={addChangelogEntry} onDeleteEntry={deleteChangelogEntry} />
           )}
           {view === "my-schedule" && (
             <MyScheduleView employee={employees.find(e => e.id === account.linked_employee_id)} scheduleEntries={scheduleEntries} onGoToProfile={() => setView("profile")} />
@@ -9610,7 +10082,7 @@ export default function App() {
               onAckFinished={() => setJustFinished(false)} autoSendResult={autoSendResult}
               mySignature={account.signature} onGoToProfile={() => setView("profile")} />
           )}
-          {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} onCheckIn={checkInIssue} />}
+          {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} onCheckIn={checkInIssue} onAttachPhoto={attachIssuePhoto} />}
           {view === "reports" && (
             <ReportsView issueHistory={issueHistory} roundsIndex={roundsIndex} activeIssues={activeIssues} latestValues={latestValues}
               mttoLog={mttoLog} mttoEquipos={mttoEquipos}
@@ -9625,7 +10097,7 @@ export default function App() {
           {view === "inventory" && (
             <InventoryView bodegas={bodegas} shelves={shelves} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateBodega={createBodega} onCreateShelf={createShelf} onCreateItem={createInvItem}
-              onRetiro={doInvRetiro} onEntrada={doInvEntrada} onImportInventory={importFullInventory}
+              onRetiro={doInvRetiro} onEntrada={doInvEntrada} onEditItem={editInvItem} onImportInventory={importFullInventory}
               onDeleteBodega={deleteBodega} onDeleteShelf={deleteShelf}
               initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)} />
           )}
@@ -9693,6 +10165,9 @@ export default function App() {
           )}
           {view === "trash" && isAdmin && (
             <TrashView trash={trash} onRestore={restoreFromTrash} onPurge={purgeFromTrash} />
+          )}
+          {view === "general-history" && isAdmin && (
+            <GeneralHistoryView entries={generalEditLog} />
           )}
         </main>
       </div>

@@ -1626,6 +1626,12 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
           )}
         </div>
       </div>
+      {damaged && activeIssue && (
+        <div className="text-xs mt-1" style={{ color: "#a31245" }}>
+          Para que este equipo salga de "Fuera de servicio", destilda la casilla roja de arriba (o usa "Marcar resuelto" abajo) —
+          cambiar el estado o solo escribir un comentario no lo quita de la lista por sí solo.
+        </div>
+      )}
 
       <div className="flex items-start gap-1.5 mt-2">
         <textarea value={entry?.observation ?? ""} onChange={e => update({ observation: e.target.value })}

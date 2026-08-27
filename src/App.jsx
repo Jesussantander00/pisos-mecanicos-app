@@ -6900,14 +6900,20 @@ function ChangelogView({ entries, isAdmin, currentUser, onAddEntry, onDeleteEntr
 function ProfileView({ currentUser, mySignature, onSaveSignature, employees, linkedEmployeeId, onSetLinkedEmployee, onLogoutEverywhere }) {
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [linkSaved, setLinkSaved] = useState(false);
   const [confirmingLogoutAll, setConfirmingLogoutAll] = useState(false);
 
   const doSave = async () => {
     if (!draft) return;
-    await onSaveSignature(draft);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setSaveError(null);
+    try {
+      await onSaveSignature(draft);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setSaveError(e.message || "No se pudo guardar la firma.");
+    }
   };
 
   const doSetLink = async (employeeId) => {
@@ -6955,6 +6961,7 @@ function ProfileView({ currentUser, mySignature, onSaveSignature, employees, lin
         <div className="flex items-center gap-2 mt-2">
           <Button size="sm" disabled={!draft} onClick={doSave}>Guardar firma</Button>
           {saved && <span className="text-xs font-medium" style={{ color: C.green }}>✓ Firma guardada</span>}
+          {saveError && <span className="text-xs font-medium" style={{ color: C.red }}>{saveError}</span>}
         </div>
       </div>
 
@@ -8521,6 +8528,7 @@ export default function App() {
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
   const [justFinished, setJustFinished] = useState(false);
+  const [roundSaveMsg, setRoundSaveMsg] = useState(null); // aviso si intentan "cerrar" el recorrido sin haber pasado por todos los pisos
   const [autoSendResult, setAutoSendResult] = useState(null);
   const tourBufferRef = useRef((() => {
     // Si el recorrido se interrumpió a mitad de camino (se cerró la sesión sola, se recargó la
@@ -8754,7 +8762,11 @@ export default function App() {
   };
 
   const updateMySignature = async (dataUrl) => {
-    await supabase.from("profiles").update({ signature: dataUrl }).eq("id", currentUser);
+    const { error } = await supabase.from("profiles").update({ signature: dataUrl }).eq("id", currentUser);
+    if (error) {
+      console.error("Error guardando la firma:", error);
+      throw new Error("No se pudo guardar la firma. Avísale al admin — puede que falte una columna en la base de datos.");
+    }
     setProfiles(p => ({ ...p, [currentUser]: { ...p[currentUser], signature: dataUrl } }));
   };
 
@@ -9576,9 +9588,21 @@ export default function App() {
     // completo (ver la restauración al inicio de tourBufferRef) — así no se pierde lo ya hecho.
     try { localStorage.setItem("pm-local:tour-buffer", JSON.stringify({ date: todayStr(), shift, buffer: tourBufferRef.current })); } catch { /* noop */ }
 
-    // Si se guardó el último piso, el recorrido quedó completo: se arma y guarda la entrega de turno.
+    // Si se guardó el último piso, el recorrido quedó completo — PERO solo si de verdad se
+    // pasó por TODOS los pisos en esta misma sesión (no solo por este). Si alguien entra
+    // directo al último piso sin haber hecho los demás, no se deja "cerrar" el recorrido con
+    // los datos de un solo piso — se avisa y se manda de vuelta al piso 0 a empezar bien.
     if (floorIdx === FLOORS.length - 1) {
       const floorsDone = FLOORS.map(f => tourBufferRef.current[f.id]).filter(Boolean);
+      if (floorsDone.length < FLOORS.length) {
+        const faltantes = FLOORS.filter(f => !tourBufferRef.current[f.id]).map(f => f.name).join(", ");
+        setRoundSaveMsg({
+          ok: false,
+          text: `Este piso quedó guardado, pero todavía faltan pisos por revisar en este recorrido: ${faltantes}. Hay que pasar por todos, empezando por el primero, para poder cerrar y enviar la entrega de turno.`,
+        });
+        setFloorId(FLOORS[0].id);
+        return;
+      }
       const tourItemCount = floorsDone.reduce((a, f) => a + f.itemCount, 0);
       const tourDamagedCount = floorsDone.reduce((a, f) => a + f.damagedCount, 0);
       const tourRec = {
@@ -9971,6 +9995,13 @@ export default function App() {
           <WifiOff size={14} color="#fff" />
           <span className="text-xs font-medium text-white">Sin conexión — lo que guardes (incluidas fotos) se sube solo apenas vuelva la señal.</span>
           {(pendingSync > 0 || pendingPhotoRecords > 0) && <span className="text-xs text-white opacity-90">({pendingSync + pendingPhotoRecords} sin subir)</span>}
+        </div>
+      )}
+      {roundSaveMsg && !roundSaveMsg.ok && (
+        <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
+          style={{ background: "#a31245" }}>
+          <span className="text-sm text-white">⚠ {roundSaveMsg.text}</span>
+          <Button size="sm" variant="ghost" onClick={() => setRoundSaveMsg(null)}>Entendido</Button>
         </div>
       )}
       {needRefresh && (

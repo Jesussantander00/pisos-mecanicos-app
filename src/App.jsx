@@ -7137,7 +7137,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         {lastTour.itemCount} equipos revisados{lastTour.damagedCount ? `, ${lastTour.damagedCount} dañados` : ", todo en orden"}
       </p>
 
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: mySignature ? C.line : C.red, background: mySignature ? C.panel : C.redSoft, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Firma de quien entrega el turno</div>
         {mySignature ? (
           <div>
@@ -7147,15 +7147,16 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
             </div>
           </div>
         ) : (
-          <div className="text-xs" style={{ color: C.gray }}>
-            Todavía no has guardado tu firma. <button onClick={onGoToProfile} className="underline font-semibold" style={{ color: C.blue }}>Configúrala en Mi Perfil</button> — la guardas una sola vez y de ahí en adelante se agrega sola en cada entrega de turno.
+          <div className="text-xs" style={{ color: "#a31245" }}>
+            <b>⚠ Todavía no has guardado tu firma — es obligatoria para poder enviar el recorrido.</b>{" "}
+            <button onClick={onGoToProfile} className="underline font-semibold" style={{ color: C.blue }}>Configúrala en Mi Perfil</button> — la guardas una sola vez y de ahí en adelante se agrega sola en cada entrega de turno.
           </div>
         )}
       </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF de este recorrido</div>
-        <Button variant="ghost" icon={Download} disabled={downloadingPdf} onClick={doDownloadPdf}>
+        <Button variant="ghost" icon={Download} disabled={downloadingPdf || !mySignature} onClick={doDownloadPdf}>
           {downloadingPdf ? "Generando…" : "Descargar PDF"}
         </Button>
 
@@ -7163,23 +7164,24 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
             className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
-          <Button icon={Mail} disabled={sendingAuto} onClick={doSendAutoEmail}>{sendingAuto ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
+          <Button icon={Mail} disabled={sendingAuto || !mySignature} onClick={doSendAutoEmail}>{sendingAuto ? "Enviando…" : "Enviar con PDF adjunto"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button size="sm" variant="ghost" onClick={sendMailManual}>o abrir borrador manual (sin PDF adjunto)</Button>
+          <Button size="sm" variant="ghost" disabled={!mySignature} onClick={sendMailManual}>o abrir borrador manual (sin PDF adjunto)</Button>
         </div>
 
         <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>WhatsApp — resumen en texto (el PDF se adjunta a mano)</div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={waTo} onChange={e => setWaTo(e.target.value)} placeholder="Número WhatsApp, ej. 573001234567"
             className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
-          <Button variant="ghost" icon={MessageCircle} onClick={sendWa}>Enviar por WhatsApp</Button>
+          <Button variant="ghost" icon={MessageCircle} disabled={!mySignature} onClick={sendWa}>Enviar por WhatsApp</Button>
         </div>
         <div className="text-xs mt-1" style={{ color: C.gray }}>
           WhatsApp no permite adjuntar archivos por enlace bajo ninguna circunstancia (ni Meta lo permite a terceros
           sin su API de negocios aprobada). Descarga el PDF arriba y adjúntalo tú mismo dentro de la conversación.
         </div>
 
+        {!mySignature && <div className="text-xs mt-2 font-medium" style={{ color: "#a31245" }}>Guarda tu firma en Mi Perfil para poder usar estos botones.</div>}
         {sentNow && <div className="text-xs mt-2" style={{ color: sentNow.ok ? C.green : C.red }}>{sentNow.text}</div>}
       </div>
 
@@ -9484,6 +9486,7 @@ export default function App() {
     const newLatest = { ...latestValues };
     const newActive = { ...activeIssues };
     const newTankHist = { ...tankHistory };
+    const autoResolved = []; // equipos que se destildaron "Dañado" en esta ronda — se resuelven solos
 
     for (const item of floor.items) {
       const e = entries[item.id];
@@ -9508,13 +9511,29 @@ export default function App() {
         } else {
           newActive[item.id] = { ...newActive[item.id], observation: e.observation || newActive[item.id].observation };
         }
+      } else if (newActive[item.id]) {
+        // Estaba fuera de servicio y en esta ronda se destildó "Dañado" — se resuelve solo, sin
+        // tener que ir aparte a "Fuera de servicio" a darle "Marcar resuelto". El comentario que
+        // se haya escrito ahora queda como la solución, para que quede en el historial.
+        const prev = newActive[item.id];
+        autoResolved.push({
+          equipmentId: item.id, code: prev.code, name: prev.name, floorName: prev.floorName, floorId: prev.floorId,
+          openedAt: prev.openedAt, openedBy: prev.openedBy, observation: prev.observation,
+          resolvedAt: ts, resolvedBy: displayName,
+          solution: e.observation || "Resuelto durante la ronda (sin comentario adicional).",
+          duration: elapsed(prev.openedAt),
+          beforePhotoUrl: prev.beforePhotoUrl || null, afterPhotoUrl: null,
+        });
+        delete newActive[item.id];
       }
     }
 
     const idxRec = { id, floorId: floor.id, floorName: floor.name, date: todayStr(), shift, user: displayName, savedAt: ts, itemCount, damagedCount, notes };
     const newIndex = [idxRec, ...roundsIndex].slice(0, 1000);
+    const newHistory = autoResolved.length ? [...autoResolved, ...issueHistory].slice(0, 500) : issueHistory;
 
     setRoundsIndex(newIndex); setLatestValues(newLatest); setActiveIssues(newActive); setTankHistory(newTankHist);
+    if (autoResolved.length) setIssueHistory(newHistory);
     notifyNewDamagedEquipment(activeIssues, newActive);
     await Promise.all([
       sSet(`round-${id}`, cleanEntries, true),
@@ -9522,6 +9541,7 @@ export default function App() {
       sSet("latest-values", newLatest, true),
       sSet("active-issues", newActive, true),
       sSet("tank-history", newTankHist, true),
+      ...(autoResolved.length ? [sSet("issue-history", newHistory, true)] : []),
     ]);
 
     // --- Entrega de turno: acumula cada piso guardado durante el recorrido actual ---
@@ -9570,6 +9590,11 @@ export default function App() {
       ]);
       tourBufferRef.current = {};
       try { localStorage.removeItem("pm-local:tour-buffer"); } catch { /* noop */ }
+      // El recorrido quedó completo — se regresa al primer piso, en vez de dejarlo parado en el
+      // último. Así, si alguien vuelve a entrar más tarde, tiene que pasar por todos los pisos de
+      // nuevo (verificando de verdad, no solo el que estaba fuera de servicio) para poder armar
+      // otra entrega de turno, en vez de quedarle fácil "reenviar" solo tocando el último piso.
+      setFloorId(FLOORS[0].id);
       setView("handoff");
 
       // Envío automático real: si hay un correo configurado, se manda solo, con el PDF
@@ -9591,6 +9616,7 @@ export default function App() {
     let itemCount = 0, damagedCount = 0;
     const newLatest = { ...latestColdValues };
     const newActive = { ...activeIssues };
+    const autoResolved = [];
 
     for (const item of ALL_COLD_ROOM_ITEMS) {
       const e = entries[item.id];
@@ -9610,6 +9636,17 @@ export default function App() {
         } else {
           newActive[item.id] = { ...newActive[item.id], observation: e.observation || newActive[item.id].observation };
         }
+      } else if (newActive[item.id]) {
+        const prev = newActive[item.id];
+        autoResolved.push({
+          equipmentId: item.id, code: prev.code, name: prev.name, floorName: prev.floorName, floorId: prev.floorId,
+          openedAt: prev.openedAt, openedBy: prev.openedBy, observation: prev.observation,
+          resolvedAt: ts, resolvedBy: displayName,
+          solution: e.observation || "Resuelto durante la ronda (sin comentario adicional).",
+          duration: elapsed(prev.openedAt),
+          beforePhotoUrl: prev.beforePhotoUrl || null, afterPhotoUrl: null,
+        });
+        delete newActive[item.id];
       }
     }
 
@@ -9641,6 +9678,8 @@ export default function App() {
     setLatestColdValues(newLatest); setActiveIssues(newActive); setColdRoundsIndex(newIndex);
     notifyNewDamagedEquipment(activeIssues, newActive);
     setLastColdRound(record); setColdHistory(newColdHistory);
+    const newIssueHist = autoResolved.length ? [...autoResolved, ...issueHistory].slice(0, 500) : issueHistory;
+    if (autoResolved.length) setIssueHistory(newIssueHist);
     await Promise.all([
       sSet(`cold-round-${id}`, cleanEntries, true),
       sSet("cold-rounds-index", newIndex, true),
@@ -9648,6 +9687,7 @@ export default function App() {
       sSet("active-issues", newActive, true),
       sSet("last-cold-round", record, true),
       sSet("cold-history", newColdHistory, true),
+      ...(autoResolved.length ? [sSet("issue-history", newIssueHist, true)] : []),
     ]);
     return record;
   };
@@ -9660,6 +9700,7 @@ export default function App() {
     let itemCount = 0, damagedCount = 0;
     const newLatest = { ...latestVals };
     const newActive = { ...activeIssues };
+    const autoResolved = [];
 
     for (const item of allItems) {
       const e = entries[item.id];
@@ -9679,19 +9720,33 @@ export default function App() {
         } else {
           newActive[item.id] = { ...newActive[item.id], observation: e.observation || newActive[item.id].observation };
         }
+      } else if (newActive[item.id]) {
+        const prev = newActive[item.id];
+        autoResolved.push({
+          equipmentId: item.id, code: prev.code, name: prev.name, floorName: prev.floorName, floorId: prev.floorId,
+          openedAt: prev.openedAt, openedBy: prev.openedBy, observation: prev.observation,
+          resolvedAt: ts, resolvedBy: displayName,
+          solution: e.observation || "Resuelto durante la ronda (sin comentario adicional).",
+          duration: elapsed(prev.openedAt),
+          beforePhotoUrl: prev.beforePhotoUrl || null, afterPhotoUrl: null,
+        });
+        delete newActive[item.id];
       }
     }
 
     const idxRec = { id, date: todayStr(), shift, user: displayName, savedAt: ts, itemCount, damagedCount, notes };
     const newIndex = [idxRec, ...roundsIdx].slice(0, 500);
+    const newIssueHist = autoResolved.length ? [...autoResolved, ...issueHistory].slice(0, 500) : issueHistory;
 
     setLatestVals(newLatest); setActiveIssues(newActive); setRoundsIdx(newIndex);
     notifyNewDamagedEquipment(activeIssues, newActive);
+    if (autoResolved.length) setIssueHistory(newIssueHist);
     await Promise.all([
       sSet(`${syntheticFloor.id}-round-${id}`, cleanEntries, true),
       sSet(indexKey, newIndex, true),
       sSet(latestKey, newLatest, true),
       sSet("active-issues", newActive, true),
+      ...(autoResolved.length ? [sSet("issue-history", newIssueHist, true)] : []),
     ]);
     return idxRec;
   };

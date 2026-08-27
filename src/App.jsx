@@ -1672,7 +1672,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
 /* ============================================================
    VISTA: RONDA DE REVISIÓN
    ============================================================ */
-function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onResolveIssue, onSaveRound, floorIndex, floorCount, onGoFloor }) {
+function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onResolveIssue, onSaveRound, floorIndex, floorCount, onGoFloor, tourProgressCount, resumedTour, onDismissResumed }) {
   const [entries, setEntries] = useState({});
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
@@ -1727,10 +1727,24 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+      {resumedTour && (
+        <div className="rounded-md p-2 mb-2 flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+          <span className="text-xs" style={{ color: "#7a5405" }}>
+            ↺ Tienes un recorrido en curso de este mismo turno — llevas <b>{tourProgressCount} de {floorCount} pisos</b>. Sigues donde ibas, no hace falta empezar de cero.
+          </span>
+          <Button size="sm" variant="ghost" onClick={onDismissResumed}>Entendido</Button>
+        </div>
+      )}
+      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
         <Button size="sm" variant="ghost" disabled={floorIndex === 0} onClick={() => onGoFloor(floorIndex - 1)}>‹ Piso anterior</Button>
         <span className="text-xs font-medium" style={{ color: C.gray }}>Piso {floorIndex + 1} de {floorCount}</span>
         <Button size="sm" variant="ghost" disabled={isLast} onClick={() => onGoFloor(floorIndex + 1)}>Siguiente piso ›</Button>
+      </div>
+      <div className="mb-2">
+        <div className="text-[11px] mb-1 text-right" style={{ color: C.gray }}>Recorrido completo: {tourProgressCount} de {floorCount} pisos hechos</div>
+        <div className="w-full rounded-full h-1.5" style={{ background: C.bg }}>
+          <div className="h-1.5 rounded-full" style={{ width: `${Math.round((tourProgressCount / floorCount) * 100)}%`, background: tourProgressCount >= floorCount ? C.green : C.amber }} />
+        </div>
       </div>
 
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -5430,7 +5444,8 @@ function OnboardingTour({ onClose }) {
   );
 }
 
-function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, counts }) {
+function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts }) {
+  const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const canManageInv = isAdmin || isAlmacenista;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
   const modules = [
@@ -5462,6 +5477,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
     { id: "general-history", label: "Historial de cambios", icon: History, desc: "Ediciones en empleados e inventario", access: isAdmin },
+    { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido y quién no", access: isAdmin },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
   return (
@@ -5483,6 +5499,19 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
           : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
       </p>
+
+      {!hasSignature && !dismissedSigReminder && (
+        <div className="rounded-lg p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+          <div className="text-sm" style={{ color: "#7a5405" }}>
+            <b>✍️ Todavía no has guardado tu firma.</b> La necesitas para poder enviar tus recorridos y entregas de turno —
+            se guarda una sola vez y de ahí en adelante se agrega sola.
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={onGoToProfile}>Configurarla ahora</Button>
+            <Button size="sm" variant="ghost" onClick={() => setDismissedSigReminder(true)}>Después</Button>
+          </div>
+        </div>
+      )}
 
       {!gerenciaLocked && (
         <div className="mb-4">
@@ -6527,7 +6556,7 @@ function pdfDocToBase64(doc) {
 }
 
 /** PDF de UNA entrega de turno (el recorrido que se acaba de completar), piso por piso. */
-async function generateTourPdf(tour, signatureDataUrl) {
+async function generateTourPdf(tour, signatureDataUrl, signerCargo) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();
@@ -6558,7 +6587,10 @@ async function generateTourPdf(tour, signatureDataUrl) {
     }
   });
 
-  y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, `${tour.user} — ${fmtDT(nowIso())}`);
+  // El nombre + cargo (cuando se sabe cuál es) queda junto a la firma, para que el documento
+  // deje más claro quién es la persona responsable, no solo su nombre suelto.
+  const signerLine = `${tour.user}${signerCargo ? ` — ${signerCargo}` : ""} — ${fmtDT(nowIso())}`;
+  y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, signerLine);
 
   pdfFooterAll(doc);
   return doc;
@@ -6571,9 +6603,9 @@ async function generateTourPdf(tour, signatureDataUrl) {
  * de Resend, que nunca toca el navegador) dispara el correo. No requiere que nadie
  * confirme "Enviar" en ninguna app — sucede solo.
  */
-async function sendTourEmailAuto(to, tour, signatureDataUrl) {
+async function sendTourEmailAuto(to, tour, signatureDataUrl, signerCargo) {
   try {
-    const doc = await generateTourPdf(tour, signatureDataUrl);
+    const doc = await generateTourPdf(tour, signatureDataUrl, signerCargo);
     const pdfBase64 = await pdfDocToBase64(doc);
     const resp = await fetch("/api/send-report", {
       method: "POST",
@@ -6808,6 +6840,81 @@ function SignaturePad({ onChange }) {
  * avisarles uno por uno. Cualquiera puede verlas; solo el admin puede agregar una nueva.
  */
 /** Historial de cambios de empleados e inventario — quién cambió qué, antes y después. */
+/**
+ * Compara los pisos que se fueron guardando (roundsIndex, uno por piso) contra los recorridos
+ * que sí llegaron a completarse (tourHistory, uno por recorrido entero) — para que el admin vea
+ * de un vistazo si algún turno se quedó a medias sin terminar el recorrido completo.
+ */
+function computeRoundCompletionSummary(roundsIndex, tourHistory, totalFloors) {
+  const groups = {};
+  (roundsIndex || []).forEach(r => {
+    const key = `${r.date}::${r.shift}::${r.user}`;
+    if (!groups[key]) groups[key] = { date: r.date, shift: r.shift, user: r.user, floorIds: new Set(), lastSavedAt: r.savedAt };
+    groups[key].floorIds.add(r.floorId);
+    if (r.savedAt > groups[key].lastSavedAt) groups[key].lastSavedAt = r.savedAt;
+  });
+  const completedKeys = new Set((tourHistory || []).map(t => `${t.date}::${t.shift}::${t.user}`));
+  return Object.values(groups)
+    .map(g => ({
+      date: g.date, shift: g.shift, user: g.user, lastSavedAt: g.lastSavedAt,
+      floorsDone: g.floorIds.size, totalFloors,
+      completed: completedKeys.has(`${g.date}::${g.shift}::${g.user}`),
+    }))
+    .sort((a, b) => (b.date + b.lastSavedAt).localeCompare(a.date + a.lastSavedAt));
+}
+
+function RoundCompletionView({ roundsIndex, tourHistory }) {
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const summary = useMemo(() => computeRoundCompletionSummary(roundsIndex, tourHistory, FLOORS.length), [roundsIndex, tourHistory]);
+  const filtered = onlyIncomplete ? summary.filter(s => !s.completed) : summary;
+  const incompleteCount = summary.filter(s => !s.completed).length;
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Recorridos completados</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Compara los pisos que se fueron guardando contra los recorridos que sí se cerraron completos (los {FLOORS.length} pisos).
+      </p>
+
+      {incompleteCount > 0 && (
+        <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.redSoft, color: "#a31245" }}>
+          ⚠ Hay {incompleteCount} recorrido(s) que se empezaron pero no se terminaron completos.
+        </div>
+      )}
+
+      <label className="flex items-center gap-2 text-xs font-medium mb-3 cursor-pointer select-none" style={{ color: C.inkSoft }}>
+        <input type="checkbox" checked={onlyIncomplete} onChange={e => setOnlyIncomplete(e.target.checked)} />
+        Mostrar solo los incompletos
+      </label>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm py-8 text-center" style={{ color: C.gray }}>
+          {onlyIncomplete ? "No hay recorridos incompletos — todo bien." : "Todavía no hay recorridos registrados."}
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {filtered.map((s, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 rounded-md px-3 py-2 flex-wrap"
+              style={{ background: s.completed ? C.panel : C.redSoft, border: `1px solid ${s.completed ? C.line : "#e0a0b0"}` }}>
+              <div>
+                <div className="text-sm font-medium" style={{ color: C.ink }}>{s.user} · {s.date} · Turno {s.shift}</div>
+                <div className="text-xs" style={{ color: C.gray }}>Último guardado: {fmtDT(s.lastSavedAt)}</div>
+              </div>
+              <div className="text-right">
+                {s.completed ? (
+                  <Pill tone="green"><CheckCircle2 size={12} /> Completo</Pill>
+                ) : (
+                  <Pill tone="red"><AlertTriangle size={12} /> {s.floorsDone} de {s.totalFloors} pisos</Pill>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GeneralHistoryView({ entries }) {
   const [filter, setFilter] = useState("all"); // all | empleado | inventario
   const filtered = filter === "all" ? entries : entries.filter(e => e.kind === filter);
@@ -7066,7 +7173,7 @@ function MyScheduleView({ employee, scheduleEntries, onGoToProfile }) {
   );
 }
 
-function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult, mySignature, onGoToProfile }) {
+function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult, mySignature, signerCargo, onGoToProfile }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [waTo, setWaTo] = useState(reportWhatsapp || "");
   const [sentNow, setSentNow] = useState(null);
@@ -7093,7 +7200,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const doDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const doc = await generateTourPdf(lastTour, mySignature);
+      const doc = await generateTourPdf(lastTour, mySignature, signerCargo);
       doc.save(`entrega-turno-${String(lastTour.date).replace(/\//g, "-")}.pdf`);
     } catch {
       setSentNow({ ok: false, text: "No se pudo generar el PDF (revisa la conexión a internet, se necesita la primera vez)." });
@@ -7104,7 +7211,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const doSendAutoEmail = async () => {
     if (!emailTo.trim()) { setSentNow({ ok: false, text: "Escribe un correo destino." }); return; }
     setSendingAuto(true); setSentNow(null);
-    const res = await sendTourEmailAuto(emailTo.trim(), lastTour, mySignature);
+    const res = await sendTourEmailAuto(emailTo.trim(), lastTour, mySignature, signerCargo);
     setSentNow({ ok: res.ok, text: res.message });
     onLogSent({ to: emailTo.trim(), method: "Entrega de turno (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: currentUser, sentAt: nowIso() });
     setSendingAuto(false);
@@ -8541,6 +8648,10 @@ export default function App() {
       return parsed.date === todayStr() && parsed.shift === shift ? parsed.buffer : {};
     } catch { return {}; }
   })()); // acumula lo guardado piso por piso durante el recorrido en curso
+  // Van de la mano con tourBufferRef, pero SÍ disparan un re-render (un useRef solo no lo hace) —
+  // para poder mostrar en pantalla "X de 11 pisos" y el aviso de "recorrido en curso, sigues donde ibas".
+  const [tourProgressCount, setTourProgressCount] = useState(() => Object.keys(tourBufferRef.current).length);
+  const [resumedTour, setResumedTour] = useState(() => Object.keys(tourBufferRef.current).length > 0);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -8650,6 +8761,21 @@ export default function App() {
     const mine = map[session.user.id];
     if (mine?.approved) {
       await loadAll();
+      // Copia de respaldo de la firma en este celular (además de la del servidor) — así, si
+      // alguna vez la del servidor se pierde (como pasó una vez por una columna que faltaba),
+      // se puede recuperar sola sin que la persona tenga que volver a dibujarla.
+      try {
+        const backupKey = `pm-local:signature-backup:${session.user.id}`;
+        if (mine.signature) {
+          localStorage.setItem(backupKey, mine.signature);
+        } else {
+          const backup = localStorage.getItem(backupKey);
+          if (backup) {
+            const { error } = await supabase.from("profiles").update({ signature: backup }).eq("id", session.user.id);
+            if (!error) setProfiles(m => ({ ...m, [session.user.id]: { ...m[session.user.id], signature: backup } }));
+          }
+        }
+      } catch { /* la copia local es un extra de seguridad, nunca debe romper el login si falla */ }
     } else {
       setLoading(false); // cuenta todavía no aprobada: no se intenta cargar el resto de la app
     }
@@ -9587,6 +9713,7 @@ export default function App() {
     // Se guarda en este celular por si algo interrumpe la sesión antes de terminar el recorrido
     // completo (ver la restauración al inicio de tourBufferRef) — así no se pierde lo ya hecho.
     try { localStorage.setItem("pm-local:tour-buffer", JSON.stringify({ date: todayStr(), shift, buffer: tourBufferRef.current })); } catch { /* noop */ }
+    setTourProgressCount(Object.keys(tourBufferRef.current).length);
 
     // Si se guardó el último piso, el recorrido quedó completo — PERO solo si de verdad se
     // pasó por TODOS los pisos en esta misma sesión (no solo por este). Si alguien entra
@@ -9620,6 +9747,8 @@ export default function App() {
       ]);
       tourBufferRef.current = {};
       try { localStorage.removeItem("pm-local:tour-buffer"); } catch { /* noop */ }
+      setTourProgressCount(0);
+      setResumedTour(false);
       // El recorrido quedó completo — se regresa al primer piso, en vez de dejarlo parado en el
       // último. Así, si alguien vuelve a entrar más tarde, tiene que pasar por todos los pisos de
       // nuevo (verificando de verdad, no solo el que estaba fuera de servicio) para poder armar
@@ -9631,7 +9760,7 @@ export default function App() {
       // adjunto, sin que nadie tenga que tocar nada. Si falla (sin internet, backend sin
       // configurar, etc.) queda registrado y el técnico puede reintentarlo desde la pantalla.
       if (reportEmail) {
-        sendTourEmailAuto(reportEmail, tourRec, account.signature).then(async (res) => {
+        sendTourEmailAuto(reportEmail, tourRec, account.signature, mySignerCargo).then(async (res) => {
           setAutoSendResult(res);
           await logSentReport({ to: reportEmail, method: "Entrega de turno (correo automático con PDF)", ok: res.ok, message: res.message, sentBy: displayName, sentAt: nowIso() });
         });
@@ -9851,6 +9980,9 @@ export default function App() {
   const isAlmacenista = !!account.is_almacenista;
   const isGerencia = !!account.is_gerencia;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista; // gerencia "pura": solo consulta
+  // Si esta cuenta está vinculada a un empleado del Horario Mensual (ver Mi Perfil), se usa su
+  // cargo para que la firma en los PDF diga "Nombre — Cargo", no solo el nombre suelto.
+  const mySignerCargo = employees.find(e => e.id === account.linked_employee_id)?.cargo || null;
 
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
@@ -9977,6 +10109,7 @@ export default function App() {
     ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount }] : []),
     ...(isAdmin ? [{ id: "trash", label: "Papelera", icon: Trash2, badge: trash.length }] : []),
     ...(isAdmin ? [{ id: "general-history", label: "Historial de cambios", icon: History }] : []),
+    ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
   ].filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id));
 
   return (
@@ -10150,13 +10283,15 @@ export default function App() {
           )}
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
+              hasSignature={!!account.signature} onGoToProfile={() => setView("profile")}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length, pendingAccounts: pendingAccountsCount }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
               latestValues={latestValues} floorIndex={FLOORS.findIndex(f => f.id === floorId)} floorCount={FLOORS.length}
               onGoFloor={(idx) => setFloorId(FLOORS[idx].id)}
-              onResolveIssue={resolveIssue} onSaveRound={saveRound} />
+              onResolveIssue={resolveIssue} onSaveRound={saveRound}
+              tourProgressCount={tourProgressCount} resumedTour={resumedTour} onDismissResumed={() => setResumedTour(false)} />
           )}
           {view === "coldrooms" && (
             <ColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
@@ -10188,7 +10323,7 @@ export default function App() {
             <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onLogSent={logSentReport} currentUser={displayName} justFinished={justFinished}
               onAckFinished={() => setJustFinished(false)} autoSendResult={autoSendResult}
-              mySignature={account.signature} onGoToProfile={() => setView("profile")} />
+              mySignature={account.signature} signerCargo={mySignerCargo} onGoToProfile={() => setView("profile")} />
           )}
           {view === "issues" && <IssuesView activeIssues={activeIssues} onResolve={resolveIssue} onCheckIn={checkInIssue} onAttachPhoto={attachIssuePhoto} />}
           {view === "reports" && (
@@ -10276,6 +10411,9 @@ export default function App() {
           )}
           {view === "general-history" && isAdmin && (
             <GeneralHistoryView entries={generalEditLog} />
+          )}
+          {view === "round-completion" && isAdmin && (
+            <RoundCompletionView roundsIndex={roundsIndex} tourHistory={tourHistory} />
           )}
         </main>
       </div>

@@ -4128,19 +4128,8 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Disponibilidad de equipos por sistema</div>
       <div className="rounded-lg border p-4 mb-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <div style={{ width: "100%", height: Math.max(160, uptime.length * 32) }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={uptime} layout="vertical" margin={{ left: 8, right: 24 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={v => `${v}%`} />
-              <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
-                {uptime.map((u, i) => <Cell key={i} fill={u.pct >= 90 ? C.green : C.red} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <HorizontalBarChart data={uptime} labelKey="sistema" valueKey="pct" max={100}
+          colorFor={u => u.pct >= 90 ? C.green : C.red} formatValue={v => `${v}%`} />
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento de rondas este mes (vs. mes pasado)</div>
@@ -4165,17 +4154,8 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         <>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema (este mes)</div>
           <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-            <div style={{ width: "100%", height: Math.max(160, Math.min(10, cost.bySistema.length) * 32) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={cost.bySistema.slice(0, 10).map(([sistema, valor]) => ({ sistema, valor }))} layout="vertical" margin={{ left: 8, right: 24 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={v => `$${v.toLocaleString("es-CO")}`} />
-                  <Bar dataKey="valor" fill={C.amber} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <HorizontalBarChart data={cost.bySistema.slice(0, 10).map(([sistema, valor]) => ({ sistema, valor }))}
+              labelKey="sistema" valueKey="valor" colorFor={() => C.amber} formatValue={v => `$${(v / 1000).toFixed(0)}k`} />
           </div>
         </>
       )}
@@ -4302,34 +4282,14 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
           {bySistema.length > 0 && (
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Mantenimientos por sistema</div>
-              <div style={{ width: "100%", height: Math.max(180, bySistema.length * 30) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={bySistema} layout="vertical" margin={{ left: 8, right: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="sistema" width={160} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="mantenimientos" fill={C.blue} radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <HorizontalBarChart data={bySistema} labelKey="sistema" valueKey="mantenimientos" colorFor={() => C.blue} />
             </div>
           )}
 
           {topCorrectivos.length > 0 && (
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos con más fallas (correctivos)</div>
-              <div style={{ width: "100%", height: Math.max(180, topCorrectivos.length * 30) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topCorrectivos} layout="vertical" margin={{ left: 8, right: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="label" width={160} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="fallas" fill={C.red} radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <HorizontalBarChart data={topCorrectivos} labelKey="label" valueKey="fallas" colorFor={() => C.red} />
             </div>
           )}
 
@@ -5665,6 +5625,36 @@ function MiniDonut({ segments, size = 140, stroke = 22 }) {
         );
       })}
     </svg>
+  );
+}
+
+/**
+ * Barras horizontales hechas con divs simples — reemplaza el layout="vertical" de BarChart de
+ * recharts, que tiene un historial largo de bugs conocidos en esa librería. data: array de
+ * objetos; labelKey/valueKey: qué campo usar de cada uno; colorFor(d): color de esa barra;
+ * formatValue(v): cómo mostrar el número al lado.
+ */
+function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatValue, max }) {
+  const maxVal = max ?? Math.max(1, ...data.map(d => Number(d[valueKey]) || 0));
+  return (
+    <div className="space-y-2.5">
+      {data.map((d, i) => {
+        const val = Number(d[valueKey]) || 0;
+        const pct = Math.max(0, Math.min(100, (val / maxVal) * 100));
+        const color = colorFor ? colorFor(d) : C.amber;
+        return (
+          <div key={i}>
+            <div className="flex items-center justify-between text-xs mb-1 gap-2">
+              <span style={{ color: C.ink }} className="truncate">{d[labelKey]}</span>
+              <span className="font-semibold shrink-0" style={{ color }}>{formatValue ? formatValue(val) : val}</span>
+            </div>
+            <div className="w-full rounded-full" style={{ background: C.bg, height: 8 }}>
+              <div className="rounded-full" style={{ width: `${pct}%`, height: 8, background: color, transition: "width 500ms ease-out" }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -8573,32 +8563,12 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <>
           <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Tiempo total fuera de servicio (horas)</div>
-            <div style={{ width: "100%", height: Math.max(180, byDowntime.length * 34) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byDowntime} layout="vertical" margin={{ left: 8, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => [`${v} h`, "Tiempo fuera de servicio"]} />
-                  <Bar dataKey="hours" fill={C.red} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <HorizontalBarChart data={byDowntime} labelKey="label" valueKey="hours" colorFor={() => C.red} formatValue={v => `${v} h`} />
           </div>
 
           <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos que más veces han fallado</div>
-            <div style={{ width: "100%", height: Math.max(180, byFrequency.length * 34) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byFrequency} layout="vertical" margin={{ left: 8, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => [v, "Incidentes"]} />
-                  <Bar dataKey="incidentes" fill={C.amber} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <HorizontalBarChart data={byFrequency} labelKey="label" valueKey="incidentes" colorFor={() => C.amber} />
           </div>
 
           <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>

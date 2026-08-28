@@ -1001,6 +1001,38 @@ function computeEquipoStats(equipo, mttoLog) {
   return { total: records.length, correctivos: correctivos.length, costoTotal, ...status };
 }
 
+/**
+ * Hoja de vida — parte 1: detecta solo, buscando palabras clave en la descripción de cada
+ * mantenimiento, qué piezas se le han cambiado a un equipo (correa, rodamiento, variador, etc.)
+ * — para que quede como referencia rápida sin tener que leer todo el historial completo.
+ */
+const PIEZA_KEYWORDS = [
+  { match: /correa/i, label: "Correa" },
+  { match: /rodamiento/i, label: "Rodamiento" },
+  { match: /variador/i, label: "Variador" },
+  { match: /motor/i, label: "Motor" },
+  { match: /bomba/i, label: "Bomba" },
+  { match: /filtro/i, label: "Filtro" },
+  { match: /banda/i, label: "Banda" },
+  { match: /cojinete/i, label: "Cojinete" },
+  { match: /sello|empaque/i, label: "Sello / empaque" },
+  { match: /compresor/i, label: "Compresor" },
+  { match: /ventilador|turbina/i, label: "Ventilador / turbina" },
+  { match: /contactor|breaker|relé|rele\b/i, label: "Contactor / breaker / relé" },
+  { match: /sensor/i, label: "Sensor" },
+  { match: /manguera|tubería|tuberia/i, label: "Manguera / tubería" },
+  { match: /v[aá]lvula/i, label: "Válvula" },
+];
+function detectPartsChanged(records) {
+  const found = [];
+  records.forEach(r => {
+    PIEZA_KEYWORDS.forEach(({ match, label }) => {
+      if (match.test(r.descripcion || "")) found.push({ parte: label, fecha: r.fecha, tipo: r.tipo, descripcion: r.descripcion, tecnico: r.tecnico });
+    });
+  });
+  return found.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+}
+
 
 
 
@@ -1185,6 +1217,24 @@ METER_GROUPS.forEach(g => g.meters.forEach(m => { m.id = `mt-${g.id}-${m.c}`; })
 const ALL_METERS = METER_GROUPS.flatMap(g => g.meters);
 
 const SHIFTS = ["06:00 – 14:00", "14:00 – 22:00", "22:00 – 06:00"];
+
+/**
+ * De todo el equipo (Horario Mensual), ¿quién trabaja el turno elegido, en la fecha elegida?
+ * Se fija en la hora de entrada guardada en el horario ese día, y la compara contra la hora de
+ * inicio del turno (con 2 horas de margen, por si el turno real no arranca exacto a la hora
+ * "oficial" del bloque). No cuenta a quien tenga ese día un código especial (VAC/LIBRE/INC/etc.)
+ * ni a quien no tenga nada guardado ese día.
+ */
+function employeesOnShift(employees, scheduleEntries, dateIso, shiftLabel) {
+  const startHour = parseFloat(shiftLabel.split("–")[0].trim().split(":")[0]);
+  return (employees || []).filter(emp => {
+    if (emp.active === false) return false;
+    const entry = scheduleEntries[`${emp.id}::${dateIso}`];
+    if (!entry || entry.code || entry.entrada == null) return false;
+    const diff = Math.abs(entry.entrada - startHour);
+    return diff < 2 || diff > 22; // el margen "envuelve" la medianoche para el turno 22:00–06:00
+  });
+}
 
 /* ============================================================
    HORARIOS — festivos Colombia 2026 y reglas de turnistas
@@ -3183,13 +3233,23 @@ function VoiceInputButton({ onResult }) {
   );
 }
 
-function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
   const [filterEstado, setFilterEstado] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "" });
   const [saving, setSaving] = useState(false);
+  const [assignDate, setAssignDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [assignShift, setAssignShift] = useState(SHIFTS[0]);
+  const [showAllForAssign, setShowAllForAssign] = useState(false);
 
   const usernames = Object.keys(accounts || {});
+  const onShiftEmployeeIds = useMemo(
+    () => new Set(employeesOnShift(employees, scheduleEntries, assignDate, assignShift).map(e => e.id)),
+    [employees, scheduleEntries, assignDate, assignShift]
+  );
+  const assignableUsernames = showAllForAssign
+    ? usernames
+    : usernames.filter(u => onShiftEmployeeIds.has(accounts[u]?.linked_employee_id));
 
   const doCreate = async () => {
     if (!form.titulo.trim()) return;
@@ -3226,6 +3286,26 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
           </div>
           <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
             className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <div className="rounded-md p-2 mb-2" style={{ background: C.bg }}>
+            <div className="text-xs font-medium mb-1.5" style={{ color: C.inkSoft }}>¿A quién se la vas a asignar? Elige el día y turno para ver solo quién está disponible:</div>
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <input type="date" value={assignDate} onChange={e => setAssignDate(e.target.value)}
+                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <select value={assignShift} onChange={e => setAssignShift(e.target.value)}
+                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <label className="text-xs flex items-center gap-1.5 cursor-pointer select-none" style={{ color: C.inkSoft }}>
+                <input type="checkbox" checked={showAllForAssign} onChange={e => setShowAllForAssign(e.target.checked)} />
+                Ver a todos (no solo los de turno)
+              </label>
+            </div>
+            {!showAllForAssign && assignableUsernames.length === 0 && (
+              <div className="text-xs mb-2" style={{ color: "#a31245" }}>
+                Nadie aparece de turno ese día/hora según el Horario Mensual (o nadie ha vinculado su cuenta con su nombre del horario en Mi Perfil). Marca "Ver a todos" si hace falta.
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <select value={form.prioridad} onChange={e => setForm(f => ({ ...f, prioridad: e.target.value }))}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -3234,7 +3314,7 @@ function TasksView({ tasks, accounts, currentUser, currentUsername, isAdmin, onC
             <select value={form.asignadoA} onChange={e => setForm(f => ({ ...f, asignadoA: e.target.value }))}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <option value="">Sin asignar</option>
-              {usernames.map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
+              {assignableUsernames.map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
             </select>
             <select value={form.recurrencia} onChange={e => setForm(f => ({ ...f, recurrencia: e.target.value }))}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -3659,6 +3739,19 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
   const [downloadingQr, setDownloadingQr] = useState(false);
 
   const status = currentEquipoStatus(equipo.id, records);
+  const stats = useMemo(() => computeEquipoStats(equipo, records), [equipo, records]);
+  const partsChanged = useMemo(() => detectPartsChanged(records), [records]);
+  const fechaAlta = records.length ? records.reduce((a, b) => new Date(a.fecha) < new Date(b.fecha) ? a : b).fecha : equipo.createdAt;
+  const [downloadingHV, setDownloadingHV] = useState(false);
+
+  const doDownloadHojaVida = async () => {
+    setDownloadingHV(true);
+    try {
+      const doc = await generateHojaVidaPdf(equipo, records, stats, partsChanged, fechaAlta);
+      doc.save(`hoja-de-vida-${equipo.nombre.replace(/[^a-z0-9]+/gi, "-")}.pdf`);
+    } catch { /* no bloquea el resto de la pantalla si falla */ }
+    setDownloadingHV(false);
+  };
 
   const doDownloadQr = async () => {
     setDownloadingQr(true);
@@ -3728,6 +3821,48 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
           </div>
           {saveMsg && <div className="text-xs mt-2" style={{ color: saveMsg.ok ? C.green : C.red }}>{saveMsg.text}</div>}
         </div>
+      </div>
+
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Hoja de vida</div>
+          <Button size="sm" variant="ghost" icon={Download} disabled={downloadingHV} onClick={doDownloadHojaVida}>
+            {downloadingHV ? "Generando…" : "Descargar hoja de vida (PDF)"}
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          <div className="rounded-md p-2" style={{ background: C.bg }}>
+            <div className="text-[10px]" style={{ color: C.gray }}>Primer registro</div>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>{fechaAlta ? fmtDT(fechaAlta).split(",")[0] : "—"}</div>
+          </div>
+          <div className="rounded-md p-2" style={{ background: C.bg }}>
+            <div className="text-[10px]" style={{ color: C.gray }}>Mantenimientos totales</div>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>{stats.total} ({stats.correctivos} correctivos)</div>
+          </div>
+          <div className="rounded-md p-2" style={{ background: C.bg }}>
+            <div className="text-[10px]" style={{ color: C.gray }}>Costo acumulado</div>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>{stats.costoTotal ? `$${stats.costoTotal.toLocaleString("es-CO")}` : "—"}</div>
+          </div>
+          <div className="rounded-md p-2" style={{ background: status.outOfService ? C.redSoft : C.greenSoft }}>
+            <div className="text-[10px]" style={{ color: C.gray }}>Estado actual</div>
+            <div className="text-sm font-semibold" style={{ color: status.outOfService ? C.red : C.green }}>{status.outOfService ? "Fuera de servicio" : "Funcionando"}</div>
+          </div>
+        </div>
+        {partsChanged.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.inkSoft }}>Piezas cambiadas (detectado en las descripciones)</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[...new Set(partsChanged.map(p => p.parte))].map(parte => {
+                const ultima = partsChanged.find(p => p.parte === parte);
+                return (
+                  <span key={parte} className="text-xs px-2 py-1 rounded-full" style={{ background: C.amberSoft, color: "#7a5405" }} title={ultima.descripcion}>
+                    {parte} · {fmtDT(ultima.fecha).split(",")[0]}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Historial</div>
@@ -7690,6 +7825,47 @@ async function generateAllEquiposQrPdf(equipos) {
   return doc;
 }
 /** PDF de una sola página con el resumen ejecutivo, listo para reuniones con la gerencia. */
+/** Hoja de vida de un equipo, en PDF — el resumen estructurado + el historial completo, para
+ *  tener siempre a mano una referencia del equipo aunque haya pasado mucho tiempo. */
+async function generateHojaVidaPdf(equipo, records, stats, partsChanged, fechaAlta) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const pageH = doc.internal.pageSize.getHeight();
+
+  let y = pdfLetterhead(doc, "Hoja de Vida del Equipo", [equipo.nombre, equipo.sistema]);
+
+  y = pdfStatBoxes(doc, y, [
+    { label: "Primer registro", value: fechaAlta ? fmtDT(fechaAlta).split(",")[0] : "—" },
+    { label: "Mantenimientos", value: `${stats.total} (${stats.correctivos} correctivos)` },
+    { label: "Costo acumulado", value: stats.costoTotal ? `$${stats.costoTotal.toLocaleString("es-CO")}` : "—", color: PDF_C.ink },
+    { label: "Estado actual", value: stats.outOfService ? "Fuera de servicio" : "Funcionando", color: stats.outOfService ? PDF_C.red : PDF_C.green },
+  ]);
+
+  if (partsChanged.length > 0) {
+    y = pdfSectionTitle(doc, y, "Piezas cambiadas");
+    const uniqueParts = [...new Set(partsChanged.map(p => p.parte))].map(parte => partsChanged.find(p => p.parte === parte));
+    y = pdfTable(doc, y, ["Pieza", "Última vez", "Descripción"],
+      uniqueParts.map(p => [p.parte, fmtDT(p.fecha).split(",")[0], p.descripcion || "—"]));
+  }
+
+  y = pdfSectionTitle(doc, y, "Historial completo de mantenimientos");
+  if (records.length === 0) {
+    doc.setFontSize(9); doc.text("Sin mantenimientos registrados.", 14, y); y += 8;
+  } else {
+    y = pdfTable(doc, y, ["Fecha", "Tipo", "Descripción", "Costo", "Técnico"],
+      records.map(r => [
+        fmtDT(r.fecha).split(",")[0],
+        MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo,
+        r.descripcion || "—",
+        r.costo ? `$${Number(r.costo).toLocaleString("es-CO")}` : "—",
+        r.tecnico || "—",
+      ]));
+  }
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
 async function generateExecutivePdf(uptime, compliance, cost, generatedBy, compliancePrev, costPrev) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
@@ -10651,7 +10827,7 @@ export default function App() {
               onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onImportExcel={importScheduleFromParsedExcel} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
           {view === "tasks" && (
-            <TasksView tasks={tasks} accounts={profiles} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
+            <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (

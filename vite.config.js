@@ -42,8 +42,13 @@ export default defineConfig({
         // Separa las librerías pesadas en su propio archivo, aparte del código de la app.
         // Así el navegador los puede guardar en caché por separado (cambian mucho menos seguido
         // que el código de la app) y la primera carga se siente más rápida, sobre todo con mala señal.
+        //
+        // OJO: "recharts" se quitó de aquí a propósito (agosto 2026) — la app ya no usa esa
+        // librería para nada (se reemplazaron todas las gráficas por SVG hecho a mano), pero
+        // esta lista obligaba a Vite a empaquetarla igual, aunque nadie la usara, y eso causaba
+        // un error real (React error #310) al cargar la app. Si el día de mañana vuelves a usar
+        // recharts para algo, puedes agregarla de nuevo aquí.
         manualChunks: {
-          recharts: ["recharts"],
           xlsx: ["xlsx"],
           "supabase-qrcode": ["@supabase/supabase-js", "qrcode"],
         },

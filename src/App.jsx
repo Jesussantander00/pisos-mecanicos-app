@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  LineChart, Line, Legend
-} from "recharts";
-import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
@@ -5658,6 +5654,47 @@ function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatValue, m
   );
 }
 
+/** Barras verticales simples, sin recharts — cada barra es un div con altura en %. */
+function VerticalBarChart({ data, labelKey, valueKey, colorFor, formatValue, max = 100 }) {
+  return (
+    <div className="flex items-end gap-2" style={{ height: 180 }}>
+      {data.map((d, i) => {
+        const val = d[valueKey];
+        const pct = val === null || val === undefined ? 0 : Math.max(2, Math.min(100, (Number(val) / max) * 100));
+        const color = val === null || val === undefined ? C.gray : (colorFor ? colorFor(val) : C.amber);
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
+            <span className="text-[10px] font-semibold mb-1 truncate w-full text-center" style={{ color }}>
+              {val === null || val === undefined ? "—" : (formatValue ? formatValue(val) : val)}
+            </span>
+            <div className="w-full rounded-t-md" style={{ height: `${pct}%`, minHeight: 4, background: color, transition: "height 500ms ease-out" }} />
+            <span className="text-[9px] mt-1 truncate w-full text-center" style={{ color: C.gray }} title={d[labelKey]}>{d[labelKey]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Línea de tendencia pequeña ("sparkline"), en SVG puro — sin recharts. */
+function Sparkline({ points, width = 200, height = 50, color }) {
+  if (!points || points.length < 2) return null;
+  const values = points.map(p => p.v);
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = max - min || 1;
+  const stepX = width / (points.length - 1);
+  const coords = points.map((p, i) => {
+    const x = i * stepX;
+    const y = height - ((p.v - min) / range) * (height - 8) - 4;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: "block" }}>
+      <polyline points={coords} fill="none" stroke={color || C.blue} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /**
  * Badge de alerta rediseñado (pilar 4 del rediseño): antes, cualquier número grande en rojo se
  * veía como una emergencia constante. Ahora: rojo se reserva de verdad para lo urgente (pocas
@@ -6348,19 +6385,7 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
       </p>
 
       <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <div style={{ width: "100%", height: 280 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
-              <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={90} tick={{ fontSize: 10, fill: C.inkSoft }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: C.inkSoft }} unit="%" />
-              <Tooltip formatter={(v) => v === null ? "Sin datos" : `${v}%`} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {data.map((d, i) => <Cell key={i} fill={colorFor(d.value)} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <VerticalBarChart data={data} labelKey="name" valueKey="value" colorFor={colorFor} formatValue={v => `${v}%`} />
         <div className="flex items-center gap-4 justify-center mt-2 text-xs" style={{ color: C.inkSoft }}>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.green }} /> ≥ 50%</span>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.amber }} /> 20–49%</span>
@@ -6400,12 +6425,7 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
 
               {hist.length > 1 ? (
                 <div style={{ width: "100%", height: 70 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={hist}>
-                      <Line type="monotone" dataKey="v" stroke={C.blue} strokeWidth={2} dot={false} />
-                      <YAxis domain={[0, 100]} hide />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <Sparkline points={hist} />
                 </div>
               ) : <div className="text-xs py-4 text-center" style={{ color: C.gray }}>Sin histórico suficiente</div>}
               <div className="text-xs mt-1" style={{ color: C.gray }}>

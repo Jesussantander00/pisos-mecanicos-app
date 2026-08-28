@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  LineChart, Line, Legend, PieChart, Pie
+  LineChart, Line, Legend
 } from "recharts";
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
@@ -4285,16 +4285,7 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Preventivo vs. correctivo</div>
               <div className="flex items-center gap-4">
-                <div style={{ width: 140, height: 140, flexShrink: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={tipoSplit} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={2}>
-                        {tipoSplit.map((d, i) => <Cell key={i} fill={d.name === "Preventivo" ? C.green : C.red} />)}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                <MiniDonut segments={tipoSplit.map(d => ({ value: d.value, color: d.name === "Preventivo" ? C.green : C.red }))} />
                 <div className="space-y-2">
                   {tipoSplit.map(d => (
                     <div key={d.name} className="flex items-center gap-2 text-sm">
@@ -5644,6 +5635,35 @@ function MiniGauge({ value, max, size = 56, stroke = 6, color, trackColor }) {
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke}
         strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cy})`} style={{ transition: "stroke-dashoffset 600ms var(--ease-out)" }} />
+    </svg>
+  );
+}
+
+/**
+ * Donut de varios segmentos, en SVG puro (sin recharts) — recibe [{ value, color }, ...].
+ * Se usa en vez del PieChart de recharts para evitar un bug conocido de esa librería.
+ */
+function MiniDonut({ segments, size = 140, stroke = 22 }) {
+  const r = (size - stroke) / 2;
+  const cx = size / 2, cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const total = segments.reduce((s, seg) => s + seg.value, 0) || 1;
+  let offsetSoFar = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.line} strokeWidth={stroke} />
+      {segments.map((seg, i) => {
+        const frac = seg.value / total;
+        const dash = circumference * frac;
+        const gap = circumference - dash;
+        const rotation = -90 + (offsetSoFar / total) * 360;
+        offsetSoFar += seg.value;
+        if (frac <= 0) return null;
+        return (
+          <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={stroke}
+            strokeDasharray={`${dash} ${gap}`} strokeLinecap="butt" transform={`rotate(${rotation} ${cx} ${cy})`} />
+        );
+      })}
     </svg>
   );
 }

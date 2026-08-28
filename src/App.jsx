@@ -8859,6 +8859,13 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false); // true una vez ya se revisó si había sesión guardada
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  // Qué categorías del menú lateral se dejaron abiertas a mano (ver NAV_GROUPS más abajo). Este
+  // hook TIENE que estar aquí arriba, antes de cualquier "return" condicional del componente —
+  // si un hook se ejecuta unas veces sí y otras no (según si ya cargó, si hay sesión, etc.),
+  // React se confunde sobre cuántos hooks hay y la app se cae con un error críptico.
+  const [manuallyToggled, setManuallyToggled] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("pm-local:nav-groups-open") || "{}"); } catch { return {}; }
+  });
   const [reportEmail, setReportEmail] = useState("");
   const [reportWhatsapp, setReportWhatsapp] = useState("");
   const [sentReports, setSentReports] = useState([]);
@@ -10529,9 +10536,6 @@ export default function App() {
   // Un grupo se abre solo si contiene la pantalla en la que estás — así nunca hay que buscar
   // "¿en qué categoría quedó esto?" a ciegas. Además recuerda qué grupos dejaste abiertos a mano.
   const groupContainingView = NAV_GROUPS.find(g => g.items.some(n => n.id === view))?.id;
-  const [manuallyToggled, setManuallyToggled] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("pm-local:nav-groups-open") || "{}"); } catch { return {}; }
-  });
   const toggleGroup = (gid) => {
     const next = { ...manuallyToggled, [gid]: !isGroupOpen(gid) };
     setManuallyToggled(next);

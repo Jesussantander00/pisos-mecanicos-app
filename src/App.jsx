@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  LineChart, Line, Legend
+  LineChart, Line, Legend, PieChart, Pie, RadialBarChart, RadialBar, PolarAngleAxis
 } from "recharts";
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
@@ -3969,14 +3969,20 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
 
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Disponibilidad promedio</div>
-          <div className="text-3xl font-bold mt-1" style={{ color: avgUptime >= 90 ? C.green : C.red }}>{avgUptime}%</div>
+        <div className="rounded-lg border p-4 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <MiniGauge value={avgUptime} max={100} size={48} color={avgUptime >= 90 ? C.green : C.red} />
+          <div>
+            <div className="text-2xl font-bold leading-none" style={{ color: avgUptime >= 90 ? C.green : C.red }}>{avgUptime}%</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Disponibilidad promedio</div>
+          </div>
         </div>
-        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento de rondas</div>
-          <div className="text-3xl font-bold mt-1" style={{ color: compliance.ronda.pct >= 90 ? C.green : C.red }}>{compliance.ronda.pct}%</div>
-          <TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />
+        <div className="rounded-lg border p-4 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <MiniGauge value={compliance.ronda.pct} max={100} size={48} color={compliance.ronda.pct >= 90 ? C.green : C.red} />
+          <div>
+            <div className="text-2xl font-bold leading-none" style={{ color: compliance.ronda.pct >= 90 ? C.green : C.red }}>{compliance.ronda.pct}%</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Cumplimiento de rondas</div>
+            <TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />
+          </div>
         </div>
         <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Costo de mantenimiento (mes)</div>
@@ -3986,16 +3992,18 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Disponibilidad de equipos por sistema</div>
-      <div className="rounded-lg border mb-5 overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        {uptime.map((u, i) => (
-          <div key={u.sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
-            <span style={{ color: C.ink }}>{u.sistema}</span>
-            <span className="flex items-center gap-2">
-              {u.fuera > 0 && <span style={{ color: C.red }}>{u.fuera} fuera de servicio</span>}
-              <span className="font-semibold" style={{ color: u.pct >= 90 ? C.green : C.red }}>{u.pct}%</span>
-            </span>
-          </div>
-        ))}
+      <div className="rounded-lg border p-4 mb-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <ResponsiveContainer width="100%" height={Math.max(160, uptime.length * 32)}>
+          <BarChart data={uptime} layout="vertical" margin={{ left: 8, right: 24 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+            <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={v => `${v}%`} />
+            <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
+              {uptime.map((u, i) => <Cell key={i} fill={u.pct >= 90 ? C.green : C.red} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento de rondas este mes (vs. mes pasado)</div>
@@ -4019,13 +4027,16 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       {cost.bySistema.length > 0 && (
         <>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema (este mes)</div>
-          <div className="rounded-lg border overflow-hidden" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-            {cost.bySistema.slice(0, 10).map(([sistema, c], i) => (
-              <div key={sistema} className="flex items-center justify-between px-3 py-2 text-xs" style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: i ? `1px solid ${C.line}` : "none" }}>
-                <span style={{ color: C.ink }}>{sistema}</span>
-                <span className="font-semibold" style={{ color: C.ink }}>${c.toLocaleString("es-CO")}</span>
-              </div>
-            ))}
+          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <ResponsiveContainer width="100%" height={Math.max(160, Math.min(10, cost.bySistema.length) * 32)}>
+              <BarChart data={cost.bySistema.slice(0, 10).map(([sistema, valor]) => ({ sistema, valor }))} layout="vertical" margin={{ left: 8, right: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={v => `$${v.toLocaleString("es-CO")}`} />
+                <Bar dataKey="valor" fill={C.amber} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </>
       )}
@@ -4075,6 +4086,13 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
 
   const totalMantenimientos = mttoLog.length;
   const totalCosto = mttoLog.reduce((s, r) => s + (Number(r.costo) || 0), 0);
+  const totalCorrectivos = mttoLog.filter(r => r.tipo === "correctivo").length;
+  const totalPreventivos = totalMantenimientos - totalCorrectivos;
+  const pctPreventivo = totalMantenimientos > 0 ? Math.round((totalPreventivos / totalMantenimientos) * 100) : 0;
+  const tipoSplit = [
+    { name: "Preventivo", value: totalPreventivos },
+    { name: "Correctivo", value: totalCorrectivos },
+  ].filter(d => d.value > 0);
 
   return (
     <div>
@@ -4083,18 +4101,40 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
         Historial de mantenimientos y fallas por equipo, para decidir con datos si vale la pena seguir reparando algo o es mejor reemplazarlo.
       </p>
 
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Fuera de servicio ahora</div>
-          <div className="text-2xl font-semibold mt-1" style={{ color: outOfService.length ? C.red : C.ink }}>{outOfService.length}</div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: outOfService.length ? C.redSoft : C.greenSoft }}>
+            {outOfService.length ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
+          </div>
+          <div>
+            <div className="text-xl font-bold leading-none" style={{ color: outOfService.length ? C.red : C.ink }}>{outOfService.length}</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Fuera de servicio</div>
+          </div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Mantenimientos registrados</div>
-          <div className="text-2xl font-semibold mt-1" style={{ color: C.ink }}>{totalMantenimientos}</div>
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}>
+            <Wrench size={18} color={C.blue} />
+          </div>
+          <div>
+            <div className="text-xl font-bold leading-none" style={{ color: C.ink }}>{totalMantenimientos}</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Mantenimientos totales</div>
+          </div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Costo acumulado registrado</div>
-          <div className="text-lg font-semibold mt-1" style={{ color: C.ink }}>{totalCosto ? `$${totalCosto.toLocaleString("es-CO")}` : "—"}</div>
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
+          <MiniGauge value={pctPreventivo} max={100} size={40} stroke={5} color={pctPreventivo >= 60 ? C.green : C.amber} />
+          <div>
+            <div className="text-xl font-bold leading-none" style={{ color: C.ink }}>{pctPreventivo}%</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Preventivo (vs. correctivo)</div>
+          </div>
+        </div>
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}>
+            <Gauge size={18} color={C.amber} />
+          </div>
+          <div>
+            <div className="text-lg font-bold leading-none" style={{ color: C.ink }}>{totalCosto ? `$${totalCosto.toLocaleString("es-CO")}` : "—"}</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Costo acumulado</div>
+          </div>
         </div>
       </div>
 
@@ -4102,6 +4142,31 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todavía no hay mantenimientos registrados desde la app.</p>
       ) : (
         <>
+          {tipoSplit.length > 0 && (
+            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Preventivo vs. correctivo</div>
+              <div className="flex items-center gap-4">
+                <ResponsiveContainer width={140} height={140}>
+                  <PieChart>
+                    <Pie data={tipoSplit} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={2}>
+                      {tipoSplit.map((d, i) => <Cell key={i} fill={d.name === "Preventivo" ? C.green : C.red} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {tipoSplit.map(d => (
+                    <div key={d.name} className="flex items-center gap-2 text-sm">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: d.name === "Preventivo" ? C.green : C.red }} />
+                      <span style={{ color: C.ink }}>{d.name}</span>
+                      <span className="font-semibold" style={{ color: C.gray }}>{d.value} ({Math.round((d.value / totalMantenimientos) * 100)}%)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {bySistema.length > 0 && (
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Mantenimientos por sistema</div>
@@ -5417,6 +5482,45 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
   );
 }
 
+/**
+ * Medidor circular pequeño — la idea visual de todo el rediseño de Inicio: en vez de tarjetas de
+ * "dashboard bancario" genéricas, widgets que se sienten como los manómetros del piso mecánico
+ * mismo (coherente con el ícono de la app y el nombre "Pisos Mecánicos").
+ */
+function MiniGauge({ value, max, size = 56, stroke = 6, color, trackColor }) {
+  const r = (size - stroke) / 2;
+  const cx = size / 2, cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const pct = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  const offset = circumference * (1 - pct);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={trackColor || C.line} strokeWidth={stroke} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`} style={{ transition: "stroke-dashoffset 600ms var(--ease-out)" }} />
+    </svg>
+  );
+}
+
+/**
+ * Badge de alerta rediseñado (pilar 4 del rediseño): antes, cualquier número grande en rojo se
+ * veía como una emergencia constante. Ahora: rojo se reserva de verdad para lo urgente (pocas
+ * unidades, algo roto ahora mismo); los conteos grandes que son más "para tu información" que
+ * "urgente" (como cuántos movimientos de inventario hay en el historial) usan un tono ámbar más
+ * calmado, y cualquier número se recorta a "99+" para que nunca se sienta como una alarma sin fin.
+ */
+function NavBadge({ count, urgent = true }) {
+  if (!count) return null;
+  const label = typeof count === "string" ? count : count > 99 ? "99+" : String(count);
+  const bg = urgent ? C.red : C.amber;
+  return (
+    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none" style={{ background: bg, color: "#fff", minWidth: 18, textAlign: "center", display: "inline-block" }}>
+      {label}
+    </span>
+  );
+}
+
 function OnboardingTour({ onClose }) {
   const [step, setStep] = useState(0);
   const s = ONBOARDING_STEPS[step];
@@ -5444,7 +5548,7 @@ function OnboardingTour({ onClose }) {
   );
 }
 
-function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts }) {
+function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, lowStockDetail, activeIssuesList, mttoWeekCount }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const canManageInv = isAdmin || isAlmacenista;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
@@ -5454,8 +5558,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
     { id: "meters", label: "Lecturas de Medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies },
     { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
-    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock },
-    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock },
+    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock, urgentBadge: false },
+    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock, urgentBadge: false },
     { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv },
     { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true },
     { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia },
@@ -5466,7 +5570,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true },
     { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
     { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
-    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks },
+    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false },
     { id: "profile", label: "Mi Perfil", icon: User, desc: "Tu firma para la entrega de turno", access: true },
     { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
@@ -5479,6 +5583,10 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "general-history", label: "Historial de cambios", icon: History, desc: "Ediciones en empleados e inventario", access: isAdmin },
     { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido y quién no", access: isAdmin },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
+
+  const oldestIssue = activeIssuesList.length
+    ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
+    : null;
 
   return (
     <div>
@@ -5494,12 +5602,6 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       </div>
 
-      <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
-        {gerenciaLocked
-          ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
-          : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
-      </p>
-
       {!hasSignature && !dismissedSigReminder && (
         <div className="rounded-lg p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
           <div className="text-sm" style={{ color: "#7a5405" }}>
@@ -5513,26 +5615,85 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       )}
 
+      {/* PILAR 1 — Widgets vivos: el tablero de instrumentos del día, no solo accesos directos */}
       {!gerenciaLocked && (
-        <div className="mb-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-5">
+          <button onClick={() => onNavigate("ronda")} className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
+            <MiniGauge value={tourProgress.done} max={tourProgress.total} color={tourProgress.done >= tourProgress.total ? C.green : C.amber} />
+            <div>
+              <div className="text-lg font-bold leading-none" style={{ color: C.ink }}>{tourProgress.done}<span className="text-xs font-normal" style={{ color: C.gray }}>/{tourProgress.total}</span></div>
+              <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>Pisos revisados hoy</div>
+            </div>
+          </button>
+
+          <button onClick={() => onNavigate("maintenance-log")} className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft || C.amberSoft }}>
+              <Wrench size={22} color={C.blue} />
+            </div>
+            <div>
+              <div className="text-lg font-bold leading-none" style={{ color: C.ink }}>{mttoWeekCount}</div>
+              <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>Mantenimientos esta semana</div>
+            </div>
+          </button>
+
+          <button onClick={() => onNavigate("issues")} className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md"
+            style={{ borderColor: activeIssuesList.length ? C.red : C.line, background: activeIssuesList.length ? C.redSoft : C.panel }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: activeIssuesList.length ? "#fff" : C.greenSoft }}>
+              {activeIssuesList.length ? <AlertTriangle size={22} color={C.red} /> : <CheckCircle2 size={22} color={C.green} />}
+            </div>
+            <div>
+              <div className="text-lg font-bold leading-none" style={{ color: C.ink }}>{activeIssuesList.length}</div>
+              <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>
+                {oldestIssue ? `Fuera de servicio · ${elapsed(oldestIssue.openedAt)} el más viejo` : "Fuera de servicio — ninguno"}
+              </div>
+            </div>
+          </button>
+
+          <button onClick={() => onNavigate(canManageInv ? "inventory-alerts" : "inventory")} className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.inkSoft }}>Stock más crítico</div>
+            {lowStockDetail.length === 0 ? (
+              <div className="text-xs flex items-center gap-1" style={{ color: C.green }}><CheckCircle2 size={13} /> Todo por encima del mínimo</div>
+            ) : (
+              <div className="space-y-1">
+                {lowStockDetail.slice(0, 3).map(it => (
+                  <div key={it.id} className="text-xs flex items-center justify-between gap-1" style={{ color: C.ink }}>
+                    <span className="truncate">{it.name}</span>
+                    <span className="font-semibold shrink-0" style={{ color: C.amber }}>{it.quantity}/{it.minThreshold}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados */}
+      {!gerenciaLocked && (
+        <div className="mb-5">
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
             {[
               { id: "ronda", label: "Nueva ronda", icon: ClipboardList, color: C.amber },
               { id: "issues", label: "Fuera de servicio", icon: Wrench, color: C.red },
               { id: "maintenance", label: "Mantenimiento", icon: PlusCircle, color: C.green },
               { id: "tasks", label: "Nueva tarea", icon: ClipboardCheck, color: C.blue },
-            ].map(qa => (
+            ].map((qa, i, arr) => (
               <button key={qa.id} onClick={() => onNavigate(qa.id)}
-                className="flex items-center gap-2 rounded-lg p-3 transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
-                style={{ background: qa.color, color: "#fff" }}>
-                <qa.icon size={18} />
-                <span className="text-sm font-semibold">{qa.label}</span>
+                className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06]"
+                style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none" }}>
+                <qa.icon size={18} color={qa.color} />
+                <span className="text-xs font-semibold text-center" style={{ color: C.ink }}>{qa.label}</span>
               </button>
             ))}
           </div>
         </div>
       )}
+
+      <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
+        {gerenciaLocked
+          ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
+          : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
+      </p>
 
       <div className="grid grid-cols-2 gap-3">
         {modules.map(m => (
@@ -5547,7 +5708,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                 <m.icon size={16} style={{ color: m.access ? C.amber : C.gray }} />
                 <div className="text-sm font-semibold" style={{ color: C.ink }}>{m.label}</div>
               </div>
-              {!!m.badge && <span className="text-xs font-bold px-1.5 rounded-full" style={{ background: C.red, color: "#fff" }}>{m.badge}</span>}
+              <NavBadge count={m.badge} urgent={m.urgentBadge !== false} />
             </div>
             <div className="text-xs" style={{ color: C.gray }}>
               {m.access ? m.desc : gerenciaLocked ? "No disponible para cuentas de gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
@@ -8149,18 +8310,33 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
       </p>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Fuera de servicio ahora</div>
-          <div className="text-2xl font-semibold mt-1" style={{ color: totalCurrentlyDown ? C.red : C.ink }}>{totalCurrentlyDown}</div>
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: totalCurrentlyDown ? C.redSoft : C.greenSoft }}>
+            {totalCurrentlyDown ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
+          </div>
+          <div>
+            <div className="text-xl font-bold leading-none" style={{ color: totalCurrentlyDown ? C.red : C.ink }}>{totalCurrentlyDown}</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Fuera de servicio</div>
+          </div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Incidentes en el período</div>
-          <div className="text-2xl font-semibold mt-1" style={{ color: C.ink }}>{totalIncidents}</div>
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}>
+            <TrendingUp size={18} color={C.blue} />
+          </div>
+          <div>
+            <div className="text-xl font-bold leading-none" style={{ color: C.ink }}>{totalIncidents}</div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Incidentes en el período</div>
+          </div>
         </div>
-        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Falla activa más larga</div>
-          <div className="text-sm font-semibold mt-1" style={{ color: C.ink }}>
-            {longestActive ? `${longestActive.name} · ${fmtHours(longestActive.totalHours)}` : "Ninguna"}
+        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}>
+            <Clock size={18} color={C.amber} />
+          </div>
+          <div>
+            <div className="text-xs font-semibold leading-tight" style={{ color: C.ink }}>
+              {longestActive ? `${longestActive.name} · ${fmtHours(longestActive.totalHours)}` : "Ninguna"}
+            </div>
+            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Falla activa más larga</div>
           </div>
         </div>
       </div>
@@ -8781,13 +8957,28 @@ export default function App() {
     }
   }, [loadAllProfiles, loadAll]);
 
+  // Se usa para saber, dentro del listener de abajo, quién es "quien ya estaba conectado" sin
+  // depender de que el efecto se vuelva a ejecutar (el efecto corre una sola vez, con []).
+  const currentUserRef = useRef(null);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
   useEffect(() => {
     let subscription;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       await handleAuthChange(session);
       setAuthReady(true);
-      const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => { handleAuthChange(newSession); });
+      const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+        // Supabase dispara este evento en varios momentos que NO son un login/logout de verdad
+        // (ej. cada vez que la pestaña/app recupera el foco, o cuando el token se renueva solo
+        // por detrás) — antes esto hacía que TODA la app se volviera a cargar (pantalla de
+        // "Cargando…") cada vez que alguien volvía a la pestaña o cambiaba de pantalla. Ahora
+        // solo se reacciona quando de verdad cambia la sesión: alguien entra, alguien sale, o
+        // cambia la persona conectada — nunca por una simple renovación de token o de foco.
+        if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION" || event === "USER_UPDATED") return;
+        if (event === "SIGNED_IN" && newSession?.user?.id === currentUserRef.current) return;
+        handleAuthChange(newSession);
+      });
       subscription = sub.subscription;
     })();
     return () => { if (subscription) subscription.unsubscribe(); };
@@ -10078,39 +10269,74 @@ export default function App() {
   const floor = FLOORS.find(f => f.id === floorId);
   const activeCount = Object.keys(activeIssues).length;
 
-  const NAV = [
-    { id: "home", label: "Inicio", icon: Home },
-    { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
-    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, badge: coldOutOfRange.length },
-    { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays },
-    { id: "meters", label: "Lecturas de Medidores", icon: Zap, badge: meterAnomalies.length },
-    { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
-    { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length },
-    ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length }] : []),
-    ...((isAdmin || isAlmacenista) ? [{ id: "inventory-movements", label: "Movimientos de Inventario", icon: History }] : []),
-    { id: "maintenance", label: "Mantenimiento", icon: Wrench },
-    ...((isAdmin || isGerencia) ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
-    ...((isAdmin || isGerencia) ? [{ id: "executive", label: "Panel Ejecutivo", icon: Gauge }] : []),
-    ...(isAdmin ? [{ id: "maintenance-log", label: "Mantenimientos Realizados", icon: History }] : []),
-    ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
-    { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
-    { id: "boiler", label: "Check List Caldera", icon: Gauge },
-    { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
-    { id: "schedules", label: "Horario Mensual", icon: Users },
-    { id: "my-schedule", label: "Mi horario", icon: CalendarDays },
-    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length },
-    { id: "profile", label: "Mi Perfil", icon: User },
-    { id: "changelog", label: "Novedades", icon: Sparkles },
-    { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
-    { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
-    { id: "reports", label: "Reportes", icon: History },
-    { id: "tanks", label: "Tanques agua potable", icon: Droplets },
-    ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
-    ...(isAdmin ? [{ id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount }] : []),
-    ...(isAdmin ? [{ id: "trash", label: "Papelera", icon: Trash2, badge: trash.length }] : []),
-    ...(isAdmin ? [{ id: "general-history", label: "Historial de cambios", icon: History }] : []),
-    ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
-  ].filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id));
+  const NAV_GROUPS = [
+    {
+      id: "operacion", label: "Operación", items: [
+        { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
+        { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, badge: coldOutOfRange.length },
+        { id: "meters", label: "Lecturas de Medidores", icon: Zap, badge: meterAnomalies.length },
+        { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
+        { id: "boiler", label: "Check List Caldera", icon: Gauge },
+        { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
+        { id: "maintenance", label: "Mantenimiento", icon: Wrench },
+        { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false },
+        { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length, urgentBadge: false },
+        { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
+        { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
+      ],
+    },
+    {
+      id: "historial", label: "Historial y reportes", items: [
+        { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays },
+        { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
+        ...(isAdmin ? [{ id: "maintenance-log", label: "Mantenimientos Realizados", icon: History }] : []),
+        ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
+        { id: "reports", label: "Reportes", icon: History },
+        { id: "tanks", label: "Tanques agua potable", icon: Droplets },
+        ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
+      ],
+    },
+    {
+      id: "analisis", label: "Análisis", items: [
+        ...((isAdmin || isGerencia) ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
+        ...((isAdmin || isGerencia) ? [{ id: "executive", label: "Panel Ejecutivo", icon: Gauge }] : []),
+        ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
+        ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length, urgentBadge: false }] : []),
+        ...((isAdmin || isAlmacenista) ? [{ id: "inventory-movements", label: "Movimientos de Inventario", icon: History }] : []),
+      ],
+    },
+    {
+      id: "personal", label: "Personal", items: [
+        { id: "schedules", label: "Horario Mensual", icon: Users },
+        { id: "my-schedule", label: "Mi horario", icon: CalendarDays },
+        { id: "profile", label: "Mi Perfil", icon: User },
+        { id: "changelog", label: "Novedades", icon: Sparkles },
+      ],
+    },
+    ...(isAdmin ? [{
+      id: "administracion", label: "Administración", items: [
+        { id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount },
+        { id: "trash", label: "Papelera", icon: Trash2, badge: trash.length, urgentBadge: false },
+        { id: "general-history", label: "Historial de cambios", icon: History },
+      ],
+    }] : []),
+  ].map(g => ({ ...g, items: g.items.filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id)) })).filter(g => g.items.length > 0);
+
+  // Un grupo se abre solo si contiene la pantalla en la que estás — así nunca hay que buscar
+  // "¿en qué categoría quedó esto?" a ciegas. Además recuerda qué grupos dejaste abiertos a mano.
+  const groupContainingView = NAV_GROUPS.find(g => g.items.some(n => n.id === view))?.id;
+  const [manuallyToggled, setManuallyToggled] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("pm-local:nav-groups-open") || "{}"); } catch { return {}; }
+  });
+  const toggleGroup = (gid) => {
+    const next = { ...manuallyToggled, [gid]: !isGroupOpen(gid) };
+    setManuallyToggled(next);
+    try { localStorage.setItem("pm-local:nav-groups-open", JSON.stringify(next)); } catch { /* noop */ }
+  };
+  function isGroupOpen(gid) {
+    if (gid in manuallyToggled) return manuallyToggled[gid];
+    return gid === groupContainingView || gid === "operacion"; // "Operación" abierto por defecto
+  }
 
   return (
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
@@ -10171,15 +10397,39 @@ export default function App() {
           </div>
         </div>
         <div className="floor-scroll p-3 space-y-1" style={{ overflowY: "auto", flex: "1 1 auto", minHeight: 0 }}>
-          {NAV.map(n => (
-            <button key={n.id} onClick={() => { setView(n.id); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] ${view === n.id ? "" : "hover:bg-white/5 active:bg-white/10"}`}
-              style={{ background: view === n.id ? "#2a3f56" : undefined, color: view === n.id ? "#fff" : "#c3d0dd" }}>
-              <n.icon size={16} />
-              <span className="flex-1 text-left">{n.label}</span>
-              {!!n.badge && <span className="text-xs font-bold px-1.5 rounded-full" style={{ background: C.red, color: "#fff" }}>{n.badge}</span>}
-            </button>
-          ))}
+          <button onClick={() => { setView("home"); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] mb-2 ${view === "home" ? "" : "hover:bg-white/5 active:bg-white/10"}`}
+            style={{ background: view === "home" ? "#2a3f56" : undefined, color: view === "home" ? "#fff" : "#c3d0dd" }}>
+            <Home size={16} />
+            <span className="flex-1 text-left">Inicio</span>
+          </button>
+
+          {NAV_GROUPS.map(group => {
+            const open = isGroupOpen(group.id);
+            return (
+              <div key={group.id} className="mb-0.5">
+                <button onClick={() => toggleGroup(group.id)}
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide transition hover:bg-white/5"
+                  style={{ color: "#7d92a8" }}>
+                  {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  <span className="flex-1 text-left">{group.label}</span>
+                </button>
+                {open && (
+                  <div className="space-y-0.5 mt-0.5 mb-1">
+                    {group.items.map(n => (
+                      <button key={n.id} onClick={() => { setView(n.id); setSidebarOpen(false); }}
+                        className={`w-full flex items-center gap-2 pl-6 pr-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] ${view === n.id ? "" : "hover:bg-white/5 active:bg-white/10"}`}
+                        style={{ background: view === n.id ? "#2a3f56" : undefined, color: view === n.id ? "#fff" : "#c3d0dd" }}>
+                        <n.icon size={15} />
+                        <span className="flex-1 text-left">{n.label}</span>
+                        <NavBadge count={n.badge} urgent={n.urgentBadge !== false} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         {view === "ronda" && (
           <div className="p-3 pt-2 border-t flex flex-col shrink-0" style={{ borderColor: "#2a3f56", maxHeight: "40vh" }}>
@@ -10284,6 +10534,10 @@ export default function App() {
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
               hasSignature={!!account.signature} onGoToProfile={() => setView("profile")}
+              tourProgress={{ done: tourProgressCount, total: FLOORS.length }}
+              lowStockDetail={lowStockItems}
+              activeIssuesList={Object.values(activeIssues)}
+              mttoWeekCount={mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length, pendingAccounts: pendingAccountsCount }} />
           )}
           {view === "ronda" && (

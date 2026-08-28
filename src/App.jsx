@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  LineChart, Line, Legend, PieChart, Pie, RadialBarChart, RadialBar, PolarAngleAxis
+  LineChart, Line, Legend, PieChart, Pie
 } from "recharts";
 import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
@@ -4128,17 +4128,19 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Disponibilidad de equipos por sistema</div>
       <div className="rounded-lg border p-4 mb-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <ResponsiveContainer width="100%" height={Math.max(160, uptime.length * 32)}>
-          <BarChart data={uptime} layout="vertical" margin={{ left: 8, right: 24 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-            <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={v => `${v}%`} />
-            <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
-              {uptime.map((u, i) => <Cell key={i} fill={u.pct >= 90 ? C.green : C.red} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div style={{ width: "100%", height: Math.max(160, uptime.length * 32) }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={uptime} layout="vertical" margin={{ left: 8, right: 24 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={v => `${v}%`} />
+              <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
+                {uptime.map((u, i) => <Cell key={i} fill={u.pct >= 90 ? C.green : C.red} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento de rondas este mes (vs. mes pasado)</div>
@@ -4163,15 +4165,17 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         <>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema (este mes)</div>
           <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-            <ResponsiveContainer width="100%" height={Math.max(160, Math.min(10, cost.bySistema.length) * 32)}>
-              <BarChart data={cost.bySistema.slice(0, 10).map(([sistema, valor]) => ({ sistema, valor }))} layout="vertical" margin={{ left: 8, right: 24 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={v => `$${v.toLocaleString("es-CO")}`} />
-                <Bar dataKey="valor" fill={C.amber} radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ width: "100%", height: Math.max(160, Math.min(10, cost.bySistema.length) * 32) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={cost.bySistema.slice(0, 10).map(([sistema, valor]) => ({ sistema, valor }))} layout="vertical" margin={{ left: 8, right: 24 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="sistema" width={150} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={v => `$${v.toLocaleString("es-CO")}`} />
+                  <Bar dataKey="valor" fill={C.amber} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </>
       )}
@@ -4281,14 +4285,16 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Preventivo vs. correctivo</div>
               <div className="flex items-center gap-4">
-                <ResponsiveContainer width={140} height={140}>
-                  <PieChart>
-                    <Pie data={tipoSplit} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={2}>
-                      {tipoSplit.map((d, i) => <Cell key={i} fill={d.name === "Preventivo" ? C.green : C.red} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ width: 140, height: 140, flexShrink: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={tipoSplit} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={2}>
+                        {tipoSplit.map((d, i) => <Cell key={i} fill={d.name === "Preventivo" ? C.green : C.red} />)}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
                 <div className="space-y-2">
                   {tipoSplit.map(d => (
                     <div key={d.name} className="flex items-center gap-2 text-sm">
@@ -4305,30 +4311,34 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
           {bySistema.length > 0 && (
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Mantenimientos por sistema</div>
-              <ResponsiveContainer width="100%" height={Math.max(180, bySistema.length * 30)}>
-                <BarChart data={bySistema} layout="vertical" margin={{ left: 8, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="sistema" width={160} tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Bar dataKey="mantenimientos" fill={C.blue} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ width: "100%", height: Math.max(180, bySistema.length * 30) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={bySistema} layout="vertical" margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="sistema" width={160} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="mantenimientos" fill={C.blue} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
 
           {topCorrectivos.length > 0 && (
             <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos con más fallas (correctivos)</div>
-              <ResponsiveContainer width="100%" height={Math.max(180, topCorrectivos.length * 30)}>
-                <BarChart data={topCorrectivos} layout="vertical" margin={{ left: 8, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="label" width={160} tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Bar dataKey="fallas" fill={C.red} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ width: "100%", height: Math.max(180, topCorrectivos.length * 30) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={topCorrectivos} layout="vertical" margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="label" width={160} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="fallas" fill={C.red} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
 
@@ -6328,17 +6338,19 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
       </p>
 
       <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 60 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
-            <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={90} tick={{ fontSize: 10, fill: C.inkSoft }} />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: C.inkSoft }} unit="%" />
-            <Tooltip formatter={(v) => v === null ? "Sin datos" : `${v}%`} />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-              {data.map((d, i) => <Cell key={i} fill={colorFor(d.value)} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div style={{ width: "100%", height: 280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
+              <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={90} tick={{ fontSize: 10, fill: C.inkSoft }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: C.inkSoft }} unit="%" />
+              <Tooltip formatter={(v) => v === null ? "Sin datos" : `${v}%`} />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {data.map((d, i) => <Cell key={i} fill={colorFor(d.value)} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
         <div className="flex items-center gap-4 justify-center mt-2 text-xs" style={{ color: C.inkSoft }}>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.green }} /> ≥ 50%</span>
           <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.amber }} /> 20–49%</span>
@@ -6377,12 +6389,14 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
               )}
 
               {hist.length > 1 ? (
-                <ResponsiveContainer width="100%" height={70}>
-                  <LineChart data={hist}>
-                    <Line type="monotone" dataKey="v" stroke={C.blue} strokeWidth={2} dot={false} />
-                    <YAxis domain={[0, 100]} hide />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ width: "100%", height: 70 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={hist}>
+                      <Line type="monotone" dataKey="v" stroke={C.blue} strokeWidth={2} dot={false} />
+                      <YAxis domain={[0, 100]} hide />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               ) : <div className="text-xs py-4 text-center" style={{ color: C.gray }}>Sin histórico suficiente</div>}
               <div className="text-xs mt-1" style={{ color: C.gray }}>
                 {d.updatedAt ? `Últ. registro: ${fmtDT(d.updatedAt)} · ${d.updatedBy}` : "Sin registros aún"}
@@ -8539,28 +8553,32 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <>
           <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Tiempo total fuera de servicio (horas)</div>
-            <ResponsiveContainer width="100%" height={Math.max(180, byDowntime.length * 34)}>
-              <BarChart data={byDowntime} layout="vertical" margin={{ left: 8, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => [`${v} h`, "Tiempo fuera de servicio"]} />
-                <Bar dataKey="hours" fill={C.red} radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ width: "100%", height: Math.max(180, byDowntime.length * 34) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={byDowntime} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v) => [`${v} h`, "Tiempo fuera de servicio"]} />
+                  <Bar dataKey="hours" fill={C.red} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos que más veces han fallado</div>
-            <ResponsiveContainer width="100%" height={Math.max(180, byFrequency.length * 34)}>
-              <BarChart data={byFrequency} layout="vertical" margin={{ left: 8, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => [v, "Incidentes"]} />
-                <Bar dataKey="incidentes" fill={C.amber} radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ width: "100%", height: Math.max(180, byFrequency.length * 34) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={byFrequency} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="label" width={180} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v) => [v, "Incidentes"]} />
+                  <Bar dataKey="incidentes" fill={C.amber} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>

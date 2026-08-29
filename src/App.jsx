@@ -1113,17 +1113,28 @@ const GYM_FLOOR = { id: "gimnasio", name: "Gimnasio — Piso 14" };
    DATOS: TAREAS / PENDIENTES
    ============================================================ */
 const TASK_STATES = [
-  { code: "pendiente", label: "Pendiente" },
-  { code: "en-progreso", label: "En progreso" },
-  { code: "espera-repuesto", label: "En espera de repuesto" },
-  { code: "hecho", label: "Hecho" },
+  { code: "asignada", label: "Asignada" },
+  { code: "en-proceso", label: "En proceso" },
+  { code: "pausada", label: "Pausada" },
+  { code: "finalizada", label: "Finalizada" },
 ];
 const TASK_STATE_COLORS = {
+  "asignada": { bg: "#eef1f4", fg: "#5c6b7a" },
+  "en-proceso": { bg: "#e3f0ff", fg: "#1a4f8a" },
+  "pausada": { bg: "#fff3d6", fg: "#8a5a00" },
+  "finalizada": { bg: "#dff5e3", fg: "#1c7a34" },
+  // compatibilidad con tareas creadas antes de este cambio (otros nombres de estado), para que
+  // no se rompan ni queden "huérfanas" — ver normalizeTaskState() más abajo.
   "pendiente": { bg: "#eef1f4", fg: "#5c6b7a" },
   "en-progreso": { bg: "#e3f0ff", fg: "#1a4f8a" },
   "espera-repuesto": { bg: "#fff3d6", fg: "#8a5a00" },
   "hecho": { bg: "#dff5e3", fg: "#1c7a34" },
 };
+/** Tareas creadas antes de este cambio usaban otros nombres de estado — esto los traduce a los
+ * 4 nuevos para que las cuentas y los filtros los sigan reconociendo sin romperse. */
+const TASK_STATE_MIGRATE = { "pendiente": "asignada", "en-progreso": "en-proceso", "espera-repuesto": "pausada", "hecho": "finalizada" };
+function normalizeTaskState(estado) { return TASK_STATE_MIGRATE[estado] || estado || "asignada"; }
+
 const TASK_PRIORITIES = [
   { code: "alta", label: "Alta" },
   { code: "media", label: "Media" },
@@ -3326,12 +3337,61 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     setSaving(false);
   };
 
+  const [closingId, setClosingId] = useState(null);
+  const [closePhotos, setClosePhotos] = useState([]);
+  const [closeNote, setCloseNote] = useState("");
+  const [closeSaving, setCloseSaving] = useState(false);
+  const [closeMsg, setCloseMsg] = useState(null);
+  const [downloadingReportId, setDownloadingReportId] = useState(null);
+
   const priorityOrder = { alta: 0, media: 1, baja: 2 };
   const filtered = tasks
-    .filter(t => !filterEstado || t.estado === filterEstado)
+    .filter(t => !filterEstado || normalizeTaskState(t.estado) === filterEstado)
     .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt)));
 
-  const counts = TASK_STATES.reduce((acc, s) => { acc[s.code] = tasks.filter(t => t.estado === s.code).length; return acc; }, {});
+  const counts = TASK_STATES.reduce((acc, s) => { acc[s.code] = tasks.filter(t => normalizeTaskState(t.estado) === s.code).length; return acc; }, {});
+
+  /** Cambia de estado (Iniciar / Pausar / Reanudar) y deja registro en la cronología de la tarea.
+   * "Finalizar" NO pasa por aquí — ese tiene su propio flujo porque exige foto de evidencia. */
+  const transitionTask = (t, newEstado) => {
+    const patch = { estado: newEstado, timeLog: [...(t.timeLog || []), { estado: newEstado, at: nowIso() }] };
+    if (newEstado === "en-proceso" && !t.startedAt) patch.startedAt = nowIso();
+    onUpdateTask(t.id, patch);
+  };
+
+  const openClose = (t) => { setClosingId(t.id); setClosePhotos([]); setCloseNote(""); setCloseMsg(null); };
+
+  const doCloseTask = async (t) => {
+    if (closePhotos.length === 0) { setCloseMsg({ ok: false, text: "Necesitas al menos una foto de cómo quedó, para poder cerrarla." }); return; }
+    setCloseSaving(true); setCloseMsg(null);
+    try {
+      const res = await saveRecordWithPhotos(
+        "task-close",
+        { taskId: t.id, notaCierre: closeNote.trim() },
+        closePhotos,
+        async (payload, urls) => {
+          await onUpdateTask(payload.taskId, {
+            estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
+            timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
+          });
+        }
+      );
+      setClosingId(null); setClosePhotos([]); setCloseNote("");
+      if (res.queued) setSaveMsg({ ok: true, text: "✓ Cierre guardado en este celular — no había señal. Se sube solo apenas vuelva." });
+    } catch (e) {
+      setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea." });
+    }
+    setCloseSaving(false);
+  };
+
+  const doDownloadReport = async (t) => {
+    setDownloadingReportId(t.id);
+    try {
+      const doc = await generateTaskReportPdf(t, accounts[t.asignadoA]?.display_name || t.asignadoA || "Sin asignar");
+      doc.save(`reporte-novedad-${t.titulo.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 40)}.pdf`);
+    } catch { setSaveMsg({ ok: false, text: "No se pudo generar el reporte (revisa la conexión — necesita descargar las fotos)." }); }
+    setDownloadingReportId(null);
+  };
 
   return (
     <div>
@@ -3445,8 +3505,11 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       {filtered.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Nada por aquí — todo al día.</p>
       ) : filtered.map((t, i) => {
-        const stateColors = TASK_STATE_COLORS[t.estado];
+        const estado = normalizeTaskState(t.estado);
+        const stateColors = TASK_STATE_COLORS[estado];
         const canDelete = isAdmin || t.createdBy === currentUser;
+        const canAct = isAdmin || t.asignadoA === currentUsername;
+        const isClosing = closingId === t.id;
         return (
           <div key={t.id} className="pm-stagger-in rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink, animationDelay: `${Math.min(i, 12) * 35}ms` }}>
             <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -3454,27 +3517,75 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
                   <span className="text-xs font-bold" style={{ color: TASK_PRIORITY_COLORS[t.prioridad] }}>● {TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</span>
                   <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.titulo}</div>
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: stateColors.bg, color: stateColors.fg }}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</span>
                 </div>
                 {t.descripcion && <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{t.descripcion}</div>}
-                <div className="text-xs mt-1" style={{ color: C.gray }}>
-                  Por {t.createdBy} · {fmtDT(t.createdAt)}{t.asignadoA ? ` · Asignado a ${accounts[t.asignadoA]?.display_name || t.asignadoA}` : ""}
-                  {t.recurrencia && ` · 🔁 Se repite ${t.recurrencia === "semanal" ? "cada semana" : "cada mes"}`}
+                <div className="text-xs mt-1 flex items-center gap-2 flex-wrap" style={{ color: C.gray }}>
+                  <span>Por {t.createdBy} · {fmtDT(t.createdAt)}{t.asignadoA ? ` · Asignado a ${accounts[t.asignadoA]?.display_name || t.asignadoA}` : ""}</span>
+                  {t.recurrencia && <span>🔁 Se repite {t.recurrencia === "semanal" ? "cada semana" : "cada mes"}</span>}
+                  <TaskTimer assignedAt={t.assignedAt} finishedAt={t.finishedAt} estado={estado} />
                 </div>
                 {t.fotosAntes && t.fotosAntes.length > 0 && (
-                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    {t.fotosAntes.map((url, pi) => (
-                      <a key={pi} href={url} target="_blank" rel="noopener noreferrer">
-                        <img src={url} alt="" className="w-12 h-12 object-cover rounded-md border" style={{ borderColor: C.line }} />
-                      </a>
-                    ))}
+                  <div className="mt-1.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Antes</div>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      {t.fotosAntes.map((url, pi) => (
+                        <a key={pi} href={url} target="_blank" rel="noopener noreferrer">
+                          <img src={url} alt="" className="w-12 h-12 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {t.fotosDespues && t.fotosDespues.length > 0 && (
+                  <div className="mt-1.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.green }}>Después</div>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      {t.fotosDespues.map((url, pi) => (
+                        <a key={pi} href={url} target="_blank" rel="noopener noreferrer">
+                          <img src={url} alt="" className="w-12 h-12 object-cover rounded-md border" style={{ borderColor: C.green }} />
+                        </a>
+                      ))}
+                    </div>
+                    {t.notaCierre && <div className="text-xs mt-1 italic" style={{ color: C.inkSoft }}>"{t.notaCierre}"</div>}
+                  </div>
+                )}
+
+                {isClosing && (
+                  <div className="rounded-md p-2 mt-2" style={{ background: C.bg }}>
+                    <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>Cerrar tarea — sube al menos una foto de cómo quedó</div>
+                    <PhotoPicker photos={closePhotos} onChange={setClosePhotos} max={4} />
+                    <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
+                      className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                    {closeMsg && <div className="text-xs mt-1.5" style={{ color: closeMsg.ok ? C.green : C.red }}>{closeMsg.text}</div>}
+                    <div className="flex items-center gap-2 mt-2">
+                      <Button size="sm" disabled={closeSaving} onClick={() => doCloseTask(t)}>{closeSaving ? "Guardando…" : "Confirmar cierre"}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setClosingId(null)}>Cancelar</Button>
+                    </div>
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <select value={t.estado} onChange={e => onUpdateTask(t.id, { estado: e.target.value })}
-                  className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: stateColors.bg, color: stateColors.fg }}>
-                  {TASK_STATES.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
-                </select>
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                {!isClosing && canAct && estado === "asignada" && (
+                  <Button size="sm" onClick={() => transitionTask(t, "en-proceso")}>▶ Iniciar</Button>
+                )}
+                {!isClosing && canAct && estado === "en-proceso" && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => transitionTask(t, "pausada")}>⏸ Pausar</Button>
+                    <Button size="sm" onClick={() => openClose(t)}>✓ Finalizar</Button>
+                  </>
+                )}
+                {!isClosing && canAct && estado === "pausada" && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => transitionTask(t, "en-proceso")}>▶ Reanudar</Button>
+                    <Button size="sm" onClick={() => openClose(t)}>✓ Finalizar</Button>
+                  </>
+                )}
+                {estado === "finalizada" && (
+                  <Button size="sm" variant="ghost" icon={Download} disabled={downloadingReportId === t.id} onClick={() => doDownloadReport(t)}>
+                    {downloadingReportId === t.id ? "Generando…" : "Reporte"}
+                  </Button>
+                )}
                 {canDelete && (
                   <button onClick={() => onDeleteTask(t.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
                 )}
@@ -6201,6 +6312,27 @@ function NavBadge({ count, urgent = true, pulse = false }) {
   );
 }
 
+/**
+ * Cronómetro en vivo de una tarea: cuánto tiempo lleva abierta desde que se asignó, o el tiempo
+ * total que tomó si ya se cerró. Se refresca solo cada 30s mientras siga activa — de sobra de
+ * precisión para un tablero operativo, sin recalcular en cada render de la lista.
+ */
+function TaskTimer({ assignedAt, finishedAt, estado }) {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (finishedAt) return; // ya cerró, no hace falta seguir refrescando
+    const id = setInterval(() => forceTick(v => v + 1), 30000);
+    return () => clearInterval(id);
+  }, [finishedAt]);
+
+  if (!assignedAt) return null;
+  const end = finishedAt || nowIso();
+  const hrs = hoursBetween(assignedAt, end);
+  const label = finishedAt ? `Tomó ${fmtHours(hrs)}` : estado === "pausada" ? `Pausada · ${fmtHours(hrs)} abierta` : `${fmtHours(hrs)} abierta`;
+  const color = finishedAt ? C.green : estado === "pausada" ? "#8a5a00" : hrs > 24 ? C.red : C.inkSoft;
+  return <span className="text-xs font-medium" style={{ color }}>{label}</span>;
+}
+
 
 function OnboardingTour({ onClose }) {
   const [step, setStep] = useState(0);
@@ -7273,6 +7405,90 @@ function pdfTable(doc, y, head, body, opts = {}) {
   });
   return doc.lastAutoTable.finalY + 8;
 }
+
+/** Descarga una foto (URL pública de Supabase Storage) y la convierte a data URL, para poder
+ * insertarla en el PDF con doc.addImage — que solo acepta data URLs, no URLs remotas directas. */
+async function urlToDataUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("No se pudo descargar la foto");
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Reporte automático de una tarea/novedad terminada: descripción, fotos de antes y después,
+ * quién la resolvió, y el tiempo total que tomó resolverla (de la asignación al cierre).
+ * Las fotos se intentan insertar de verdad en el PDF; si alguna falla al descargar, se omite
+ * sin romper el resto del reporte.
+ */
+async function generateTaskReportPdf(task, assigneeName) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const pageH = doc.internal.pageSize.getHeight();
+
+  let y = pdfLetterhead(doc, "Reporte de Novedad", [task.titulo, `Generado ${fmtDT(nowIso())}`]);
+
+  const totalHoras = task.assignedAt && task.finishedAt ? hoursBetween(task.assignedAt, task.finishedAt) : null;
+  y = pdfStatBoxes(doc, y, [
+    { label: "Asignado a", value: assigneeName || "—" },
+    { label: "Tiempo total", value: totalHoras != null ? fmtHours(totalHoras) : "—" },
+    { label: "Prioridad", value: TASK_PRIORITIES.find(p => p.code === task.prioridad)?.label || task.prioridad },
+    { label: "Estado", value: TASK_STATES.find(s => s.code === normalizeTaskState(task.estado))?.label || task.estado },
+  ]);
+
+  y = pdfSectionTitle(doc, y, "Descripción de la novedad");
+  doc.setFontSize(9); doc.setFont(undefined, "normal");
+  const descLines = doc.splitTextToSize(task.descripcion || "Sin descripción adicional.", 180);
+  doc.text(descLines, 14, y);
+  y += descLines.length * 4.5 + 6;
+
+  y = pdfSectionTitle(doc, y, "Cronología");
+  y = pdfTable(doc, y, ["Evento", "Fecha y hora"], [
+    ["Asignada", task.assignedAt ? fmtDT(task.assignedAt) : "—"],
+    ["Iniciada", task.startedAt ? fmtDT(task.startedAt) : "—"],
+    ["Finalizada", task.finishedAt ? fmtDT(task.finishedAt) : "—"],
+  ]);
+
+  const addPhotoGrid = async (title, urls) => {
+    if (!urls || urls.length === 0) return;
+    if (y > pageH - 40) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, title);
+    const cellW = 42, cellH = 42, gap = 4, marginX = 14, cols = 4;
+    let col = 0;
+    for (const url of urls) {
+      if (y + cellH > pageH - 16) { doc.addPage(); y = 18; col = 0; }
+      const x = marginX + col * (cellW + gap);
+      try {
+        const dataUrl = await urlToDataUrl(url);
+        doc.addImage(dataUrl, "JPEG", x, y, cellW, cellH);
+      } catch { /* si una foto puntual falla al descargar, se omite sin romper el resto */ }
+      col++;
+      if (col >= cols) { col = 0; y += cellH + gap; }
+    }
+    if (col > 0) y += cellH + gap;
+    y += 4;
+  };
+  await addPhotoGrid("Fotos — antes", task.fotosAntes);
+  await addPhotoGrid("Fotos — después", task.fotosDespues);
+
+  if (task.notaCierre) {
+    if (y > pageH - 30) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, "Nota de cierre");
+    doc.setFontSize(9); doc.setFont(undefined, "normal");
+    const noteLines = doc.splitTextToSize(task.notaCierre, 180);
+    doc.text(noteLines, 14, y);
+    y += noteLines.length * 4.5;
+  }
+
+  pdfFooterAll(doc);
+  return doc;
+}
+
 /**
  * Reporte "arma el tuyo": el usuario elige qué secciones incluir (en vez de los formatos fijos
  * de siempre) — útil para pedidos puntuales de gerencia que no necesitan todo el informe completo.
@@ -10551,13 +10767,16 @@ export default function App() {
   const createTask = async (form) => {
     const id = uid("task");
     const recurrence = form.recurrencia || "";
+    const now = nowIso();
     const rec = {
       id, titulo: form.titulo.trim(), descripcion: (form.descripcion || "").trim(),
-      estado: "pendiente", prioridad: form.prioridad || "media", asignadoA: form.asignadoA || "",
+      estado: "asignada", prioridad: form.prioridad || "media", asignadoA: form.asignadoA || "",
       recurrencia: recurrence, recurrenceGroupId: recurrence ? id : null,
       recurrencePeriodKey: recurrence ? periodKeyFor(new Date(), recurrence) : null,
-      fotosAntes: form.fotosAntes || [],
-      createdBy: displayName, createdAt: nowIso(), updatedAt: nowIso(),
+      fotosAntes: form.fotosAntes || [], fotosDespues: [], notaCierre: "",
+      assignedAt: form.asignadoA ? now : null, startedAt: null, finishedAt: null,
+      timeLog: [{ estado: "asignada", at: now }],
+      createdBy: displayName, createdAt: now, updatedAt: now,
     };
     const next = [rec, ...tasks];
     setTasks(next);
@@ -10568,13 +10787,14 @@ export default function App() {
     return rec;
   };
 
-  /** Revisa las tareas que se repiten: si ya empezó un nuevo periodo (semana/mes) y no hay una instancia de ese ciclo, crea una nueva copia en "pendiente". */
+  /** Revisa las tareas que se repiten: si ya empezó un nuevo periodo (semana/mes) y no hay una instancia de ese ciclo, crea una nueva copia en "asignada". */
   const checkRecurringTasks = async () => {
     const templates = tasks.filter(t => t.recurrencia && t.recurrenceGroupId);
     const groups = {};
     templates.forEach(t => { (groups[t.recurrenceGroupId] ||= []).push(t); });
 
     const now = new Date();
+    const nowStr = nowIso();
     const newOnes = [];
     Object.values(groups).forEach(group => {
       const latest = group.reduce((a, b) => new Date(a.createdAt) > new Date(b.createdAt) ? a : b);
@@ -10582,9 +10802,12 @@ export default function App() {
       if (latest.recurrencePeriodKey === currentKey) return; // ya hay una tarea de este ciclo
       newOnes.push({
         id: uid("task"), titulo: latest.titulo, descripcion: latest.descripcion,
-        estado: "pendiente", prioridad: latest.prioridad, asignadoA: latest.asignadoA,
+        estado: "asignada", prioridad: latest.prioridad, asignadoA: latest.asignadoA,
         recurrencia: latest.recurrencia, recurrenceGroupId: latest.recurrenceGroupId, recurrencePeriodKey: currentKey,
-        createdBy: latest.createdBy, createdAt: nowIso(), updatedAt: nowIso(),
+        fotosAntes: [], fotosDespues: [], notaCierre: "",
+        assignedAt: latest.asignadoA ? nowStr : null, startedAt: null, finishedAt: null,
+        timeLog: [{ estado: "asignada", at: nowStr }],
+        createdBy: latest.createdBy, createdAt: nowStr, updatedAt: nowStr,
       });
     });
     if (newOnes.length === 0) return;

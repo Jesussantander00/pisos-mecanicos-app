@@ -1232,6 +1232,44 @@ function employeesOnShift(employees, scheduleEntries, dateIso, shiftLabel) {
   });
 }
 
+function localDateIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Quién está trabajando AHORA MISMO, con la hora real de entrada/salida de cada persona (no
+ * turnos fijos de 3 bloques) — así alguien que entra a las 9:00 también cuenta, y no solo quien
+ * calza con 06:00/14:00/22:00. Revisa tanto el turno de hoy como el de ayer, por si un turno
+ * nocturno que empezó ayer todavía sigue activo pasada la medianoche.
+ */
+function employeesWorkingNow(employees, scheduleEntries, now = new Date()) {
+  const currentHour = now.getHours() + now.getMinutes() / 60;
+  const todayIso = localDateIso(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayIso = localDateIso(yesterday);
+
+  return (employees || []).filter(emp => {
+    if (emp.active === false) return false;
+    const todayEntry = scheduleEntries[`${emp.id}::${todayIso}`];
+    const yestEntry = scheduleEntries[`${emp.id}::${yesterdayIso}`];
+
+    if (todayEntry && !todayEntry.code && todayEntry.entrada != null && todayEntry.salida != null) {
+      const { entrada, salida } = todayEntry;
+      if (salida > entrada) {
+        if (currentHour >= entrada && currentHour < salida) return true; // turno normal, mismo día
+      } else if (currentHour >= entrada) {
+        return true; // turno que cruza medianoche, empezó hoy y sigue activo
+      }
+    }
+    if (yestEntry && !yestEntry.code && yestEntry.entrada != null && yestEntry.salida != null) {
+      const { entrada, salida } = yestEntry;
+      if (salida < entrada && currentHour < salida) return true; // turno de ayer, todavía no termina
+    }
+    return false;
+  });
+}
+
 /* ============================================================
    HORARIOS — festivos Colombia 2026 y reglas de turnistas
    ============================================================ */
@@ -3234,18 +3272,37 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "" });
   const [saving, setSaving] = useState(false);
-  const [assignDate, setAssignDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [assignMode, setAssignMode] = useState("now"); // "now" (por defecto) | "manual"
+  const [assignDate, setAssignDate] = useState(() => localDateIso(new Date()));
   const [assignShift, setAssignShift] = useState(SHIFTS[0]);
   const [showAllForAssign, setShowAllForAssign] = useState(false);
 
   const usernames = Object.keys(accounts || {});
+  // Quién está trabajando en este preciso momento, según la hora real de entrada/salida de cada
+  // quien en el Horario Mensual — esta es la asignación por defecto (Asignación Inteligente por
+  // Turno). El picker manual de día/turno sigue disponible para reasignar a otra persona.
+  const workingNowIds = useMemo(
+    () => new Set(employeesWorkingNow(employees, scheduleEntries).map(e => e.id)),
+    [employees, scheduleEntries]
+  );
   const onShiftEmployeeIds = useMemo(
     () => new Set(employeesOnShift(employees, scheduleEntries, assignDate, assignShift).map(e => e.id)),
     [employees, scheduleEntries, assignDate, assignShift]
   );
-  const assignableUsernames = showAllForAssign
-    ? usernames
-    : usernames.filter(u => onShiftEmployeeIds.has(accounts[u]?.linked_employee_id));
+  const assignableUsernames = assignMode === "now"
+    ? usernames.filter(u => workingNowIds.has(accounts[u]?.linked_employee_id))
+    : showAllForAssign
+      ? usernames
+      : usernames.filter(u => onShiftEmployeeIds.has(accounts[u]?.linked_employee_id));
+
+  // Preasigna automáticamente a la primera persona disponible (modo "ahora mismo"), sin pisar
+  // una elección manual que ya haya hecho quien está creando la tarea.
+  useEffect(() => {
+    if (showNew && assignMode === "now" && !form.asignadoA && assignableUsernames.length > 0) {
+      setForm(f => f.asignadoA ? f : { ...f, asignadoA: assignableUsernames[0] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNew, assignMode, assignableUsernames.join("|")]);
 
   const doCreate = async () => {
     if (!form.titulo.trim()) return;
@@ -3283,23 +3340,54 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
             className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <div className="rounded-md p-2 mb-2" style={{ background: C.bg }}>
-            <div className="text-xs font-medium mb-1.5" style={{ color: C.inkSoft }}>¿A quién se la vas a asignar? Elige el día y turno para ver solo quién está disponible:</div>
-            <div className="flex items-center gap-2 flex-wrap mb-2">
-              <input type="date" value={assignDate} onChange={e => setAssignDate(e.target.value)}
-                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-              <select value={assignShift} onChange={e => setAssignShift(e.target.value)}
-                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <label className="text-xs flex items-center gap-1.5 cursor-pointer select-none" style={{ color: C.inkSoft }}>
-                <input type="checkbox" checked={showAllForAssign} onChange={e => setShowAllForAssign(e.target.checked)} />
-                Ver a todos (no solo los de turno)
-              </label>
-            </div>
-            {!showAllForAssign && assignableUsernames.length === 0 && (
-              <div className="text-xs mb-2" style={{ color: "#a31245" }}>
-                Nadie aparece de turno ese día/hora según el Horario Mensual (o nadie ha vinculado su cuenta con su nombre del horario en Mi Perfil). Marca "Ver a todos" si hace falta.
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <div className="text-xs font-medium" style={{ color: C.inkSoft }}>¿A quién se la vas a asignar?</div>
+              <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
+                <button type="button" onClick={() => setAssignMode("now")}
+                  className="px-2.5 py-1 font-semibold"
+                  style={{ background: assignMode === "now" ? C.amber : C.panel, color: assignMode === "now" ? "#fff" : C.inkSoft }}>
+                  Quien está de turno ahora
+                </button>
+                <button type="button" onClick={() => setAssignMode("manual")}
+                  className="px-2.5 py-1 font-semibold" style={{ background: assignMode === "manual" ? C.amber : C.panel, color: assignMode === "manual" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}` }}>
+                  Elegir otro día/turno
+                </button>
               </div>
+            </div>
+
+            {assignMode === "now" ? (
+              assignableUsernames.length === 0 ? (
+                <div className="text-xs" style={{ color: "#a31245" }}>
+                  Nadie aparece trabajando ahora mismo según el Horario Mensual (o nadie ha vinculado su cuenta con su nombre del horario en Mi Perfil).
+                  Usa "Elegir otro día/turno" para asignarla igual.
+                </div>
+              ) : (
+                <div className="text-xs" style={{ color: C.inkSoft }}>
+                  Se preasignó a <b style={{ color: C.ink }}>{accounts[assignableUsernames[0]]?.display_name || assignableUsernames[0]}</b>, quien está de turno ahora mismo
+                  {assignableUsernames.length > 1 ? ` (también disponible: ${assignableUsernames.slice(1).map(u => accounts[u]?.display_name || u).join(", ")})` : ""}.
+                  Puedes cambiarlo abajo si hace falta.
+                </div>
+              )
+            ) : (
+              <>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <input type="date" value={assignDate} onChange={e => setAssignDate(e.target.value)}
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <select value={assignShift} onChange={e => setAssignShift(e.target.value)}
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                    {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <label className="text-xs flex items-center gap-1.5 cursor-pointer select-none" style={{ color: C.inkSoft }}>
+                    <input type="checkbox" checked={showAllForAssign} onChange={e => setShowAllForAssign(e.target.checked)} />
+                    Ver a todos (no solo los de turno)
+                  </label>
+                </div>
+                {!showAllForAssign && assignableUsernames.length === 0 && (
+                  <div className="text-xs mb-2" style={{ color: "#a31245" }}>
+                    Nadie aparece de turno ese día/hora según el Horario Mensual (o nadie ha vinculado su cuenta con su nombre del horario en Mi Perfil). Marca "Ver a todos" si hace falta.
+                  </div>
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap mb-2">

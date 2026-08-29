@@ -72,6 +72,29 @@ function isNightHour(d = new Date()) {
   const h = d.getHours();
   return h >= 18 || h < 6;
 }
+
+/**
+ * Navegador y sistema operativo de quien hizo el cambio — para el historial de auditoría. Un
+ * navegador no puede leer la IP real por sí solo (eso solo lo puede capturar un servidor), pero
+ * saber "desde qué tipo de dispositivo" es lo que de verdad ayuda a rastrear un cambio.
+ */
+function getDeviceInfo() {
+  try {
+    const ua = navigator.userAgent || "";
+    let os = "Dispositivo desconocido";
+    if (/iPhone|iPad|iPod/.test(ua)) os = "iOS";
+    else if (/Android/.test(ua)) os = "Android";
+    else if (/Windows/.test(ua)) os = "Windows";
+    else if (/Macintosh/.test(ua)) os = "Mac";
+    else if (/Linux/.test(ua)) os = "Linux";
+    let browser = "Navegador";
+    if (/Edg\//.test(ua)) browser = "Edge";
+    else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) browser = "Chrome";
+    else if (/Firefox\//.test(ua)) browser = "Firefox";
+    else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = "Safari";
+    return `${browser} en ${os}`;
+  } catch { return "Dispositivo desconocido"; }
+}
 try {
   const savedTheme = localStorage.getItem("pm-local:theme"); // "dark" | "light" | null (nunca eligió = automático por hora)
   const useDark = savedTheme === "dark" || (savedTheme !== "light" && isNightHour());
@@ -6236,19 +6259,19 @@ function computeStaleIssues(activeIssues, thresholdDays = 15) {
     .sort((a, b) => b.daysOpen - a.daysOpen);
 }
 
-function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, onNavigate }) {
+function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
     "Check List Caldera": "boiler", "Equipos de Lavandería": "laundry",
   };
-  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalStock?.length || 0);
+  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalStock?.length || 0) + (fuelAlerts?.length || 0);
   return (
     <div className="relative">
       <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
         <Bell size={16} color={C.ink} />
         {totalCount > 0 && (
-          <span className={`absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${criticalStock?.length ? "animate-pulse" : ""}`} style={{ background: C.red, color: "#fff" }}>
+          <span className={`absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${(criticalStock?.length || fuelAlerts?.length) ? "animate-pulse" : ""}`} style={{ background: C.red, color: "#fff" }}>
             {totalCount}
           </span>
         )}
@@ -6263,6 +6286,20 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, 
               <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Notificaciones</div>
               <button onClick={() => setOpen(false)} className="p-0.5"><X size={14} color={C.gray} /></button>
             </div>
+
+            {fuelAlerts && fuelAlerts.length > 0 && (
+              <>
+                <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.red }}>⚠ Combustible crítico — reabastecer ya</div>
+                <div className="px-3 pb-3">
+                  {fuelAlerts.map((t, i) => (
+                    <button key={i} onClick={() => { onNavigate("fuel"); setOpen(false); }}
+                      className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
+                      · {t.nombre} — {Math.round((t.nivelActual / t.capacidadTotal) * 100)}% <span style={{ color: C.gray }}>(mínimo {t.minPct}%)</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             {criticalStock && criticalStock.length > 0 && (
               <>
@@ -6902,10 +6939,11 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues, pulse: true },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
+    { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM y gas, calderas y planta eléctrica", access: true },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
-    { id: "general-history", label: "Historial de cambios", icon: History, desc: "Ediciones en empleados e inventario", access: isAdmin },
+    { id: "general-history", label: "Historial de cambios", icon: History, desc: "Auditoría: empleados, inventario y tareas", access: isAdmin },
     { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido y quién no", access: isAdmin },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
@@ -7662,6 +7700,136 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const FUEL_TANK_TYPES = ["Diesel (ACPM)", "Gas propano", "Gasolina"];
+
+/**
+ * Combustibles y gas — tanques de ACPM/gas para calderas y plantas eléctricas (distinto de
+ * "Tanques agua potable"). Cada tanque tiene un volumen inicial y una capacidad total; los
+ * registros de consumo por turno bajan el nivel, los de reabastecimiento lo suben. La barra de
+ * llenado y la alerta cambian solas de color cuando cae por debajo del % mínimo operativo.
+ */
+function FuelTanksView({ fuelTanks, fuelLog, isAdmin, onCreateTank, onLogReading }) {
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ nombre: "", tipo: FUEL_TANK_TYPES[0], ubicacion: "", capacidadTotal: "", nivelInicial: "", minPct: "20" });
+  const [saving, setSaving] = useState(false);
+  const [readingTankId, setReadingTankId] = useState(null);
+  const [readingForm, setReadingForm] = useState({ tipo: "consumo", volumen: "", turno: SHIFTS[0], nota: "" });
+  const [readingSaving, setReadingSaving] = useState(false);
+
+  const doCreate = async () => {
+    if (!form.nombre.trim() || !form.capacidadTotal) return;
+    setSaving(true);
+    await onCreateTank(form);
+    setForm({ nombre: "", tipo: FUEL_TANK_TYPES[0], ubicacion: "", capacidadTotal: "", nivelInicial: "", minPct: "20" });
+    setShowNew(false);
+    setSaving(false);
+  };
+
+  const openReading = (tankId, tipo) => { setReadingTankId(tankId); setReadingForm({ tipo, volumen: "", turno: SHIFTS[0], nota: "" }); };
+  const doLogReading = async () => {
+    if (!readingForm.volumen) return;
+    setReadingSaving(true);
+    await onLogReading(readingTankId, readingForm);
+    setReadingTankId(null);
+    setReadingSaving(false);
+  };
+
+  const inputCls = "text-sm border rounded-md px-2 py-1.5 outline-none";
+  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Combustibles y gas</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Tanques de ACPM y gas para calderas y plantas eléctricas — nivel actual, consumo por turno y alertas de reabastecimiento.</p>
+        </div>
+        {isAdmin && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nuevo tanque"}</Button>}
+      </div>
+
+      {showNew && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="grid sm:grid-cols-2 gap-2 mb-2">
+            <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre (ej: ACPM Planta Eléctrica)" className={inputCls} style={inputStyle} />
+            <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} className={inputCls} style={inputStyle}>
+              {FUEL_TANK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Ubicación (opcional)" className={inputCls} style={inputStyle} />
+            <input type="number" value={form.capacidadTotal} onChange={e => setForm(f => ({ ...f, capacidadTotal: e.target.value }))} placeholder="Capacidad total (galones)" className={inputCls} style={inputStyle} />
+            <input type="number" value={form.nivelInicial} onChange={e => setForm(f => ({ ...f, nivelInicial: e.target.value }))} placeholder="Volumen inicial (galones)" className={inputCls} style={inputStyle} />
+            <input type="number" value={form.minPct} onChange={e => setForm(f => ({ ...f, minPct: e.target.value }))} placeholder="% mínimo operativo (ej: 20)" className={inputCls} style={inputStyle} />
+          </div>
+          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear tanque"}</Button>
+        </div>
+      )}
+
+      {fuelTanks.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todavía no hay tanques de combustible registrados.</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {fuelTanks.map(tank => {
+            const pct = tank.capacidadTotal > 0 ? (tank.nivelActual / tank.capacidadTotal) * 100 : 0;
+            const critical = pct <= tank.minPct;
+            const low = !critical && pct <= tank.minPct * 1.5;
+            const tone = critical ? C.red : low ? C.amber : C.green;
+            const recentLog = fuelLog.filter(l => l.tankId === tank.id).slice(0, 5);
+            return (
+              <div key={tank.id} className="rounded-xl border p-4" style={{ borderColor: critical ? C.red : C.line, background: critical ? C.redSoft : C.panel }}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <div className="text-sm font-semibold" style={{ color: C.ink }}>{tank.nombre}</div>
+                    <div className="text-xs" style={{ color: C.gray }}>{tank.tipo}{tank.ubicacion ? ` · ${tank.ubicacion}` : ""}</div>
+                  </div>
+                  <div className="text-xl font-bold" style={{ color: tone }}>{pct.toFixed(0)}%</div>
+                </div>
+                {critical && <div className="text-xs font-semibold mb-2" style={{ color: C.red }}>⚠ Reabastecer pronto — por debajo del {tank.minPct}% mínimo operativo</div>}
+                <div className="w-full rounded-full overflow-hidden mb-1.5" style={{ background: C.bg, height: 14 }}>
+                  <div className="h-full rounded-full" style={{ width: `${Math.max(4, pct)}%`, background: tone, transition: "width 500ms var(--ease-out)" }} />
+                </div>
+                <div className="text-xs mb-3" style={{ color: C.inkSoft }}>{tank.nivelActual.toLocaleString("es-CO")} / {tank.capacidadTotal.toLocaleString("es-CO")} galones</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button size="sm" variant="ghost" onClick={() => openReading(tank.id, "consumo")}>Registrar consumo</Button>
+                  <Button size="sm" onClick={() => openReading(tank.id, "reabastecimiento")}>Reabastecer</Button>
+                </div>
+
+                {readingTankId === tank.id && (
+                  <div className="rounded-md p-2 mt-2" style={{ background: C.bg }}>
+                    <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>{readingForm.tipo === "reabastecimiento" ? "Reabastecimiento" : "Consumo por turno"}</div>
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <input type="number" value={readingForm.volumen} onChange={e => setReadingForm(f => ({ ...f, volumen: e.target.value }))} placeholder="Galones" className={`${inputCls} w-28`} style={inputStyle} />
+                      {readingForm.tipo === "consumo" && (
+                        <select value={readingForm.turno} onChange={e => setReadingForm(f => ({ ...f, turno: e.target.value }))} className={inputCls} style={inputStyle}>
+                          {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <input value={readingForm.nota} onChange={e => setReadingForm(f => ({ ...f, nota: e.target.value }))} placeholder="Nota (opcional)" className={`${inputCls} w-full mb-2`} style={inputStyle} />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" disabled={readingSaving} onClick={doLogReading}>{readingSaving ? "Guardando…" : "Guardar"}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setReadingTankId(null)}>Cancelar</Button>
+                    </div>
+                  </div>
+                )}
+
+                {recentLog.length > 0 && (
+                  <div className="mt-3 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Últimos movimientos</div>
+                    {recentLog.map(l => (
+                      <div key={l.id} className="text-xs py-0.5" style={{ color: C.inkSoft }}>
+                        {l.tipo === "reabastecimiento" ? "+" : "−"}{l.volumen} gal {l.turno && `· ${l.turno}`} · {l.registradoPor} · {fmtDT(l.at)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -8566,17 +8734,24 @@ function RoundCompletionView({ roundsIndex, tourHistory }) {
   );
 }
 
+const AUDIT_ACTION_LABELS = { creacion: "Creación", edicion: "Edición", eliminacion: "Eliminación" };
+const AUDIT_ACTION_COLORS = { creacion: { bg: "#dff5e3", fg: "#1c7a34" }, edicion: { bg: "#e3f0ff", fg: "#1a4f8a" }, eliminacion: { bg: "#ffe3ea", fg: "#a31245" } };
+const AUDIT_KIND_LABELS = { empleado: "Empleado", inventario: "Inventario", tarea: "Tarea", combustible: "Combustible" };
+const AUDIT_KIND_COLORS = { empleado: { bg: "#e0ecff", fg: "#1e4fa3" }, inventario: { bg: "#dff5e3", fg: "#1c7a34" }, tarea: { bg: "#fff3d6", fg: "#8a5a00" }, combustible: { bg: "#f3e0ff", fg: "#6b1ea3" } };
+
 function GeneralHistoryView({ entries }) {
-  const [filter, setFilter] = useState("all"); // all | empleado | inventario
+  const [filter, setFilter] = useState("all"); // all | empleado | inventario | tarea
   const filtered = filter === "all" ? entries : entries.filter(e => e.kind === filter);
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Historial de cambios</h2>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Ediciones en empleados e inventario, más reciente primero.</p>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Registro de auditoría: quién hizo qué, desde qué dispositivo y cuándo — en empleados, inventario y tareas. Más reciente primero.
+      </p>
 
-      <div className="flex items-center gap-2 mb-3">
-        {[["all", "Todo"], ["empleado", "Empleados"], ["inventario", "Inventario"]].map(([id, label]) => (
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {[["all", "Todo"], ["empleado", "Empleados"], ["inventario", "Inventario"], ["tarea", "Tareas"], ["combustible", "Combustible"]].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)} className="text-xs px-2.5 py-1 rounded-full border"
             style={{ borderColor: filter === id ? C.amber : C.line, background: filter === id ? C.amberSoft : C.panel, color: filter === id ? "#7a5405" : C.inkSoft }}>
             {label}
@@ -8588,16 +8763,31 @@ function GeneralHistoryView({ entries }) {
         <p className="text-sm py-8 text-center" style={{ color: C.gray }}>No hay cambios registrados todavía.</p>
       ) : (
         <div className="space-y-1.5">
-          {filtered.slice(0, 300).map(e => (
-            <div key={e.id} className="text-xs rounded-md px-2 py-1.5" style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.ink }}>
-              <b>{e.by}</b> cambió <span style={{ color: C.inkSoft }}>{e.field}</span> de <b>{e.entityLabel}</b>:{" "}
-              <span style={{ color: C.gray }}>{e.before}</span> → <span style={{ color: C.amber, fontWeight: 600 }}>{e.after}</span>
-              <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded" style={{ background: e.kind === "empleado" ? "#e0ecff" : "#dff5e3", color: e.kind === "empleado" ? "#1e4fa3" : "#1c7a34" }}>
-                {e.kind === "empleado" ? "empleado" : "inventario"}
-              </span>
-              <span className="ml-1.5" style={{ color: C.gray }}>· {fmtDT(e.at)}</span>
-            </div>
-          ))}
+          {filtered.slice(0, 300).map(e => {
+            const action = e.action || "edicion";
+            const actionColor = AUDIT_ACTION_COLORS[action];
+            const kindColor = AUDIT_KIND_COLORS[e.kind];
+            return (
+              <div key={e.id} className="text-xs rounded-md px-2 py-1.5" style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.ink }}>
+                <span className="mr-1.5 text-[10px] font-semibold px-1 py-0.5 rounded" style={{ background: actionColor.bg, color: actionColor.fg }}>
+                  {AUDIT_ACTION_LABELS[action]}
+                </span>
+                <span className="mr-1.5 text-[10px] font-semibold px-1 py-0.5 rounded" style={{ background: kindColor.bg, color: kindColor.fg }}>
+                  {AUDIT_KIND_LABELS[e.kind] || e.kind}
+                </span>
+                <b>{e.by}</b>{" "}
+                {action === "creacion" && <>creó <b>{e.entityLabel}</b></>}
+                {action === "eliminacion" && <>eliminó <b>{e.entityLabel}</b></>}
+                {action === "edicion" && (
+                  <>cambió <span style={{ color: C.inkSoft }}>{e.field}</span> de <b>{e.entityLabel}</b>:{" "}
+                    <span style={{ color: C.gray }}>{e.before}</span> → <span style={{ color: C.amber, fontWeight: 600 }}>{e.after}</span></>
+                )}
+                <div className="mt-0.5" style={{ color: C.gray }}>
+                  {e.device || "Dispositivo desconocido"} · {fmtDT(e.at)}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -10386,6 +10576,8 @@ export default function App() {
   const [roundsIndex, setRoundsIndex] = useState([]);
   const [latestValues, setLatestValues] = useState({});
   const [tankHistory, setTankHistory] = useState({});
+  const [fuelTanks, setFuelTanks] = useState([]);
+  const [fuelLog, setFuelLog] = useState([]);
   const [latestColdValues, setLatestColdValues] = useState({});
   const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
   const [lastColdRound, setLastColdRound] = useState(null);
@@ -10451,7 +10643,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fts, fl] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -10473,6 +10665,8 @@ export default function App() {
         sGet("schedule-edit-log", true),
         sGet("changelog", true),
         sGet("general-edit-log", true),
+        sGet("fuel-tanks", true),
+        sGet("fuel-log", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -10513,6 +10707,8 @@ export default function App() {
       setScheduleEditLog(schLog || []);
       setChangelogEntries(chgl && chgl.length ? chgl : DEFAULT_CHANGELOG_SEED);
       setGeneralEditLog(gel || []);
+      setFuelTanks(fts || []);
+      setFuelLog(fl || []);
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);
@@ -10860,6 +11056,44 @@ export default function App() {
     ]);
   };
 
+  /* ---- Combustibles y gas (ACPM / gas de calderas y plantas eléctricas) ---- */
+  const createFuelTank = async (form) => {
+    const capacidadTotal = Number(form.capacidadTotal) || 0;
+    const nivelInicial = Number(form.nivelInicial) || 0;
+    const rec = {
+      id: uid("fuel"), nombre: form.nombre.trim(), tipo: form.tipo, ubicacion: (form.ubicacion || "").trim(),
+      capacidadTotal, nivelActual: Math.min(capacidadTotal, nivelInicial), minPct: Number(form.minPct) || 20,
+      createdBy: displayName, createdAt: nowIso(),
+    };
+    const next = [...fuelTanks, rec];
+    setFuelTanks(next);
+    await sSet("fuel-tanks", next, true);
+    logGeneralEdit({ kind: "combustible", action: "creacion", entityLabel: rec.nombre });
+    return rec;
+  };
+
+  /** Registra un reabastecimiento (sube el nivel) o un consumo por turno (lo baja), y deja el
+   *  volumen resultante guardado tanto en el tanque como en el historial. */
+  const logFuelReading = async (tankId, form) => {
+    const tank = fuelTanks.find(t => t.id === tankId);
+    if (!tank) return;
+    const volumen = Number(form.volumen) || 0;
+    const nivelResultante = form.tipo === "reabastecimiento"
+      ? Math.min(tank.capacidadTotal, tank.nivelActual + volumen)
+      : Math.max(0, tank.nivelActual - volumen);
+    const nextTanks = fuelTanks.map(t => t.id === tankId ? { ...t, nivelActual: nivelResultante } : t);
+    setFuelTanks(nextTanks);
+    await sSet("fuel-tanks", nextTanks, true);
+    const rec = {
+      id: uid("fuellog"), tankId, tipo: form.tipo, volumen, turno: form.turno || "", nota: (form.nota || "").trim(),
+      nivelResultante, registradoPor: displayName, at: nowIso(),
+    };
+    const nextLog = [rec, ...fuelLog].slice(0, 3000);
+    setFuelLog(nextLog);
+    await sSet("fuel-log", nextLog, true);
+    return rec;
+  };
+
   /* ---- Inventario ---- */
   const logInvMovement = async (itemId, type, quantity, balanceAfter, note, movementsBase) => {
     const rec = { id: uid("mov"), itemId, type, quantity, balanceAfter, by: displayName, at: nowIso(), note: note || "" };
@@ -10922,6 +11156,7 @@ export default function App() {
     const next = [rec, ...invItems];
     setInvItems(next);
     await sSet("inventory-items", next, true);
+    logGeneralEdit({ kind: "inventario", action: "creacion", entityLabel: rec.name });
     if (quantity > 0) await logInvMovement(rec.id, "entrada", quantity, quantity, "Alta inicial del repuesto");
     return rec;
   };
@@ -11116,13 +11351,14 @@ export default function App() {
     const next = [...employees, rec];
     setEmployees(next);
     await sSet("employees", next, true);
+    logGeneralEdit({ kind: "empleado", action: "creacion", entityLabel: rec.name });
     return rec;
   };
 
-  /** Historial de cambios "general" (no del horario, que ya tiene el suyo aparte): empleados e
-   *  inventario por ahora. Mismo patrón: quién cambió qué, antes y después. */
+  /** Historial de cambios "general" — empleados, inventario y tareas. Mismo patrón siempre: quién
+   *  cambió qué, desde qué dispositivo, y antes/después (para ediciones). */
   const logGeneralEdit = async (entry) => {
-    const next = [{ id: uid("gel"), at: nowIso(), by: displayName, ...entry }, ...generalEditLog].slice(0, 2000);
+    const next = [{ id: uid("gel"), at: nowIso(), by: displayName, device: getDeviceInfo(), action: entry.action || "edicion", ...entry }, ...generalEditLog].slice(0, 2000);
     setGeneralEditLog(next);
     await sSet("general-edit-log", next, true);
   };
@@ -11150,7 +11386,10 @@ export default function App() {
 
   const deleteEmployee = async (id) => {
     const item = employees.find(e => e.id === id);
-    if (item) await moveToTrash("employee", item, `${item.name} (empleado)`);
+    if (item) {
+      await moveToTrash("employee", item, `${item.name} (empleado)`);
+      logGeneralEdit({ kind: "empleado", action: "eliminacion", entityLabel: item.name });
+    }
     const next = employees.filter(e => e.id !== id);
     setEmployees(next);
     await sSet("employees", next, true);
@@ -11390,6 +11629,7 @@ export default function App() {
     const next = [rec, ...tasks];
     setTasks(next);
     await sSet("tasks", next, true);
+    logGeneralEdit({ kind: "tarea", action: "creacion", entityLabel: rec.titulo });
     if (rec.prioridad === "alta" && pushSubscriptions.length > 0) {
       sendPushToSubscriptions(pushSubscriptions, "🔴 Tarea de prioridad alta", rec.titulo, "/");
     }
@@ -11426,14 +11666,25 @@ export default function App() {
   };
 
   const updateTask = async (id, patch) => {
+    const before = tasks.find(t => t.id === id);
     const next = tasks.map(t => t.id === id ? { ...t, ...patch, updatedAt: nowIso() } : t);
     setTasks(next);
     await sSet("tasks", next, true);
+    if (before && patch.estado && patch.estado !== before.estado) {
+      logGeneralEdit({
+        kind: "tarea", entityLabel: before.titulo, field: "Estado",
+        before: TASK_STATES.find(s => s.code === normalizeTaskState(before.estado))?.label || before.estado,
+        after: TASK_STATES.find(s => s.code === normalizeTaskState(patch.estado))?.label || patch.estado,
+      });
+    }
   };
 
   const deleteTask = async (id) => {
     const item = tasks.find(t => t.id === id);
-    if (item) await moveToTrash("task", item);
+    if (item) {
+      await moveToTrash("task", item);
+      logGeneralEdit({ kind: "tarea", action: "eliminacion", entityLabel: item.titulo });
+    }
     const next = tasks.filter(t => t.id !== id);
     setTasks(next);
     await sSet("tasks", next, true);
@@ -11805,6 +12056,10 @@ export default function App() {
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
   const criticalStockItems = useMemo(() => computeCriticalStock(invItems), [invItems]);
+  const criticalFuelTanks = useMemo(
+    () => fuelTanks.filter(t => t.capacidadTotal > 0 && (t.nivelActual / t.capacidadTotal) * 100 <= t.minPct),
+    [fuelTanks]
+  );
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
@@ -11920,6 +12175,7 @@ export default function App() {
         ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
         { id: "reports", label: "Reportes", icon: History },
         { id: "tanks", label: "Tanques agua potable", icon: Droplets },
+        { id: "fuel", label: "Combustibles y gas", icon: Gauge },
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
       ],
     },
@@ -12141,7 +12397,7 @@ export default function App() {
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
             {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
-            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} criticalStock={criticalStockItems} onNavigate={setView} />}
+            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} criticalStock={criticalStockItems} fuelAlerts={criticalFuelTanks} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
@@ -12211,6 +12467,7 @@ export default function App() {
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
+          {view === "fuel" && <FuelTanksView fuelTanks={fuelTanks} fuelLog={fuelLog} isAdmin={isAdmin} onCreateTank={createFuelTank} onLogReading={logFuelReading} />}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

@@ -67,8 +67,15 @@ function syncCssVars() {
     document.documentElement.style.setProperty("--pm-line", C.line);
   } catch { /* noop (por si corre antes de que exista document, poco probable) */ }
 }
+/** ¿Es de noche ahora mismo? 6:00 p.m. a 6:00 a.m. — el disparador de modo oscuro automático. */
+function isNightHour(d = new Date()) {
+  const h = d.getHours();
+  return h >= 18 || h < 6;
+}
 try {
-  if (localStorage.getItem("pm-local:theme") === "dark") Object.assign(C, DARK_COLORS);
+  const savedTheme = localStorage.getItem("pm-local:theme"); // "dark" | "light" | null (nunca eligió = automático por hora)
+  const useDark = savedTheme === "dark" || (savedTheme !== "light" && isNightHour());
+  if (useDark) Object.assign(C, DARK_COLORS);
 } catch { /* noop */ }
 syncCssVars();
 function applyTheme(dark) {
@@ -505,6 +512,11 @@ function equipoUrl(equipoId) {
 /** Repuestos cuya cantidad actual está en o por debajo de su mínimo configurado. */
 function computeLowStock(invItems) {
   return invItems.filter(it => it.minThreshold > 0 && it.quantity <= it.minThreshold);
+}
+/** "Crítico" es un escalón más urgente que "bajo": la mitad o menos del mínimo (o ya en cero) —
+ * esto es lo que dispara la alerta roja en la cabecera, no cualquier cosa apenas por debajo. */
+function computeCriticalStock(invItems) {
+  return invItems.filter(it => it.minThreshold > 0 && it.quantity <= it.minThreshold * 0.5);
 }
 
 /**
@@ -2979,11 +2991,15 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
         <p className="text-sm py-8 text-center" style={{ color: C.gray }}>Esta estantería todavía no tiene repuestos registrados.</p>
       ) : items.map(item => {
         const low = item.minThreshold > 0 && item.quantity <= item.minThreshold;
+        const critical = item.minThreshold > 0 && item.quantity <= item.minThreshold * 0.5;
+        const tone = critical ? C.red : low ? C.amber : null;
+        const toneSoft = critical ? C.redSoft : low ? C.amberSoft : null;
+        const barPct = item.minThreshold > 0 ? Math.min(100, (item.quantity / item.minThreshold) * 100) : 100;
         const draft = qtyDraft[item.id];
         return (
-          <div key={item.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: low ? C.red : C.line, background: low ? C.redSoft : C.panel }}>
+          <div key={item.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: tone || C.line, background: toneSoft || C.panel }}>
             <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
+              <div className="flex-1 min-w-[140px]">
                 <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
                   {item.name}{item.sku ? <span style={{ color: C.gray }}> · {item.sku}</span> : ""}
                   {canManage && (
@@ -2991,9 +3007,15 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
                   )}
                 </div>
                 <div className="text-xs" style={{ color: C.gray }}>Mínimo: {item.minThreshold} {item.unit}</div>
-                {low && <div className="text-xs font-semibold mt-0.5" style={{ color: C.red }}>⚠ Stock bajo — hay que reponer</div>}
+                {critical && <div className="text-xs font-semibold mt-0.5" style={{ color: C.red }}>⚠ Stock crítico — reponer ya</div>}
+                {low && !critical && <div className="text-xs font-semibold mt-0.5" style={{ color: "#8a5a00" }}>Stock bajo — hay que reponer</div>}
+                {item.minThreshold > 0 && (
+                  <div className="w-full max-w-[160px] rounded-full overflow-hidden mt-1.5" style={{ background: C.bg, height: 5 }}>
+                    <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: tone || C.green, transition: "width 500ms var(--ease-out)" }} />
+                  </div>
+                )}
               </div>
-              <div className="text-xl font-bold" style={{ color: low ? C.red : C.ink }}>
+              <div className="text-xl font-bold" style={{ color: tone || C.ink }}>
                 {item.quantity} <span className="text-xs font-normal" style={{ color: C.gray }}>{item.unit}</span>
               </div>
             </div>
@@ -3284,6 +3306,66 @@ function VoiceInputButton({ onResult }) {
  * cambios de estado, y — si todavía no está finalizada — el flujo de cierre (foto obligatoria).
  * Si ya está finalizada, muestra las fotos de después y el botón para descargar el reporte.
  */
+// Nombres de columna EXACTOS pedidos para el Kanban — por dentro se siguen usando los mismos
+// códigos de estado de siempre (asignada/en-proceso/pausada/finalizada), solo cambia la etiqueta
+// que se ve en esta vista, para no crear dos sistemas de estado distintos en la misma app.
+const KANBAN_COLUMNS = [
+  { code: "asignada", label: "Pendiente" },
+  { code: "en-proceso", label: "En progreso" },
+  { code: "pausada", label: "En espera de repuesto" },
+  { code: "finalizada", label: "Hecho" },
+];
+
+/** Tarjeta compacta de una columna del Kanban — se puede arrastrar y soltar en otra columna
+ * (escritorio) o tocar "Mover a…" para un menú rápido de un solo toque (más confiable en
+ * celular/tablet, donde arrastrar y soltar es más difícil de acertar con el dedo). */
+function TaskKanbanCard({ task, accounts, canAct, onOpenDrawer, onMove, onZoom }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const estado = normalizeTaskState(task.estado);
+  const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : null;
+  return (
+    <div draggable={canAct} onDragStart={e => e.dataTransfer.setData("text/plain", task.id)}
+      className="rounded-lg border p-2.5 mb-2 cursor-pointer" style={{ borderColor: C.line, background: C.panel, minHeight: 48 }}
+      onClick={() => onOpenDrawer(task.id)}>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className="text-[10px] font-bold shrink-0" style={{ color: TASK_PRIORITY_COLORS[task.prioridad] }}>●</span>
+        <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
+        <Avatar name={assigneeName} size={20} />
+      </div>
+      <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
+      {task.fotosAntes && task.fotosAntes.length > 0 && (
+        <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
+          {task.fotosAntes.slice(0, 3).map((url, i) => (
+            <button key={i} onClick={() => onZoom(url)}>
+              <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
+            </button>
+          ))}
+        </div>
+      )}
+      {canAct && estado !== "finalizada" && (
+        <div className="relative mt-1.5" onClick={e => e.stopPropagation()}>
+          <button onClick={() => setMenuOpen(v => !v)} className="text-[10px] font-semibold px-1.5 rounded-md w-full text-center" style={{ background: C.bg, color: C.inkSoft, minHeight: 26 }}>
+            Mover a…
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute z-20 mt-1 w-full rounded-md border shadow-lg overflow-hidden" style={{ background: C.panel, borderColor: C.line }}>
+                {KANBAN_COLUMNS.filter(c => c.code !== estado).map(c => (
+                  <button key={c.code} onClick={() => { onMove(task, c.code); setMenuOpen(false); }}
+                    className="block w-full text-left text-xs px-2.5 hover:bg-black/5" style={{ color: C.ink, minHeight: 36 }}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskDrawer({ task, accounts, canAct, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
@@ -3408,6 +3490,7 @@ function TaskDrawer({ task, accounts, canAct, onClose, onTransition, onCloseTask
 }
 
 function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
+  const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [] });
@@ -3559,7 +3642,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Tareas / Pendientes</h2>
           <p className="text-sm" style={{ color: C.inkSoft }}>El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento.</p>
         </div>
-        <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
+            <button onClick={() => setViewMode("kanban")} className="px-2.5 font-semibold" style={{ background: viewMode === "kanban" ? C.steelDark : C.panel, color: viewMode === "kanban" ? "#fff" : C.inkSoft, minHeight: 36 }}>Kanban</button>
+            <button onClick={() => setViewMode("list")} className="px-2.5 font-semibold" style={{ background: viewMode === "list" ? C.steelDark : C.panel, color: viewMode === "list" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>Lista</button>
+          </div>
+          <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -3711,7 +3800,40 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         )}
       </div>
 
-      {filtered.length === 0 ? (
+      {viewMode === "kanban" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          {KANBAN_COLUMNS.map(col => {
+            const colTasks = filtered.filter(t => normalizeTaskState(t.estado) === col.code);
+            return (
+              <div key={col.code} className="rounded-xl border p-2.5" style={{ borderColor: C.line, background: C.bg, minHeight: 140 }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  const taskId = e.dataTransfer.getData("text/plain");
+                  const task = tasks.find(t => t.id === taskId);
+                  if (!task || normalizeTaskState(task.estado) === col.code) return;
+                  if (!(isAdmin || task.asignadoA === currentUsername)) return;
+                  if (col.code === "finalizada") setDrawerTaskId(task.id);
+                  else transitionTask(task, col.code);
+                }}>
+                <div className="flex items-center justify-between mb-2 px-0.5">
+                  <div className="text-xs font-bold uppercase tracking-wide" style={{ color: C.inkSoft }}>{col.label}</div>
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.panel, color: C.gray }}>{colTasks.length}</span>
+                </div>
+                {colTasks.length === 0 ? (
+                  <div className="text-[11px] text-center py-4" style={{ color: C.gray }}>Vacío</div>
+                ) : colTasks.map(t => (
+                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} canAct={isAdmin || t.asignadoA === currentUsername}
+                    onOpenDrawer={setDrawerTaskId}
+                    onMove={(task, code) => code === "finalizada" ? setDrawerTaskId(task.id) : transitionTask(task, code)}
+                    onZoom={setLightboxUrl} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {viewMode === "list" && (filtered.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Nada por aquí — todo al día.</p>
       ) : filtered.map((t, i) => {
         const estado = normalizeTaskState(t.estado);
@@ -3776,7 +3898,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             </div>
           </div>
         );
-      })}
+      }))}
 
       {drawerTask && (
         <TaskDrawer task={drawerTask} accounts={accounts} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
@@ -6114,19 +6236,19 @@ function computeStaleIssues(activeIssues, thresholdDays = 15) {
     .sort((a, b) => b.daysOpen - a.daysOpen);
 }
 
-function NotificationBell({ alerts, maintenanceDue, staleIssues, onNavigate }) {
+function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
     "Check List Caldera": "boiler", "Equipos de Lavandería": "laundry",
   };
-  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0);
+  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalStock?.length || 0);
   return (
     <div className="relative">
       <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
         <Bell size={16} color={C.ink} />
         {totalCount > 0 && (
-          <span className="absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" style={{ background: C.red, color: "#fff" }}>
+          <span className={`absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${criticalStock?.length ? "animate-pulse" : ""}`} style={{ background: C.red, color: "#fff" }}>
             {totalCount}
           </span>
         )}
@@ -6141,6 +6263,20 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, onNavigate }) {
               <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Notificaciones</div>
               <button onClick={() => setOpen(false)} className="p-0.5"><X size={14} color={C.gray} /></button>
             </div>
+
+            {criticalStock && criticalStock.length > 0 && (
+              <>
+                <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.red }}>⚠ Stock crítico — reabastecer ya</div>
+                <div className="px-3 pb-3">
+                  {criticalStock.map((it, i) => (
+                    <button key={i} onClick={() => { onNavigate("inventory-alerts"); setOpen(false); }}
+                      className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
+                      · {it.name} — quedan {it.quantity} <span style={{ color: C.gray }}>(mínimo {it.minThreshold})</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Recorridos pendientes de hoy</div>
             {alerts.length === 0 ? (
@@ -10151,7 +10287,8 @@ export default function App() {
     },
   });
 
-  const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem("pm-local:theme") === "dark"; } catch { return false; } });
+  const [themeOverride, setThemeOverride] = useState(() => { try { return localStorage.getItem("pm-local:theme"); } catch { return null; } }); // "dark" | "light" | null = automático
+  const [darkMode, setDarkMode] = useState(() => themeOverride === "dark" ? true : themeOverride === "light" ? false : isNightHour());
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const [showQrScanner, setShowQrScanner] = useState(false);
   const closeOnboarding = () => {
@@ -10162,8 +10299,17 @@ export default function App() {
     const next = !darkMode;
     applyTheme(next); // muta el objeto C compartido ANTES de redibujar, para que no haya parpadeo
     setDarkMode(next);
+    setThemeOverride(next ? "dark" : "light"); // a partir de aquí ya no sigue la hora sola — quedó fijo
     try { localStorage.setItem("pm-local:theme", next ? "dark" : "light"); } catch { /* noop */ }
   };
+  // Mientras nadie haya fijado el modo a mano, revisa la hora cada vez que el reloj de la app se
+  // refresca (cada 30s) y cambia solo de claro a oscuro al anochecer, y de vuelta al amanecer.
+  useEffect(() => {
+    if (themeOverride) return;
+    const shouldBeDark = isNightHour(nowClock);
+    if (shouldBeDark !== darkMode) { applyTheme(shouldBeDark); setDarkMode(shouldBeDark); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowClock, themeOverride]);
   useEffect(() => {
     const id = setInterval(() => setNowClock(new Date()), 30000);
     return () => clearInterval(id);
@@ -11658,6 +11804,7 @@ export default function App() {
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
+  const criticalStockItems = useMemo(() => computeCriticalStock(invItems), [invItems]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
@@ -11994,7 +12141,7 @@ export default function App() {
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
             {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
-            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} onNavigate={setView} />}
+            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} criticalStock={criticalStockItems} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>

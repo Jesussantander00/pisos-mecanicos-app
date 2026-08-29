@@ -5704,16 +5704,18 @@ function Sparkline({ points, width = 200, height = 50, color }) {
  * "urgente" (como cuántos movimientos de inventario hay en el historial) usan un tono ámbar más
  * calmado, y cualquier número se recorta a "99+" para que nunca se sienta como una alarma sin fin.
  */
-function NavBadge({ count, urgent = true }) {
+function NavBadge({ count, urgent = true, pulse = false }) {
   if (!count) return null;
   const label = typeof count === "string" ? count : count > 99 ? "99+" : String(count);
   const bg = urgent ? C.red : C.amber;
   return (
-    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none" style={{ background: bg, color: "#fff", minWidth: 18, textAlign: "center", display: "inline-block" }}>
+    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${pulse ? "animate-pulse" : ""}`}
+      style={{ background: bg, color: "#fff", minWidth: 18, textAlign: "center", display: "inline-block" }}>
       {label}
     </span>
   );
 }
+
 
 function OnboardingTour({ onClose }) {
   const [step, setStep] = useState(0);
@@ -5767,12 +5769,12 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false },
     { id: "profile", label: "Mi Perfil", icon: User, desc: "Tu firma para la entrega de turno", access: true },
     { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true },
-    { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0 },
-    { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues },
+    { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0, pulse: true },
+    { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues, pulse: true },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
-    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts },
+    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
     { id: "general-history", label: "Historial de cambios", icon: History, desc: "Ediciones en empleados e inventario", access: isAdmin },
     { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido y quién no", access: isAdmin },
@@ -5784,7 +5786,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 
   return (
     <div>
-      <div className="rounded-xl p-4 mb-5" style={{ background: C.steelDark }}>
+      <div className="rounded-xl p-3.5 mb-4" style={{ background: C.steelDark }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="text-white text-lg font-semibold">Hola, {currentUser}</div>
@@ -5794,6 +5796,23 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           </div>
           <Gauge size={28} color={C.amber} />
         </div>
+        {!gerenciaLocked && tourProgress.total > 0 && (
+          <div className="mt-3" title={`${tourProgress.done} de ${tourProgress.total} pisos revisados en tu recorrido de hoy`}>
+            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: "#8fa3b8" }}>
+              <span>Progreso del recorrido de hoy</span>
+              <span className="font-semibold" style={{ color: tourProgress.done >= tourProgress.total ? C.green : "#cdd8e2" }}>
+                {tourProgress.done}/{tourProgress.total}
+              </span>
+            </div>
+            <div className="w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)", height: 6 }}>
+              <div className="h-full rounded-full" style={{
+                width: `${Math.min(100, (tourProgress.done / tourProgress.total) * 100)}%`,
+                background: tourProgress.done >= tourProgress.total ? C.green : C.amber,
+                transition: "width 500ms var(--ease-out)",
+              }} />
+            </div>
+          </div>
+        )}
       </div>
 
       {!hasSignature && !dismissedSigReminder && (
@@ -5811,8 +5830,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 
       {/* PILAR 1 — Widgets vivos: el tablero de instrumentos del día, no solo accesos directos */}
       {!gerenciaLocked && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-5">
-          <button onClick={() => onNavigate("ronda")} className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
+          <button onClick={() => onNavigate("ronda")} title="Pisos ya revisados en la ronda de hoy, sobre el total de pisos mecánicos" className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
             <MiniGauge value={tourProgress.done} max={tourProgress.total} color={tourProgress.done >= tourProgress.total ? C.green : C.amber} />
             <div>
               <div className="text-lg font-bold leading-none" style={{ color: C.ink }}>{tourProgress.done}<span className="text-xs font-normal" style={{ color: C.gray }}>/{tourProgress.total}</span></div>
@@ -5820,7 +5839,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
             </div>
           </button>
 
-          <button onClick={() => onNavigate("maintenance-log")} className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
+          <button onClick={() => onNavigate("maintenance-log")} title="Mantenimientos (preventivos y correctivos) registrados en los últimos 7 días" className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft || C.amberSoft }}>
               <Wrench size={22} color={C.blue} />
             </div>
@@ -5830,7 +5849,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
             </div>
           </button>
 
-          <button onClick={() => onNavigate("issues")} className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md"
+          <button onClick={() => onNavigate("issues")} title="Equipos marcados como dañados que siguen sin resolverse" className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md"
             style={{ borderColor: activeIssuesList.length ? C.red : C.line, background: activeIssuesList.length ? C.redSoft : C.panel }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: activeIssuesList.length ? "#fff" : C.greenSoft }}>
               {activeIssuesList.length ? <AlertTriangle size={22} color={C.red} /> : <CheckCircle2 size={22} color={C.green} />}
@@ -5843,7 +5862,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
             </div>
           </button>
 
-          <button onClick={() => onNavigate(canManageInv ? "inventory-alerts" : "inventory")} className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <button onClick={() => onNavigate(canManageInv ? "inventory-alerts" : "inventory")} title="Artículos de inventario en o por debajo de su cantidad mínima definida" className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.inkSoft }}>Stock más crítico</div>
             {lowStockDetail.length === 0 ? (
               <div className="text-xs flex items-center gap-1" style={{ color: C.green }}><CheckCircle2 size={13} /> Todo por encima del mínimo</div>
@@ -5863,7 +5882,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 
       {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados */}
       {!gerenciaLocked && (
-        <div className="mb-5">
+        <div className="mb-4">
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
           <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
             {[
@@ -5889,23 +5908,24 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
       </p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
         {modules.map(m => (
           <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
             className={`text-left rounded-lg border p-3 transition duration-150 ease-out ${m.access ? "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]" : ""}`}
             style={{
               borderColor: C.line, background: m.access ? C.panel : C.bg,
               opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
+              minHeight: 48,
             }}>
             <div className="flex items-center justify-between gap-2 mb-1">
-              <div className="flex items-center gap-2">
-                <m.icon size={16} style={{ color: m.access ? C.amber : C.gray }} />
-                <div className="text-sm font-semibold" style={{ color: C.ink }}>{m.label}</div>
+              <div className="flex items-center gap-2 min-w-0">
+                <m.icon size={16} className="shrink-0" style={{ color: m.access ? C.amber : C.gray }} />
+                <div className="text-sm font-semibold truncate" style={{ color: C.ink }}>{m.label}</div>
               </div>
-              <NavBadge count={m.badge} urgent={m.urgentBadge !== false} />
+              <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
             </div>
-            <div className="text-xs" style={{ color: C.gray }}>
-              {m.access ? m.desc : gerenciaLocked ? "No disponible para cuentas de gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
+            <div className="text-xs truncate" style={{ color: C.gray }}>
+              {m.access ? m.desc : gerenciaLocked ? "No disponible para gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
             </div>
           </button>
         ))}

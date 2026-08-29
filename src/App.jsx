@@ -5744,8 +5744,19 @@ function OnboardingTour({ onClose }) {
   );
 }
 
+function normalizeSearchText(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+const MAX_FAVORITES = 5;
+
 function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, lowStockDetail, activeIssuesList, mttoWeekCount }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
+  const [search, setSearch] = useState("");
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`pm-local:favorites:${currentUser}`) || "[]"); } catch { return []; }
+  });
+  const [favMsg, setFavMsg] = useState(null);
   const canManageInv = isAdmin || isAlmacenista;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
   const modules = [
@@ -5779,6 +5790,27 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "general-history", label: "Historial de cambios", icon: History, desc: "Ediciones en empleados e inventario", access: isAdmin },
     { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido y quién no", access: isAdmin },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
+
+  const toggleFavorite = (id) => {
+    setFavorites(prev => {
+      let next;
+      if (prev.includes(id)) {
+        next = prev.filter(x => x !== id);
+      } else {
+        if (prev.length >= MAX_FAVORITES) {
+          setFavMsg(`Ya tienes ${MAX_FAVORITES} favoritos — quita uno antes de agregar otro.`);
+          setTimeout(() => setFavMsg(null), 2500);
+          return prev;
+        }
+        next = [...prev, id];
+      }
+      try { localStorage.setItem(`pm-local:favorites:${currentUser}`, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+  };
+  const favModules = modules.filter(m => favorites.includes(m.id) && m.access);
+  const searchNorm = normalizeSearchText(search.trim());
+  const visibleModules = searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules;
 
   const oldestIssue = activeIssuesList.length
     ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
@@ -5815,6 +5847,17 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         )}
       </div>
 
+      <div className="relative mb-4">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.gray }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar una herramienta… (ej: cuartos fríos, tareas, reportes)"
+          className="w-full text-sm border rounded-lg pl-9 pr-8 py-2.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+        {search && (
+          <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5" style={{ color: C.gray }}>
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
       {!hasSignature && !dismissedSigReminder && (
         <div className="rounded-lg p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
           <div className="text-sm" style={{ color: "#7a5405" }}>
@@ -5829,7 +5872,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       )}
 
       {/* PILAR 1 — Widgets vivos: el tablero de instrumentos del día, no solo accesos directos */}
-      {!gerenciaLocked && (
+      {!gerenciaLocked && !searchNorm && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
           <button onClick={() => onNavigate("ronda")} title="Pisos ya revisados en la ronda de hoy, sobre el total de pisos mecánicos" className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
             <MiniGauge value={tourProgress.done} max={tourProgress.total} color={tourProgress.done >= tourProgress.total ? C.green : C.amber} />
@@ -5880,8 +5923,35 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       )}
 
+      {/* Favoritos — hasta 5 herramientas fijadas por el usuario con la estrella, para no buscarlas cada vez */}
+      {!gerenciaLocked && !searchNorm && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Tus favoritos</div>
+            {favMsg && <div className="text-xs" style={{ color: C.amber }}>{favMsg}</div>}
+          </div>
+          {favModules.length === 0 ? (
+            <div className="text-xs rounded-lg border border-dashed p-3" style={{ borderColor: C.line, color: C.gray }}>
+              Toca la ⭐ en cualquier tarjeta de abajo para fijar aquí las {MAX_FAVORITES} herramientas que más usas en tu turno.
+            </div>
+          ) : (
+            <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
+              {favModules.map((m, i) => (
+                <button key={m.id} onClick={() => onNavigate(m.id)}
+                  className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06] relative"
+                  style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 48 }}>
+                  <m.icon size={18} color={C.amber} />
+                  <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }}>{m.label}</span>
+                  <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados */}
-      {!gerenciaLocked && (
+      {!gerenciaLocked && !searchNorm && (
         <div className="mb-4">
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
           <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
@@ -5903,33 +5973,50 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       )}
 
       <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
-        {gerenciaLocked
-          ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
-          : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
+        {searchNorm
+          ? `${visibleModules.length} resultado${visibleModules.length === 1 ? "" : "s"} para "${search.trim()}"`
+          : gerenciaLocked
+            ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
+            : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
       </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-        {modules.map(m => (
-          <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
-            className={`text-left rounded-lg border p-3 transition duration-150 ease-out ${m.access ? "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]" : ""}`}
-            style={{
-              borderColor: C.line, background: m.access ? C.panel : C.bg,
-              opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
-              minHeight: 48,
-            }}>
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <div className="flex items-center gap-2 min-w-0">
-                <m.icon size={16} className="shrink-0" style={{ color: m.access ? C.amber : C.gray }} />
-                <div className="text-sm font-semibold truncate" style={{ color: C.ink }}>{m.label}</div>
+      {visibleModules.length === 0 ? (
+        <div className="text-sm text-center py-10" style={{ color: C.gray }}>
+          No encontré nada para "{search.trim()}". Intenta con otra palabra.
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+          {visibleModules.map(m => (
+            <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
+              className={`text-left rounded-lg border p-3 transition duration-150 ease-out relative ${m.access ? "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]" : ""}`}
+              style={{
+                borderColor: C.line, background: m.access ? C.panel : C.bg,
+                opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
+                minHeight: 48,
+              }}>
+              {m.access && !gerenciaLocked && (
+                <span role="button" tabIndex={0} title={favorites.includes(m.id) ? "Quitar de favoritos" : "Fijar en favoritos"}
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); toggleFavorite(m.id); } }}
+                  className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ background: C.panel, border: `1px solid ${C.line}`, minWidth: 24, minHeight: 24 }}>
+                  <Sparkles size={12} color={favorites.includes(m.id) ? C.amber : C.gray} fill={favorites.includes(m.id) ? C.amber : "none"} />
+                </span>
+              )}
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <m.icon size={16} className="shrink-0" style={{ color: m.access ? C.amber : C.gray }} />
+                  <div className="text-sm font-semibold truncate" style={{ color: C.ink }}>{m.label}</div>
+                </div>
+                <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
               </div>
-              <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
-            </div>
-            <div className="text-xs truncate" style={{ color: C.gray }}>
-              {m.access ? m.desc : gerenciaLocked ? "No disponible para gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
-            </div>
-          </button>
-        ))}
-      </div>
+              <div className="text-xs truncate" style={{ color: C.gray }}>
+                {m.access ? m.desc : gerenciaLocked ? "No disponible para gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

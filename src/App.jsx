@@ -4052,6 +4052,34 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
    VISTA: PANEL EJECUTIVO
    ============================================================ */
 /** Pequeña etiqueta "↑/↓ X% vs mes pasado" para el Panel Ejecutivo. */
+/**
+ * Tarjeta KPI: etiqueta pequeña arriba, número grande, y opcionalmente un desglose debajo de
+ * una línea divisoria (ej: "Preventivo 12 / Correctivo 8") — el mismo patrón de las tarjetas
+ * de reportes tipo BI (número protagonista + contexto secundario, sin saturar).
+ */
+function StatCard({ label, value, valueColor, leading, breakdown, trend }) {
+  return (
+    <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>{label}</div>
+      <div className="flex items-center gap-3 mt-2">
+        {leading}
+        <div className="text-3xl font-bold leading-none tabular-nums" style={{ color: valueColor || C.ink }}>{value}</div>
+      </div>
+      {trend}
+      {breakdown && breakdown.length > 0 && (
+        <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: `1px solid ${C.line}` }}>
+          {breakdown.map(b => (
+            <div key={b.label} className="flex items-center justify-between text-xs">
+              <span style={{ color: C.inkSoft }}>{b.label}</span>
+              <span className="font-bold tabular-nums" style={{ color: b.color || C.ink }}>{b.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TrendBadge({ current, previous, unit = "%", goodDirection = "up" }) {
   if (previous == null) return null;
   const diff = current - previous;
@@ -4100,30 +4128,17 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
 
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="rounded-lg border p-4 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <MiniGauge value={avgUptime} max={100} size={48} color={avgUptime >= 90 ? C.green : C.red} />
-          <div>
-            <div className="text-2xl font-bold leading-none" style={{ color: avgUptime >= 90 ? C.green : C.red }}>{avgUptime}%</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Disponibilidad promedio</div>
-          </div>
-        </div>
-        <div className="rounded-lg border p-4 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <MiniGauge value={compliance.ronda.pct} max={100} size={48} color={compliance.ronda.pct >= 90 ? C.green : C.red} />
-          <div>
-            <div className="text-2xl font-bold leading-none" style={{ color: compliance.ronda.pct >= 90 ? C.green : C.red }}>{compliance.ronda.pct}%</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Cumplimiento de rondas</div>
-            <TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />
-          </div>
-        </div>
-        <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: C.gray }}>Costo de mantenimiento (mes)</div>
-          <div className="text-2xl font-bold mt-1" style={{ color: C.ink }}>{cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}</div>
-          <TrendBadge current={cost.total} previous={costPrev.total} unit="$" goodDirection="down" />
-        </div>
+        <StatCard label="Disponibilidad promedio" value={`${avgUptime}%`} valueColor={avgUptime >= 90 ? C.green : C.red}
+          leading={<MiniGauge value={avgUptime} max={100} size={48} color={avgUptime >= 90 ? C.green : C.red} />} />
+        <StatCard label="Cumplimiento de rondas" value={`${compliance.ronda.pct}%`} valueColor={compliance.ronda.pct >= 90 ? C.green : C.red}
+          leading={<MiniGauge value={compliance.ronda.pct} max={100} size={48} color={compliance.ronda.pct >= 90 ? C.green : C.red} />}
+          trend={<TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />} />
+        <StatCard label="Costo de mantenimiento (mes)" value={cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}
+          trend={<TrendBadge current={cost.total} previous={costPrev.total} unit="$" goodDirection="down" />} />
       </div>
 
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Disponibilidad de equipos por sistema</div>
-      <div className="rounded-lg border p-4 mb-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+      <div className="rounded-xl border p-5 mb-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <HorizontalBarChart data={uptime} labelKey="sistema" valueKey="pct" max={100}
           colorFor={u => u.pct >= 90 ? C.green : C.red} formatValue={v => `${v}%`} />
       </div>
@@ -4149,7 +4164,7 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       {cost.bySistema.length > 0 && (
         <>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Costo de mantenimiento por sistema (este mes)</div>
-          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <HorizontalBarChart data={cost.bySistema.slice(0, 10).map(([sistema, valor]) => ({ sistema, valor }))}
               labelKey="sistema" valueKey="valor" colorFor={() => C.amber} formatValue={v => `$${(v / 1000).toFixed(0)}k`} />
           </div>
@@ -4217,40 +4232,22 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
       </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: outOfService.length ? C.redSoft : C.greenSoft }}>
-            {outOfService.length ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
-          </div>
-          <div>
-            <div className="text-xl font-bold leading-none" style={{ color: outOfService.length ? C.red : C.ink }}>{outOfService.length}</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Fuera de servicio</div>
-          </div>
-        </div>
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}>
-            <Wrench size={18} color={C.blue} />
-          </div>
-          <div>
-            <div className="text-xl font-bold leading-none" style={{ color: C.ink }}>{totalMantenimientos}</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Mantenimientos totales</div>
-          </div>
-        </div>
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
-          <MiniGauge value={pctPreventivo} max={100} size={40} stroke={5} color={pctPreventivo >= 60 ? C.green : C.amber} />
-          <div>
-            <div className="text-xl font-bold leading-none" style={{ color: C.ink }}>{pctPreventivo}%</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Preventivo (vs. correctivo)</div>
-          </div>
-        </div>
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}>
-            <Gauge size={18} color={C.amber} />
-          </div>
-          <div>
-            <div className="text-lg font-bold leading-none" style={{ color: C.ink }}>{totalCosto ? `$${totalCosto.toLocaleString("es-CO")}` : "—"}</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Costo acumulado</div>
-          </div>
-        </div>
+        <StatCard label="Fuera de servicio" value={outOfService.length} valueColor={outOfService.length ? C.red : C.ink}
+          leading={
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: outOfService.length ? C.redSoft : C.greenSoft }}>
+              {outOfService.length ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
+            </div>
+          } />
+        <StatCard label="Mantenimientos totales" value={totalMantenimientos}
+          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><Wrench size={18} color={C.blue} /></div>}
+          breakdown={totalMantenimientos > 0 ? [
+            { label: "Preventivo", value: totalPreventivos, color: C.green },
+            { label: "Correctivo", value: totalCorrectivos, color: C.red },
+          ] : null} />
+        <StatCard label="Preventivo (vs. correctivo)" value={`${pctPreventivo}%`}
+          leading={<MiniGauge value={pctPreventivo} max={100} size={40} stroke={5} color={pctPreventivo >= 60 ? C.green : C.amber} />} />
+        <StatCard label="Costo acumulado" value={totalCosto ? `$${totalCosto.toLocaleString("es-CO")}` : "—"}
+          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Gauge size={18} color={C.amber} /></div>} />
       </div>
 
       {totalMantenimientos === 0 ? (
@@ -4258,16 +4255,21 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
       ) : (
         <>
           {tipoSplit.length > 0 && (
-            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-              <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Preventivo vs. correctivo</div>
-              <div className="flex items-center gap-4">
-                <MiniDonut segments={tipoSplit.map(d => ({ value: d.value, color: d.name === "Preventivo" ? C.green : C.red }))} />
-                <div className="space-y-2">
+            <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide mb-4" style={{ color: C.gray }}>Preventivo vs. correctivo</div>
+              <div className="flex items-center gap-6">
+                <MiniDonut segments={tipoSplit.map(d => ({ value: d.value, color: d.name === "Preventivo" ? C.green : C.red }))} size={150} stroke={24} />
+                <div className="space-y-3 flex-1">
                   {tipoSplit.map(d => (
-                    <div key={d.name} className="flex items-center gap-2 text-sm">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: d.name === "Preventivo" ? C.green : C.red }} />
-                      <span style={{ color: C.ink }}>{d.name}</span>
-                      <span className="font-semibold" style={{ color: C.gray }}>{d.value} ({Math.round((d.value / totalMantenimientos) * 100)}%)</span>
+                    <div key={d.name} className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2 text-sm" style={{ color: C.ink }}>
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.name === "Preventivo" ? C.green : C.red }} />
+                        {d.name}
+                      </span>
+                      <span className="text-right">
+                        <span className="font-bold tabular-nums" style={{ color: d.name === "Preventivo" ? C.green : C.red }}>{d.value}</span>
+                        <span className="text-xs ml-1" style={{ color: C.gray }}>({Math.round((d.value / totalMantenimientos) * 100)}%)</span>
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -4276,21 +4278,21 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
           )}
 
           {bySistema.length > 0 && (
-            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Mantenimientos por sistema</div>
               <HorizontalBarChart data={bySistema} labelKey="sistema" valueKey="mantenimientos" colorFor={() => C.blue} />
             </div>
           )}
 
           {topCorrectivos.length > 0 && (
-            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos con más fallas (correctivos)</div>
               <HorizontalBarChart data={topCorrectivos} labelKey="label" valueKey="fallas" colorFor={() => C.red} />
             </div>
           )}
 
           {replaceCandidates.length > 0 && (
-            <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.amber, background: C.amberSoft }}>
+            <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.amber, background: C.amberSoft }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#7a5405" }}>Candidatos a evaluar reemplazo</div>
               <div className="text-xs mb-2" style={{ color: "#7a5405" }}>
                 3 o más reparaciones registradas — vale la pena revisar si sale más rentable cambiarlos que seguir reparándolos.
@@ -4305,7 +4307,7 @@ function MaintenanceAnalyticsView({ equipos, mttoLog }) {
           )}
 
           {outOfService.length > 0 && (
-            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Fuera de servicio ahora mismo</div>
               {outOfService.map(({ eq, status }) => (
                 <div key={eq.id} className="text-xs py-1.5 border-b last:border-0 flex items-center justify-between" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -5633,19 +5635,19 @@ function MiniDonut({ segments, size = 140, stroke = 22 }) {
 function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatValue, max }) {
   const maxVal = max ?? Math.max(1, ...data.map(d => Number(d[valueKey]) || 0));
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-4">
       {data.map((d, i) => {
         const val = Number(d[valueKey]) || 0;
         const pct = Math.max(0, Math.min(100, (val / maxVal) * 100));
         const color = colorFor ? colorFor(d) : C.amber;
         return (
           <div key={i}>
-            <div className="flex items-center justify-between text-xs mb-1 gap-2">
+            <div className="flex items-center justify-between text-sm mb-1.5 gap-3">
               <span style={{ color: C.ink }} className="truncate">{d[labelKey]}</span>
-              <span className="font-semibold shrink-0" style={{ color }}>{formatValue ? formatValue(val) : val}</span>
+              <span className="font-bold shrink-0 tabular-nums" style={{ color, fontSize: 15 }}>{formatValue ? formatValue(val) : val}</span>
             </div>
-            <div className="w-full rounded-full" style={{ background: C.bg, height: 8 }}>
-              <div className="rounded-full" style={{ width: `${pct}%`, height: 8, background: color, transition: "width 500ms ease-out" }} />
+            <div className="w-full rounded-full overflow-hidden" style={{ background: C.bg, height: 10 }}>
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color, transition: "width 600ms var(--ease-out)" }} />
             </div>
           </div>
         );
@@ -8530,38 +8532,26 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
       </p>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: totalCurrentlyDown ? C.redSoft : C.greenSoft }}>
-            {totalCurrentlyDown ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
-          </div>
-          <div>
-            <div className="text-xl font-bold leading-none" style={{ color: totalCurrentlyDown ? C.red : C.ink }}>{totalCurrentlyDown}</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Fuera de servicio</div>
-          </div>
-        </div>
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}>
-            <TrendingUp size={18} color={C.blue} />
-          </div>
-          <div>
-            <div className="text-xl font-bold leading-none" style={{ color: C.ink }}>{totalIncidents}</div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Incidentes en el período</div>
-          </div>
-        </div>
-        <div className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}>
-            <Clock size={18} color={C.amber} />
-          </div>
-          <div>
-            <div className="text-xs font-semibold leading-tight" style={{ color: C.ink }}>
+        <StatCard label="Fuera de servicio" value={totalCurrentlyDown} valueColor={totalCurrentlyDown ? C.red : C.ink}
+          leading={
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: totalCurrentlyDown ? C.redSoft : C.greenSoft }}>
+              {totalCurrentlyDown ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
+            </div>
+          } />
+        <StatCard label="Incidentes en el período" value={totalIncidents}
+          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><TrendingUp size={18} color={C.blue} /></div>} />
+        <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Falla activa más larga</div>
+          <div className="flex items-center gap-3 mt-2">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>
+            <div className="text-sm font-bold leading-tight" style={{ color: C.ink }}>
               {longestActive ? `${longestActive.name} · ${fmtHours(longestActive.totalHours)}` : "Ninguna"}
             </div>
-            <div className="text-[11px] mt-1" style={{ color: C.gray }}>Falla activa más larga</div>
           </div>
         </div>
       </div>
 
-      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+      <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>PDF de este reporte ({rangeLabel})</div>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadPdf}>
@@ -8581,17 +8571,17 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>No hay incidentes registrados en este período.</p>
       ) : (
         <>
-          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Tiempo total fuera de servicio (horas)</div>
             <HorizontalBarChart data={byDowntime} labelKey="label" valueKey="hours" colorFor={() => C.red} formatValue={v => `${v} h`} />
           </div>
 
-          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Equipos que más veces han fallado</div>
             <HorizontalBarChart data={byFrequency} labelKey="label" valueKey="incidentes" colorFor={() => C.amber} />
           </div>
 
-          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Detalle por equipo</div>
             {stats.map(eq => (
               <div key={eq.equipmentId} className="border-b last:border-0 py-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>

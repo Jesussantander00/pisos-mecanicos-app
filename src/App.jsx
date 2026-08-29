@@ -3270,8 +3270,9 @@ function VoiceInputButton({ onResult }) {
 function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
   const [filterEstado, setFilterEstado] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "" });
+  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [] });
   const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
   const [assignMode, setAssignMode] = useState("now"); // "now" (por defecto) | "manual"
   const [assignDate, setAssignDate] = useState(() => localDateIso(new Date()));
   const [assignShift, setAssignShift] = useState(SHIFTS[0]);
@@ -3306,10 +3307,21 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
 
   const doCreate = async () => {
     if (!form.titulo.trim()) return;
-    setSaving(true);
-    await onCreateTask(form);
-    setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "" });
-    setShowNew(false);
+    setSaving(true); setSaveMsg(null);
+    try {
+      const { fotosAntes, ...rest } = form;
+      const res = await saveRecordWithPhotos(
+        "task",
+        { ...rest, titulo: rest.titulo.trim() },
+        fotosAntes,
+        async (payload, urls) => { await onCreateTask({ ...payload, fotosAntes: urls }); }
+      );
+      setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [] });
+      setShowNew(false);
+      if (res.queued) setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." });
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message || "No se pudo crear la tarea." });
+    }
     setSaving(false);
   };
 
@@ -3405,6 +3417,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
               {TASK_RECURRENCES.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
             </select>
           </div>
+          <div className="mb-2">
+            <div className="text-xs font-medium mb-1.5" style={{ color: C.inkSoft }}>
+              Fotos de la novedad (opcional) — así la persona asignada ve exactamente qué pasó y dónde, antes de ir a revisar.
+            </div>
+            <PhotoPicker photos={form.fotosAntes} onChange={fotosAntes => setForm(f => ({ ...f, fotosAntes }))} max={4} />
+          </div>
+          {saveMsg && <div className="text-xs mb-2" style={{ color: saveMsg.ok ? C.green : C.red }}>{saveMsg.text}</div>}
           <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear tarea"}</Button>
         </div>
       )}
@@ -3440,6 +3459,15 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   Por {t.createdBy} · {fmtDT(t.createdAt)}{t.asignadoA ? ` · Asignado a ${accounts[t.asignadoA]?.display_name || t.asignadoA}` : ""}
                   {t.recurrencia && ` · 🔁 Se repite ${t.recurrencia === "semanal" ? "cada semana" : "cada mes"}`}
                 </div>
+                {t.fotosAntes && t.fotosAntes.length > 0 && (
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    {t.fotosAntes.map((url, pi) => (
+                      <a key={pi} href={url} target="_blank" rel="noopener noreferrer">
+                        <img src={url} alt="" className="w-12 h-12 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <select value={t.estado} onChange={e => onUpdateTask(t.id, { estado: e.target.value })}
@@ -10159,6 +10187,7 @@ export default function App() {
       estado: "pendiente", prioridad: form.prioridad || "media", asignadoA: form.asignadoA || "",
       recurrencia: recurrence, recurrenceGroupId: recurrence ? id : null,
       recurrencePeriodKey: recurrence ? periodKeyFor(new Date(), recurrence) : null,
+      fotosAntes: form.fotosAntes || [],
       createdBy: displayName, createdAt: nowIso(), updatedAt: nowIso(),
     };
     const next = [rec, ...tasks];

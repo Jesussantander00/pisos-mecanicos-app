@@ -131,7 +131,7 @@ const FLOORS = [
     { c: 24, n: "Encendido de letras zona de playas", k: "status" },
   ]},
   { id: "p1", name: "Piso Mecánico 1", items: [
-    { c: 24, n: "Nivel Tanque de ACPM", k: "numeric", u: "gln" },
+    { c: 24, n: "Nivel Tanque de ACPM", k: "numeric", u: "gln" , fuel: true },
     { c: 25, n: "Bomba Suministro ACPM", k: "status" },
     { c: 26, n: "Estado Dique de Rebose Tanque ACPM", k: "status" },
   ]},
@@ -267,7 +267,7 @@ const FLOORS = [
     { c: 146, n: "Manejadora AC-1102", k: "status" },
     { c: 147, n: "Generador de Energía #1 CUMMINS 1500KVA", k: "status" },
     { c: 148, n: "Generador de Energía #2 CUMMINS 1500KVA", k: "status" },
-    { c: 149, n: "Nivel Tanque de ACPM", k: "numeric", u: "gln" },
+    { c: 149, n: "Nivel Tanque de ACPM", k: "numeric", u: "gln" , fuel: true },
     { c: 150, n: "Bomba Suministro ACPM", k: "status" },
     { c: 151, n: "Estado Transferencias 220", k: "status" },
     { c: 152, n: "Estado Transferencias 440", k: "status" },
@@ -344,8 +344,8 @@ const FLOORS = [
     { c: 224, n: "Bomba Suministro de Agua Potable #1", k: "status" },
     { c: 225, n: "Bomba Suministro de Agua Potable #2", k: "status" },
     { c: 226, n: "Bomba Suministro de Agua Potable #3", k: "status" },
-    { c: 228, n: "Nivel Tanque de ACPM Contra Incendio HYATT", k: "numeric", u: "%" },
-    { c: 229, n: "Nivel Tanque de ACPM Contra Incendio RENTAL", k: "numeric", u: "%" },
+    { c: 228, n: "Nivel Tanque de ACPM Contra Incendio HYATT", k: "numeric", u: "%" , fuel: true },
+    { c: 229, n: "Nivel Tanque de ACPM Contra Incendio RENTAL", k: "numeric", u: "%" , fuel: true },
     { c: 230, n: "Panel principal bomba contraincendio Hyatt", k: "statusNumeric", u: "psi" },
     { c: 231, n: "Tablero de control bomba Jockey Hyatt", k: "statusNumeric", u: "psi" },
     { c: 232, n: "Válvula sistema enfriamiento contraincendio Hyatt", k: "status" },
@@ -362,13 +362,13 @@ const FLOORS = [
     { c: 243, n: "Temperatura controlador agua caliente HN", k: "numeric", u: "°C" },
     { c: 244, n: "Temperatura controlador recirculación agua caliente HN", k: "numeric", u: "°C" },
     { c: 245, n: "Generador de Energía #3 PERKINS 200KVA", k: "status" },
-    { c: 246, n: "Nivel Tanque de ACPM Generador #3", k: "numeric", u: "%" },
+    { c: 246, n: "Nivel Tanque de ACPM Generador #3", k: "numeric", u: "%" , fuel: true },
     { c: 247, n: "Nivel Tanque Agua Contraincendios", k: "numeric", u: "%" },
     { c: 248, n: "Generador de Energía #4 CUMMINS 375KVA", k: "status" },
-    { c: 249, n: "Nivel Tanque de ACPM Generador #4", k: "numeric", u: "%" },
+    { c: 249, n: "Nivel Tanque de ACPM Generador #4", k: "numeric", u: "%" , fuel: true },
     { c: 250, n: "Generador de Energía #5 PERKINS 625KVA", k: "status" },
-    { c: 251, n: "Nivel Tanque de ACPM Generador #5", k: "numeric", u: "%" },
-    { c: 252, n: "Lectura Medidor de ACPM Residencias", k: "numeric", u: "gln" },
+    { c: 251, n: "Nivel Tanque de ACPM Generador #5", k: "numeric", u: "%" , fuel: true },
+    { c: 252, n: "Lectura Medidor de ACPM Residencias", k: "numeric", u: "gln" , fuel: true },
     { c: 253, n: "Temperatura Transformador 1 HYATT", k: "numeric", u: "°C" },
     { c: 254, n: "Temperatura Transformador 2 Residencias", k: "numeric", u: "°C" },
     { c: 255, n: "Temperatura Transformador 3 Res. Zona Común", k: "numeric", u: "°C" },
@@ -425,6 +425,7 @@ const FLOORS = [
 FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorId = f.id; it.floorName = f.name; }));
 const ALL_ITEMS = FLOORS.flatMap(f => f.items);
 const TANK_ITEMS = ALL_ITEMS.filter(it => it.tank);
+const FUEL_ITEMS = ALL_ITEMS.filter(it => it.fuel);
 
 /* ============================================================
    DATOS: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
@@ -6294,7 +6295,7 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, 
                   {fuelAlerts.map((t, i) => (
                     <button key={i} onClick={() => { onNavigate("fuel"); setOpen(false); }}
                       className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
-                      · {t.nombre} — {Math.round((t.nivelActual / t.capacidadTotal) * 100)}% <span style={{ color: C.gray }}>(mínimo {t.minPct}%)</span>
+                      · {t.nombre} — {t.pct}% <span style={{ color: C.gray }}>(mínimo 20%)</span>
                     </button>
                   ))}
                 </div>
@@ -7712,124 +7713,136 @@ const FUEL_TANK_TYPES = ["Diesel (ACPM)", "Gas propano", "Gasolina"];
  * registros de consumo por turno bajan el nivel, los de reabastecimiento lo suben. La barra de
  * llenado y la alerta cambian solas de color cuando cae por debajo del % mínimo operativo.
  */
-function FuelTanksView({ fuelTanks, fuelLog, isAdmin, onCreateTank, onLogReading }) {
-  const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ nombre: "", tipo: FUEL_TANK_TYPES[0], ubicacion: "", capacidadTotal: "", nivelInicial: "", minPct: "20" });
-  const [saving, setSaving] = useState(false);
-  const [readingTankId, setReadingTankId] = useState(null);
-  const [readingForm, setReadingForm] = useState({ tipo: "consumo", volumen: "", turno: SHIFTS[0], nota: "" });
-  const [readingSaving, setReadingSaving] = useState(false);
+/**
+ * Combustibles y gas — ACPM para plantas eléctricas y calderas. Se alimenta de las mismas
+ * lecturas que ya se capturan en el recorrido diario (los ítems de "Nivel Tanque de ACPM" en
+ * cada piso), igual que ya hace "Tanques agua potable" — no es un registro aparte. Mismo formato
+ * de tarjetas, gráfica y detalle por equipo que Análisis de fallas.
+ */
+function FuelTanksView({ latestValues, fuelHistory, onNavigate }) {
+  const [expanded, setExpanded] = useState(null);
 
-  const doCreate = async () => {
-    if (!form.nombre.trim() || !form.capacidadTotal) return;
-    setSaving(true);
-    await onCreateTank(form);
-    setForm({ nombre: "", tipo: FUEL_TANK_TYPES[0], ubicacion: "", capacidadTotal: "", nivelInicial: "", minPct: "20" });
-    setShowNew(false);
-    setSaving(false);
-  };
+  const pctTanks = FUEL_ITEMS.filter(it => it.u === "%").map(it => {
+    const v = latestValues[it.id];
+    return {
+      id: it.id, label: `${it.n} (${it.floorName})`, pct: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
+      updatedAt: v?.updatedAt || null, updatedBy: v?.updatedBy || null,
+    };
+  });
+  const meterTanks = FUEL_ITEMS.filter(it => it.u === "gln").map(it => {
+    const v = latestValues[it.id];
+    return {
+      id: it.id, label: `${it.n} (${it.floorName})`, value: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
+      updatedAt: v?.updatedAt || null, updatedBy: v?.updatedBy || null,
+    };
+  });
 
-  const openReading = (tankId, tipo) => { setReadingTankId(tankId); setReadingForm({ tipo, volumen: "", turno: SHIFTS[0], nota: "" }); };
-  const doLogReading = async () => {
-    if (!readingForm.volumen) return;
-    setReadingSaving(true);
-    await onLogReading(readingTankId, readingForm);
-    setReadingTankId(null);
-    setReadingSaving(false);
-  };
+  const readTanks = pctTanks.filter(t => t.pct != null);
+  const criticalTanks = readTanks.filter(t => t.pct <= 20);
+  const promedioPlanta = readTanks.length ? Math.round(readTanks.reduce((s, t) => s + t.pct, 0) / readTanks.length) : null;
+  const lowest = readTanks.length ? [...readTanks].sort((a, b) => a.pct - b.pct)[0] : null;
+  const totalLecturas = [...pctTanks, ...meterTanks].filter(t => (t.pct ?? t.value) != null).length;
 
-  const inputCls = "text-sm border rounded-md px-2 py-1.5 outline-none";
-  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+  const barData = readTanks.sort((a, b) => a.pct - b.pct);
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Combustibles y gas</h2>
-          <p className="text-sm" style={{ color: C.inkSoft }}>Tanques de ACPM y gas para calderas y plantas eléctricas — nivel actual, consumo por turno y alertas de reabastecimiento.</p>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Combustibles y gas</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Nivel de ACPM en plantas eléctricas y calderas — tomado directamente de las lecturas del recorrido diario de cada piso.
+      </p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard label="Tanques en nivel crítico" value={criticalTanks.length} valueColor={criticalTanks.length ? C.red : C.ink}
+          leading={
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: criticalTanks.length ? C.redSoft : C.greenSoft }}>
+              {criticalTanks.length ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
+            </div>
+          } />
+        <StatCard label="Nivel promedio de planta" value={promedioPlanta != null ? `${promedioPlanta}%` : "—"} valueColor={promedioPlanta != null && promedioPlanta <= 20 ? C.red : C.ink}
+          leading={promedioPlanta != null ? <MiniGauge value={promedioPlanta} max={100} size={40} stroke={5} color={promedioPlanta <= 20 ? C.red : promedioPlanta <= 35 ? C.amber : C.green} /> : null} />
+        <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Tanque con menor nivel</div>
+          <div className="flex items-center gap-3 mt-2">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Gauge size={18} color={C.amber} /></div>
+            <div className="text-sm font-bold leading-tight" style={{ color: C.ink }}>{lowest ? `${lowest.label} · ${lowest.pct}%` : "Sin lecturas"}</div>
+          </div>
         </div>
-        {isAdmin && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nuevo tanque"}</Button>}
+        <StatCard label="Lecturas registradas" value={totalLecturas}
+          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><ClipboardCheck size={18} color={C.blue} /></div>} />
       </div>
 
-      {showNew && (
-        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
-          <div className="grid sm:grid-cols-2 gap-2 mb-2">
-            <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre (ej: ACPM Planta Eléctrica)" className={inputCls} style={inputStyle} />
-            <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} className={inputCls} style={inputStyle}>
-              {FUEL_TANK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Ubicación (opcional)" className={inputCls} style={inputStyle} />
-            <input type="number" value={form.capacidadTotal} onChange={e => setForm(f => ({ ...f, capacidadTotal: e.target.value }))} placeholder="Capacidad total (galones)" className={inputCls} style={inputStyle} />
-            <input type="number" value={form.nivelInicial} onChange={e => setForm(f => ({ ...f, nivelInicial: e.target.value }))} placeholder="Volumen inicial (galones)" className={inputCls} style={inputStyle} />
-            <input type="number" value={form.minPct} onChange={e => setForm(f => ({ ...f, minPct: e.target.value }))} placeholder="% mínimo operativo (ej: 20)" className={inputCls} style={inputStyle} />
-          </div>
-          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear tanque"}</Button>
-        </div>
-      )}
-
-      {fuelTanks.length === 0 ? (
-        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todavía no hay tanques de combustible registrados.</p>
+      {readTanks.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
+          Todavía no hay lecturas de ACPM registradas. Se llenan solas cuando alguien marca esos ítems durante el recorrido de un piso.
+        </p>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
-          {fuelTanks.map(tank => {
-            const pct = tank.capacidadTotal > 0 ? (tank.nivelActual / tank.capacidadTotal) * 100 : 0;
-            const critical = pct <= tank.minPct;
-            const low = !critical && pct <= tank.minPct * 1.5;
-            const tone = critical ? C.red : low ? C.amber : C.green;
-            const recentLog = fuelLog.filter(l => l.tankId === tank.id).slice(0, 5);
-            return (
-              <div key={tank.id} className="rounded-xl border p-4" style={{ borderColor: critical ? C.red : C.line, background: critical ? C.redSoft : C.panel }}>
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
-                    <div className="text-sm font-semibold" style={{ color: C.ink }}>{tank.nombre}</div>
-                    <div className="text-xs" style={{ color: C.gray }}>{tank.tipo}{tank.ubicacion ? ` · ${tank.ubicacion}` : ""}</div>
-                  </div>
-                  <div className="text-xl font-bold" style={{ color: tone }}>{pct.toFixed(0)}%</div>
-                </div>
-                {critical && <div className="text-xs font-semibold mb-2" style={{ color: C.red }}>⚠ Reabastecer pronto — por debajo del {tank.minPct}% mínimo operativo</div>}
-                <div className="w-full rounded-full overflow-hidden mb-1.5" style={{ background: C.bg, height: 14 }}>
-                  <div className="h-full rounded-full" style={{ width: `${Math.max(4, pct)}%`, background: tone, transition: "width 500ms var(--ease-out)" }} />
-                </div>
-                <div className="text-xs mb-3" style={{ color: C.inkSoft }}>{tank.nivelActual.toLocaleString("es-CO")} / {tank.capacidadTotal.toLocaleString("es-CO")} galones</div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button size="sm" variant="ghost" onClick={() => openReading(tank.id, "consumo")}>Registrar consumo</Button>
-                  <Button size="sm" onClick={() => openReading(tank.id, "reabastecimiento")}>Reabastecer</Button>
-                </div>
+        <>
+          <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Nivel actual por tanque</div>
+            <HorizontalBarChart data={barData} labelKey="label" valueKey="pct" max={100}
+              colorFor={t => t.pct <= 20 ? C.red : t.pct <= 35 ? C.amber : C.green} gradient formatValue={v => `${v}%`} />
+          </div>
 
-                {readingTankId === tank.id && (
-                  <div className="rounded-md p-2 mt-2" style={{ background: C.bg }}>
-                    <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>{readingForm.tipo === "reabastecimiento" ? "Reabastecimiento" : "Consumo por turno"}</div>
-                    <div className="flex items-center gap-2 flex-wrap mb-2">
-                      <input type="number" value={readingForm.volumen} onChange={e => setReadingForm(f => ({ ...f, volumen: e.target.value }))} placeholder="Galones" className={`${inputCls} w-28`} style={inputStyle} />
-                      {readingForm.tipo === "consumo" && (
-                        <select value={readingForm.turno} onChange={e => setReadingForm(f => ({ ...f, turno: e.target.value }))} className={inputCls} style={inputStyle}>
-                          {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      )}
-                    </div>
-                    <input value={readingForm.nota} onChange={e => setReadingForm(f => ({ ...f, nota: e.target.value }))} placeholder="Nota (opcional)" className={`${inputCls} w-full mb-2`} style={inputStyle} />
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" disabled={readingSaving} onClick={doLogReading}>{readingSaving ? "Guardando…" : "Guardar"}</Button>
-                      <Button size="sm" variant="ghost" onClick={() => setReadingTankId(null)}>Cancelar</Button>
-                    </div>
-                  </div>
-                )}
+          {criticalTanks.length > 0 && (
+            <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.red }}>⚠ Reabastecer pronto — por debajo del 20%</div>
+              {criticalTanks.map(t => (
+                <div key={t.id} className="text-xs py-1" style={{ color: "#7a1030" }}>
+                  <b>{t.label}</b> — {t.pct}% · última lectura {t.updatedAt ? fmtDT(t.updatedAt) : "—"}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
-                {recentLog.length > 0 && (
-                  <div className="mt-3 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Últimos movimientos</div>
-                    {recentLog.map(l => (
-                      <div key={l.id} className="text-xs py-0.5" style={{ color: C.inkSoft }}>
-                        {l.tipo === "reabastecimiento" ? "+" : "−"}{l.volumen} gal {l.turno && `· ${l.turno}`} · {l.registradoPor} · {fmtDT(l.at)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      {meterTanks.some(t => t.value != null) && (
+        <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Medidores de ACPM (galones)</div>
+          <div className="text-xs mb-3" style={{ color: C.gray }}>Estos son lecturas de medidor acumuladas, no un % de llenado — la tendencia muestra cómo ha subido el consumo con el tiempo.</div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {meterTanks.filter(t => t.value != null).map(t => {
+              const hist = (fuelHistory[t.id] || []).slice(-12).map(h => ({ t: fmtDT(h.at).slice(0, 11), v: Number(h.value) }));
+              return (
+                <div key={t.id} className="rounded-lg border p-3" style={{ borderColor: C.line }}>
+                  <div className="text-xs font-medium mb-0.5" style={{ color: C.ink }}>{t.label}</div>
+                  <div className="text-lg font-bold" style={{ color: C.ink }}>{t.value.toLocaleString("es-CO")} <span className="text-xs font-normal" style={{ color: C.gray }}>gln</span></div>
+                  {hist.length > 1 ? <Sparkline points={hist} height={40} color={C.blue} /> : <div className="text-xs py-2" style={{ color: C.gray }}>Sin histórico suficiente todavía</div>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
+
+      <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Detalle e historial por tanque</div>
+        {[...pctTanks, ...meterTanks].map(t => {
+          const hist = [...(fuelHistory[t.id] || [])].reverse();
+          return (
+            <div key={t.id} className="border-b last:border-0 py-2" style={{ borderColor: C.line }}>
+              <button onClick={() => setExpanded(expanded === t.id ? null : t.id)} className="w-full flex items-center justify-between text-left">
+                <div className="text-sm font-medium" style={{ color: C.ink }}>
+                  {t.label} <span style={{ color: C.gray, fontWeight: 400 }}>· {(t.pct ?? t.value) != null ? `${t.pct ?? t.value}${t.pct != null ? "%" : " gln"}` : "sin lectura"}</span>
+                </div>
+                {expanded === t.id ? <ChevronDown size={16} style={{ color: C.gray }} /> : <ChevronRight size={16} style={{ color: C.gray }} />}
+              </button>
+              {expanded === t.id && (
+                <div className="mt-2 pl-1">
+                  {hist.length === 0 ? (
+                    <div className="text-xs py-1" style={{ color: C.gray }}>Sin historial todavía.</div>
+                  ) : hist.map((h, i) => (
+                    <div key={i} className="text-xs py-1 border-b last:border-0" style={{ borderColor: C.line, color: C.ink }}>
+                      {h.value}{t.pct != null ? "%" : " gln"} <span style={{ color: C.gray }}>· {h.by} · {h.shift ? `${h.shift} · ` : ""}{fmtDT(h.at)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -10576,8 +10589,7 @@ export default function App() {
   const [roundsIndex, setRoundsIndex] = useState([]);
   const [latestValues, setLatestValues] = useState({});
   const [tankHistory, setTankHistory] = useState({});
-  const [fuelTanks, setFuelTanks] = useState([]);
-  const [fuelLog, setFuelLog] = useState([]);
+  const [fuelHistory, setFuelHistory] = useState({});
   const [latestColdValues, setLatestColdValues] = useState({});
   const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
   const [lastColdRound, setLastColdRound] = useState(null);
@@ -10643,7 +10655,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fts, fl] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -10665,8 +10677,7 @@ export default function App() {
         sGet("schedule-edit-log", true),
         sGet("changelog", true),
         sGet("general-edit-log", true),
-        sGet("fuel-tanks", true),
-        sGet("fuel-log", true),
+        sGet("fuel-history", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -10707,8 +10718,7 @@ export default function App() {
       setScheduleEditLog(schLog || []);
       setChangelogEntries(chgl && chgl.length ? chgl : DEFAULT_CHANGELOG_SEED);
       setGeneralEditLog(gel || []);
-      setFuelTanks(fts || []);
-      setFuelLog(fl || []);
+      setFuelHistory(fh || {});
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);
@@ -11054,44 +11064,6 @@ export default function App() {
       sSet("latest-values", newLatest, true),
       sSet("tank-history", newTankHist, true),
     ]);
-  };
-
-  /* ---- Combustibles y gas (ACPM / gas de calderas y plantas eléctricas) ---- */
-  const createFuelTank = async (form) => {
-    const capacidadTotal = Number(form.capacidadTotal) || 0;
-    const nivelInicial = Number(form.nivelInicial) || 0;
-    const rec = {
-      id: uid("fuel"), nombre: form.nombre.trim(), tipo: form.tipo, ubicacion: (form.ubicacion || "").trim(),
-      capacidadTotal, nivelActual: Math.min(capacidadTotal, nivelInicial), minPct: Number(form.minPct) || 20,
-      createdBy: displayName, createdAt: nowIso(),
-    };
-    const next = [...fuelTanks, rec];
-    setFuelTanks(next);
-    await sSet("fuel-tanks", next, true);
-    logGeneralEdit({ kind: "combustible", action: "creacion", entityLabel: rec.nombre });
-    return rec;
-  };
-
-  /** Registra un reabastecimiento (sube el nivel) o un consumo por turno (lo baja), y deja el
-   *  volumen resultante guardado tanto en el tanque como en el historial. */
-  const logFuelReading = async (tankId, form) => {
-    const tank = fuelTanks.find(t => t.id === tankId);
-    if (!tank) return;
-    const volumen = Number(form.volumen) || 0;
-    const nivelResultante = form.tipo === "reabastecimiento"
-      ? Math.min(tank.capacidadTotal, tank.nivelActual + volumen)
-      : Math.max(0, tank.nivelActual - volumen);
-    const nextTanks = fuelTanks.map(t => t.id === tankId ? { ...t, nivelActual: nivelResultante } : t);
-    setFuelTanks(nextTanks);
-    await sSet("fuel-tanks", nextTanks, true);
-    const rec = {
-      id: uid("fuellog"), tankId, tipo: form.tipo, volumen, turno: form.turno || "", nota: (form.nota || "").trim(),
-      nivelResultante, registradoPor: displayName, at: nowIso(),
-    };
-    const nextLog = [rec, ...fuelLog].slice(0, 3000);
-    setFuelLog(nextLog);
-    await sSet("fuel-log", nextLog, true);
-    return rec;
   };
 
   /* ---- Inventario ---- */
@@ -11698,6 +11670,7 @@ export default function App() {
     const newLatest = { ...latestValues };
     const newActive = { ...activeIssues };
     const newTankHist = { ...tankHistory };
+    const newFuelHist = { ...fuelHistory };
     const autoResolved = []; // equipos que se destildaron "Dañado" en esta ronda — se resuelven solos
 
     for (const item of floor.items) {
@@ -11711,6 +11684,10 @@ export default function App() {
       if (item.tank && e.value !== undefined && e.value !== "") {
         const arr = (newTankHist[item.id] || []).concat([{ value: e.value, at: ts, by: displayName }]).slice(-20);
         newTankHist[item.id] = arr;
+      }
+      if (item.fuel && e.value !== undefined && e.value !== "") {
+        const arr = (newFuelHist[item.id] || []).concat([{ value: e.value, at: ts, by: displayName, shift }]).slice(-30);
+        newFuelHist[item.id] = arr;
       }
 
       if (e.damaged) {
@@ -11744,7 +11721,7 @@ export default function App() {
     const newIndex = [idxRec, ...roundsIndex].slice(0, 1000);
     const newHistory = autoResolved.length ? [...autoResolved, ...issueHistory].slice(0, 500) : issueHistory;
 
-    setRoundsIndex(newIndex); setLatestValues(newLatest); setActiveIssues(newActive); setTankHistory(newTankHist);
+    setRoundsIndex(newIndex); setLatestValues(newLatest); setActiveIssues(newActive); setTankHistory(newTankHist); setFuelHistory(newFuelHist);
     if (autoResolved.length) setIssueHistory(newHistory);
     notifyNewDamagedEquipment(activeIssues, newActive);
     await Promise.all([
@@ -11753,6 +11730,7 @@ export default function App() {
       sSet("latest-values", newLatest, true),
       sSet("active-issues", newActive, true),
       sSet("tank-history", newTankHist, true),
+      sSet("fuel-history", newFuelHist, true),
       ...(autoResolved.length ? [sSet("issue-history", newHistory, true)] : []),
     ]);
 
@@ -12056,10 +12034,13 @@ export default function App() {
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
   const criticalStockItems = useMemo(() => computeCriticalStock(invItems), [invItems]);
-  const criticalFuelTanks = useMemo(
-    () => fuelTanks.filter(t => t.capacidadTotal > 0 && (t.nivelActual / t.capacidadTotal) * 100 <= t.minPct),
-    [fuelTanks]
-  );
+  const criticalFuelTanks = useMemo(() => {
+    return FUEL_ITEMS.filter(it => it.u === "%").map(it => {
+      const v = latestValues[it.id];
+      return v && v.value !== undefined && v.value !== "" ? { nombre: `${it.n} (${it.floorName})`, pct: Number(v.value) } : null;
+    }).filter(t => t && t.pct <= 20);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestValues]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
@@ -12467,7 +12448,7 @@ export default function App() {
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
-          {view === "fuel" && <FuelTanksView fuelTanks={fuelTanks} fuelLog={fuelLog} isAdmin={isAdmin} onCreateTank={createFuelTank} onLogReading={logFuelReading} />}
+          {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onNavigate={setView} />}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

@@ -3447,13 +3447,13 @@ function TaskKanbanCard({ task, accounts, canAct, onOpenDrawer, onMove, onZoom }
   );
 }
 
-function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
+function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
   const [showMttoForm, setShowMttoForm] = useState(false);
-  const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [] });
+  const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
   const [mttoSaving, setMttoSaving] = useState(false);
   const [mttoMsg, setMttoMsg] = useState(null);
 
@@ -3481,7 +3481,7 @@ function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, onLogMaintenance
     try {
       await onLogMaintenance(linkedEquipo.id, mttoForm);
       setShowMttoForm(false);
-      setMttoForm({ tipo: "preventivo", descripcion: "", costo: "", fotos: [] });
+      setMttoForm({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
       setMttoMsg({ ok: true, text: "✓ Mantenimiento registrado en la hoja de vida del equipo." });
     } catch (e) {
       setMttoMsg({ ok: false, text: e.message || "No se pudo registrar el mantenimiento." });
@@ -3552,6 +3552,12 @@ function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, onLogMaintenance
                     className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, color: C.ink }} />
                   <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
                   <PhotoPicker photos={mttoForm.fotos} onChange={fotos => setMttoForm(f => ({ ...f, fotos }))} max={4} />
+                  {invItems && (
+                    <>
+                      <div className="text-xs font-medium mb-1 mt-2" style={{ color: C.inkSoft }}>Repuestos usados (opcional)</div>
+                      <PartsPicker invItems={invItems} parts={mttoForm.repuestos} onChange={repuestos => setMttoForm(f => ({ ...f, repuestos }))} />
+                    </>
+                  )}
                   {mttoMsg && <div className="text-xs mt-1.5" style={{ color: mttoMsg.ok ? C.green : C.red }}>{mttoMsg.text}</div>}
                   <div className="flex items-center gap-2 mt-2">
                     <Button size="sm" disabled={mttoSaving} onClick={doLogMaintenance}>{mttoSaving ? "Guardando…" : "Guardar"}</Button>
@@ -3635,7 +3641,7 @@ function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, onLogMaintenance
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, onLogMaintenance, onCreateTask, onUpdateTask, onDeleteTask }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onDeleteTask }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -4127,7 +4133,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
 
       {drawerTask && (
         <TaskDrawer task={drawerTask} accounts={accounts} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
-          equipos={equipos} mttoLog={mttoLog} onLogMaintenance={onLogMaintenance}
+          equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl} />
       )}
@@ -4490,12 +4496,76 @@ function PhotoPicker({ photos, onChange, max = 2 }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
+/**
+ * Selector de repuestos usados en un mantenimiento — busca en el inventario real, se agrega con
+ * cantidad a una lista. Esa lista se manda tal cual a logMaintenance(), que descuenta el stock
+ * solo — no hay que ir aparte a Inventario a hacer el retiro a mano.
+ */
+function PartsPicker({ invItems, parts, onChange }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [qty, setQty] = useState("1");
+
+  const matches = search.trim() && !selectedId
+    ? invItems.filter(it => normalizeSearchText(it.name).includes(normalizeSearchText(search.trim()))).slice(0, 6)
+    : [];
+
+  const addPart = () => {
+    const item = invItems.find(it => it.id === selectedId);
+    if (!item || !qty || Number(qty) <= 0) return;
+    onChange([...parts, { itemId: item.id, cantidad: Number(qty) }]);
+    setSearch(""); setSelectedId(""); setQty("1");
+  };
+  const removePart = (idx) => onChange(parts.filter((_, i) => i !== idx));
+
+  return (
+    <div>
+      <div className="relative">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <input value={search} onChange={e => { setSearch(e.target.value); setSelectedId(""); }} placeholder="Buscar repuesto usado…"
+            className="flex-1 text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+            className="w-14 text-xs border rounded-md px-1.5 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <button type="button" onClick={addPart} disabled={!selectedId}
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-md shrink-0" style={{ background: selectedId ? C.amber : C.bg, color: selectedId ? "#fff" : C.gray, minHeight: 30 }}>
+            Agregar
+          </button>
+        </div>
+        {matches.length > 0 && (
+          <div className="rounded-md border mb-1.5 overflow-hidden" style={{ borderColor: C.line }}>
+            {matches.map(it => (
+              <button key={it.id} type="button" onClick={() => { setSelectedId(it.id); setSearch(it.name); }}
+                className="block w-full text-left text-xs px-2 py-1.5" style={{ color: C.ink, background: C.panel }}>
+                {it.name} <span style={{ color: C.gray }}>· quedan {it.quantity} {it.unit}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {parts.length > 0 && (
+        <div className="space-y-1">
+          {parts.map((p, i) => {
+            const item = invItems.find(it => it.id === p.itemId);
+            return (
+              <div key={i} className="flex items-center justify-between text-xs rounded-md px-2 py-1" style={{ background: C.bg }}>
+                <span style={{ color: C.ink }}>{item?.name || "Repuesto"} × {p.cantidad}</span>
+                <button type="button" onClick={() => removePart(i)}><X size={12} color={C.gray} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance }) {
   const [tipo, setTipo] = useState("preventivo");
   const [descripcion, setDescripcion] = useState("");
   const [estado, setEstado] = useState("funcionando");
   const [costo, setCosto] = useState("");
   const [photos, setPhotos] = useState([]);
+  const [repuestos, setRepuestos] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [downloadingQr, setDownloadingQr] = useState(false);
@@ -4531,11 +4601,11 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
     try {
       const res = await saveRecordWithPhotos(
         "maintenance",
-        { equipoId: equipo.id, tipo, descripcion: descripcion.trim(), estado, costo },
+        { equipoId: equipo.id, tipo, descripcion: descripcion.trim(), estado, costo, repuestos },
         photos,
         async (payload, urls) => { await onLogMaintenance(payload.equipoId, { ...payload, fotos: urls }); }
       );
-      setDescripcion(""); setCosto(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando");
+      setDescripcion(""); setCosto(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando"); setRepuestos([]);
       setSaveMsg(res.queued
         ? { ok: true, text: "✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva, sin que tengas que escribir nada de nuevo." }
         : { ok: true, text: "✓ Mantenimiento registrado." });
@@ -4578,6 +4648,12 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
           </div>
           <div className="text-xs mb-1" style={{ color: C.gray }}>Fotos (opcional, hasta 2)</div>
           <PhotoPicker photos={photos} onChange={setPhotos} />
+          {invItems && (
+            <>
+              <div className="text-xs mb-1 mt-2" style={{ color: C.gray }}>Repuestos usados (opcional) — se descuentan solos del inventario</div>
+              <PartsPicker invItems={invItems} parts={repuestos} onChange={setRepuestos} />
+            </>
+          )}
           <div className="mt-2">
             <Button size="sm" disabled={saving} onClick={doSave}>{saving ? "Guardando…" : "Guardar registro"}</Button>
           </div>
@@ -4655,7 +4731,7 @@ function EquipoDetailView({ equipo, records, onBack, onLogMaintenance }) {
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, initialEquipoId, onConsumedInitialEquipo }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -4672,7 +4748,7 @@ function MaintenanceView({ equipos, mttoLog, isAdmin, isAlmacenista, onCreateEqu
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} />;
+    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} />;
   }
 
   if (selectedSistema) {
@@ -5455,14 +5531,14 @@ function cronogramaCellVisual(c, mesNum, now) {
  * intervención real de ese mes (técnico, fecha, observaciones, fotos si las hay), y permite
  * reprogramar el estado/fecha de esa celda o registrar un mantenimiento extraordinario.
  */
-function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, onClose, onReprogram, onLogExtraordinary, onZoom }) {
+function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onClose, onReprogram, onLogExtraordinary, onZoom }) {
   const [reprogramming, setReprogramming] = useState(false);
   const [newEstado, setNewEstado] = useState(entry?.estado || "pendiente");
   const [newFecha, setNewFecha] = useState(entry?.fechaEjecucion || "");
   const [reprogSaving, setReprogSaving] = useState(false);
 
   const [showExtra, setShowExtra] = useState(false);
-  const [extraForm, setExtraForm] = useState({ descripcion: "", costo: "", fotos: [] });
+  const [extraForm, setExtraForm] = useState({ descripcion: "", costo: "", fotos: [], repuestos: [] });
   const [extraSaving, setExtraSaving] = useState(false);
   const [extraMsg, setExtraMsg] = useState(null);
 
@@ -5487,7 +5563,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, onClose, onRep
     try {
       await onLogExtraordinary(equipo.id, { tipo: "correctivo", ...extraForm });
       setExtraMsg({ ok: true, text: "✓ Registrado en la hoja de vida del equipo." });
-      setExtraForm({ descripcion: "", costo: "", fotos: [] });
+      setExtraForm({ descripcion: "", costo: "", fotos: [], repuestos: [] });
       setShowExtra(false);
     } catch (e) {
       setExtraMsg({ ok: false, text: e.message || "No se pudo registrar." });
@@ -5573,6 +5649,12 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, onClose, onRep
                   className="text-sm border rounded-md px-2 py-1.5 outline-none w-32 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
                 <PhotoPicker photos={extraForm.fotos} onChange={fotos => setExtraForm(f => ({ ...f, fotos }))} max={4} />
+                {invItems && (
+                  <>
+                    <div className="text-xs font-medium mb-1 mt-2" style={{ color: C.inkSoft }}>Repuestos usados (opcional)</div>
+                    <PartsPicker invItems={invItems} parts={extraForm.repuestos} onChange={repuestos => setExtraForm(f => ({ ...f, repuestos }))} />
+                  </>
+                )}
                 {extraMsg && <div className="text-xs mt-1.5" style={{ color: extraMsg.ok ? C.green : C.red }}>{extraMsg.text}</div>}
                 <div className="flex items-center gap-2 mt-2">
                   <Button size="sm" disabled={extraSaving} onClick={doExtra}>{extraSaving ? "Guardando…" : "Guardar"}</Button>
@@ -5588,7 +5670,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, onClose, onRep
   );
 }
 
-function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, onLogMaintenance, onUpdateCronograma, reportEmail, onLogSent, currentUser }) {
+function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLogMaintenance, onUpdateCronograma, reportEmail, onLogSent, currentUser }) {
   const activeEquipos = equipos.filter(e => e.active !== false);
   const sistemas = useMemo(() => [...new Set(activeEquipos.map(e => e.sistema))].sort(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5773,7 +5855,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, onLogMaintenanc
       {selectedCell && (
         <CronogramaDetailDrawer equipo={selectedCell.equipo} mesNum={selectedCell.mesNum}
           entry={cronoByEquipo[selectedCell.equipo.id]?.[selectedCell.mesNum]}
-          mttoLog={mttoLog} onClose={() => setSelectedCell(null)}
+          mttoLog={mttoLog} invItems={invItems} onClose={() => setSelectedCell(null)}
           onReprogram={onUpdateCronograma} onLogExtraordinary={onLogMaintenance} onZoom={setLightboxUrl} />
       )}
       <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
@@ -11667,16 +11749,27 @@ export default function App() {
     await sSet("mtto-equipos", next, true);
   };
 
+  /** Registra un mantenimiento y, si se marcaron repuestos usados, los descuenta del inventario
+   *  solo — sin tener que ir aparte a Inventario a hacer el retiro a mano. Guarda una copia del
+   *  nombre/cantidad en el propio registro (no solo el id), para que la hoja de vida del equipo
+   *  siga mostrando bien qué se usó aunque ese repuesto se edite o se borre más adelante. */
   const logMaintenance = async (equipoId, form) => {
+    const repuestosUsados = (form.repuestos || []).filter(r => r.itemId && Number(r.cantidad) > 0);
     const rec = {
       id: uid("mtl"), equipoId, tipo: form.tipo || "preventivo", fecha: form.fecha || nowIso(),
       tecnico: displayName, descripcion: form.descripcion || "", estado: form.estado || "funcionando",
       costo: form.costo ? Number(form.costo) : 0, fotos: form.fotos || [],
+      repuestos: repuestosUsados.map(r => ({ itemId: r.itemId, nombre: invItems.find(it => it.id === r.itemId)?.name || "Repuesto", cantidad: Number(r.cantidad) })),
       createdBy: displayName, createdAt: nowIso(),
     };
     const next = [rec, ...mttoLog].slice(0, 5000);
     setMttoLog(next);
     await sSet("mtto-log", next, true);
+
+    for (const r of repuestosUsados) {
+      const item = invItems.find(it => it.id === r.itemId);
+      if (item) await adjustInvStock(item, -Math.abs(Number(r.cantidad)), "retiro", `Usado en mantenimiento de equipo (${rec.tipo})`);
+    }
     return rec;
   };
 
@@ -12877,7 +12970,7 @@ export default function App() {
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "maintenance" && (
-            <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
+            <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
@@ -12894,7 +12987,7 @@ export default function App() {
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "maintenance-schedule" && isAdmin && (
-            <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma} mttoLog={mttoLog}
+            <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma} mttoLog={mttoLog} invItems={invItems}
               onLogMaintenance={logMaintenance} onUpdateCronograma={updateCronogramaEntry}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
@@ -12924,7 +13017,7 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
-              equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} onLogMaintenance={logMaintenance}
+              equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
               onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (

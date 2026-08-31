@@ -4725,7 +4725,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
             <Pill tone={r.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
           </div>
           <div className="text-sm mt-1" style={{ color: C.inkSoft }}>{r.descripcion}</div>
-          <div className="text-xs mt-1" style={{ color: C.gray }}>Por {r.tecnico}{r.costo ? ` · Costo: ${r.costo.toLocaleString("es-CO")}` : ""}</div>
+          <div className="text-xs mt-1 flex items-center gap-1.5" style={{ color: C.gray }}><Avatar name={r.tecnico} size={16} /> Por {r.tecnico}{r.costo ? ` · Costo: ${r.costo.toLocaleString("es-CO")}` : ""}</div>
           {r.fotos && r.fotos.length > 0 && (
             <div className="flex items-center gap-2 mt-2">
               {r.fotos.map((url, i) => (
@@ -4891,7 +4891,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
           </div>
           <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: C.inkSoft }}>
             <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo}</Badge>
-            {fmtDT(r.fecha)} · Por {r.tecnico}{r.costo ? ` · $${Number(r.costo).toLocaleString("es-CO")}` : ""}
+            {fmtDT(r.fecha)} · <Avatar name={r.tecnico} size={16} /> {r.tecnico}{r.costo ? ` · $${Number(r.costo).toLocaleString("es-CO")}` : ""}
           </div>
           <div className="text-sm mt-1" style={{ color: C.ink }}>{r.descripcion}</div>
           {r.fotos && r.fotos.length > 0 && (
@@ -6710,7 +6710,10 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
                     )}
                     <tr style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                       <td className="px-2 py-1.5" style={{ color: C.ink, fontWeight: 500, position: "sticky", left: 0, zIndex: 1, background: i % 2 ? C.cardAlt : C.panel, boxShadow: "2px 0 4px rgba(0,0,0,0.08)" }}>
-                        {emp.name}
+                        <span className="inline-flex items-center gap-1.5">
+                          <Avatar name={emp.name} cargo={emp.cargo} size={18} />
+                          {emp.name}
+                        </span>
                         {emp.badge && (
                           <span className="text-[10px] font-normal ml-1.5 px-1.5 py-0.5 rounded-full" style={{ background: "#f0e6fb", color: "#6b21a8" }}>
                             {emp.badge}
@@ -6767,7 +6770,9 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Alertas de este mes</div>
           {employeeWarnings.map(({ emp, warnings }) => (
             <div key={emp.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
-              <div className="text-sm font-medium" style={{ color: C.ink }}>{emp.name}</div>
+              <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
+                <Avatar name={emp.name} cargo={emp.cargo} size={22} /> {emp.name}
+              </div>
               {warnings.map((w, i) => <div key={i} className="text-xs" style={{ color: C.red }}>⚠ {w}</div>)}
             </div>
           ))}

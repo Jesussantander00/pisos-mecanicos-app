@@ -4775,6 +4775,8 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
 function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, currentUser }) {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
+  const [sort, setSort] = useState({ key: "fecha", dir: "desc" });
+  const onSort = (key) => setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "fecha" ? "desc" : "asc" });
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -4783,18 +4785,18 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
   const rows = useMemo(() => {
-    return [...mttoLog].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(r => {
+    return mttoLog.map(r => {
       const eq = equipos.find(e => e.id === r.equipoId);
       return { ...r, equipoNombre: eq?.nombre || "(equipo eliminado)", sistema: eq?.sistema || "—" };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mttoLog, equipos]);
 
-  const filtered = rows.filter(r => {
+  const filtered = useMemo(() => sortRows(rows.filter(r => {
     if (filterTipo && r.tipo !== filterTipo) return false;
     if (!search.trim()) return true;
     return `${r.equipoNombre} ${r.sistema} ${r.tecnico} ${r.descripcion}`.toLowerCase().includes(search.toLowerCase());
-  });
+  }), sort), [rows, filterTipo, search, sort]);
 
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
@@ -4872,6 +4874,13 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
         </select>
       </div>
 
+      <SortBar sort={sort} onSort={onSort} options={[
+        { key: "fecha", label: "Fecha" },
+        { key: "equipoNombre", label: "Equipo" },
+        { key: "tecnico", label: "Técnico" },
+        { key: "costo", label: "Costo" },
+      ]} />
+
       {filtered.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin mantenimientos registrados todavía.</p>
       ) : filtered.slice(0, 200).map(r => (
@@ -4880,8 +4889,9 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
             <div className="text-sm font-medium" style={{ color: C.ink }}>{r.equipoNombre} <span style={{ color: C.gray, fontWeight: 400 }}>· {r.sistema}</span></div>
             <Pill tone={r.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
           </div>
-          <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>
-            {MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo} · {fmtDT(r.fecha)} · Por {r.tecnico}{r.costo ? ` · $${Number(r.costo).toLocaleString("es-CO")}` : ""}
+          <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: C.inkSoft }}>
+            <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo}</Badge>
+            {fmtDT(r.fecha)} · Por {r.tecnico}{r.costo ? ` · $${Number(r.costo).toLocaleString("es-CO")}` : ""}
           </div>
           <div className="text-sm mt-1" style={{ color: C.ink }}>{r.descripcion}</div>
           {r.fotos && r.fotos.length > 0 && (
@@ -4954,6 +4964,27 @@ function sortRows(rows, sort) {
     return String(av ?? "").localeCompare(String(bv ?? ""), "es");
   });
   return sort.dir === "desc" ? sorted.reverse() : sorted;
+}
+/** Mismo ordenamiento que SortableTh, pero en formato de botones — para listas mostradas como
+ * tarjetas (no una <table> real, por ejemplo cuando cada fila necesita mostrar fotos) donde no
+ * hay cabecera de columnas físicas donde hacer clic. */
+function SortBar({ options, sort, onSort }) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mb-3">
+      <span className="text-xs" style={{ color: C.gray }}>Ordenar por:</span>
+      {options.map(opt => {
+        const active = sort.key === opt.key;
+        return (
+          <button key={opt.key} onClick={() => onSort(opt.key)}
+            className="text-xs font-medium px-2 py-1 rounded-full flex items-center gap-1"
+            style={{ background: active ? C.amberSoft : C.bg, color: active ? "#7a5405" : C.inkSoft }}>
+            {opt.label}
+            {active && <span style={{ fontSize: 9 }}>{sort.dir === "desc" ? "▼" : "▲"}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Traduce los distintos "vocabularios" de estado de la app (tipo de mantenimiento, estado de
@@ -5778,6 +5809,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
   const [msg, setMsg] = useState(null);
   const [selectedCell, setSelectedCell] = useState(null); // { equipo, mesNum } | null
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [sortAsc, setSortAsc] = useState(true);
   const now = new Date();
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
@@ -5785,7 +5817,8 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
 
   const eqInSistema = activeEquipos
     .filter(e => e.sistema === sistemaFilter)
-    .filter(e => !search.trim() || normalizeSearchText(e.nombre).includes(normalizeSearchText(search.trim())));
+    .filter(e => !search.trim() || normalizeSearchText(e.nombre).includes(normalizeSearchText(search.trim())))
+    .sort((a, b) => sortAsc ? a.nombre.localeCompare(b.nombre, "es") : b.nombre.localeCompare(a.nombre, "es"));
 
   const cronoByEquipo = useMemo(() => {
     const map = {};
@@ -5918,7 +5951,9 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
         <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
-              <th className="text-left px-2 py-2 sticky left-0" style={{ minWidth: 220, background: C.steelDark, zIndex: 1 }}>Equipo</th>
+              <th onClick={() => setSortAsc(v => !v)} className="text-left px-2 py-2 sticky left-0 cursor-pointer select-none" style={{ minWidth: 220, background: C.steelDark, zIndex: 1 }}>
+                Equipo <span style={{ fontSize: 9, color: "#cdd8e2" }}>{sortAsc ? "▲" : "▼"}</span>
+              </th>
               {MESES_LABELS.map(m => <th key={m} className="px-2 py-2 text-center" style={{ minWidth: 56 }}>{m}</th>)}
             </tr>
           </thead>

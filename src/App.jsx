@@ -5005,7 +5005,7 @@ function badgeToneFor(kind, value) {
 function StatCard({ label, value, valueColor, leading, breakdown, trend, tooltip }) {
   const [showTip, setShowTip] = useState(false);
   return (
-    <div className="rounded-xl border p-5 relative" style={{ borderColor: C.line, background: C.panel }}>
+    <div className="rounded-xl border p-5 relative overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
       <div className="flex items-center justify-between gap-1">
         <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>{label}</div>
         {tooltip && (
@@ -5013,16 +5013,16 @@ function StatCard({ label, value, valueColor, leading, breakdown, trend, tooltip
             <button type="button" onClick={() => setShowTip(v => !v)} className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold"
               style={{ background: C.bg, color: C.gray }}>?</button>
             {showTip && (
-              <div className="absolute right-0 top-5 w-52 rounded-lg border shadow-lg p-2.5 text-xs z-20" style={{ background: C.panel, borderColor: C.line, color: C.inkSoft }}>
+              <div className="absolute right-0 top-5 rounded-lg border shadow-lg p-2.5 text-xs z-20" style={{ background: C.panel, borderColor: C.line, color: C.inkSoft, width: "min(13rem, 70vw)" }}>
                 {tooltip}
               </div>
             )}
           </div>
         )}
       </div>
-      <div className="flex items-center gap-3 mt-2">
+      <div className="flex items-center gap-3 mt-2 min-w-0">
         {leading}
-        <div className="text-3xl font-bold leading-none tabular-nums" style={{ color: valueColor || C.ink }}>{value}</div>
+        <div className="text-3xl font-bold leading-none tabular-nums truncate" style={{ color: valueColor || C.ink }} title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}>{value}</div>
       </div>
       {trend}
       {breakdown && breakdown.length > 0 && (
@@ -6894,10 +6894,10 @@ function NetworkStatusIndicator() {
   }, []);
   return (
     <div title={online ? "Conectado — todo se guarda en la nube al instante." : "Sin señal — lo que registres se guarda en este celular y se sube solo apenas vuelva la conexión."}
-      className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
+      className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
       style={{ background: online ? C.greenSoft : C.amberSoft, color: online ? C.green : "#7a5405" }}>
       {online ? <Cloud size={13} /> : <CloudOff size={13} />}
-      {online ? "En línea" : "Guardando localmente"}
+      <span className="hidden sm:inline">{online ? "En línea" : "Guardando localmente"}</span>
     </div>
   );
 }
@@ -13046,7 +13046,7 @@ export default function App() {
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
           </div>
         </header>
-        <main className="flex-1 p-4 max-w-5xl w-full mx-auto">
+        <main className="flex-1 p-4 max-w-5xl w-full mx-auto overflow-x-hidden">
           {view !== "home" && (
             <button onClick={() => setView("home")}
               className="flex items-center gap-1 text-sm mb-3 px-2 py-1 rounded-md lg:hidden"

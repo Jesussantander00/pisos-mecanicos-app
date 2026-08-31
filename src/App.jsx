@@ -5434,21 +5434,182 @@ const MTTO_ESTADO_COLORS = {
   pendiente: { bg: C.amberSoft, fg: "#7a5405", label: "Pendiente" },
 };
 
-function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, currentUser }) {
+/**
+ * Cómo se ve una celda de la matriz del cronograma: además de los 3 estados guardados
+ * (ejecutado/atrasado/pendiente), distingue visualmente lo "pendiente" que ya está por vencer
+ * (este mes o el próximo) de lo que apenas está programado más adelante — y lo gris/transparente
+ * cuando ese mes no tiene nada programado para ese equipo.
+ */
+function cronogramaCellVisual(c, mesNum, now) {
+  if (!c) return { bg: "transparent", fg: C.gray, label: "—", tone: "vacio" };
+  if (c.estado === "ejecutado") return { bg: C.greenSoft, fg: C.green, label: "Ejecutado", tone: "ejecutado" };
+  if (c.estado === "atrasado") return { bg: C.redSoft, fg: C.red, label: "Atrasado", tone: "atrasado" };
+  const currentMonth = now.getMonth() + 1;
+  const imminent = mesNum === currentMonth || mesNum === currentMonth + 1 || (currentMonth === 12 && mesNum === 1);
+  if (imminent) return { bg: C.amberSoft, fg: "#7a5405", label: "Por vencer", tone: "proximo" };
+  return { bg: C.blueSoft, fg: C.blue, label: "Programado", tone: "programado" };
+}
+
+/**
+ * Panel lateral de detalle de una celda del cronograma (equipo + mes): muestra la última
+ * intervención real de ese mes (técnico, fecha, observaciones, fotos si las hay), y permite
+ * reprogramar el estado/fecha de esa celda o registrar un mantenimiento extraordinario.
+ */
+function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, onClose, onReprogram, onLogExtraordinary, onZoom }) {
+  const [reprogramming, setReprogramming] = useState(false);
+  const [newEstado, setNewEstado] = useState(entry?.estado || "pendiente");
+  const [newFecha, setNewFecha] = useState(entry?.fechaEjecucion || "");
+  const [reprogSaving, setReprogSaving] = useState(false);
+
+  const [showExtra, setShowExtra] = useState(false);
+  const [extraForm, setExtraForm] = useState({ descripcion: "", costo: "", fotos: [] });
+  const [extraSaving, setExtraSaving] = useState(false);
+  const [extraMsg, setExtraMsg] = useState(null);
+
+  const year = new Date().getFullYear();
+  const matches = (mttoLog || []).filter(r => {
+    if (r.equipoId !== equipo.id) return false;
+    const d = new Date(r.fecha);
+    return d.getMonth() + 1 === mesNum && d.getFullYear() === year;
+  }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const lastReal = matches[0] || null;
+
+  const doReprogram = async () => {
+    setReprogSaving(true);
+    await onReprogram(equipo.id, mesNum, { estado: newEstado, fechaEjecucion: newFecha || null });
+    setReprogSaving(false);
+    setReprogramming(false);
+  };
+
+  const doExtra = async () => {
+    if (extraForm.fotos.length === 0) { setExtraMsg({ ok: false, text: "Adjunta al menos una foto." }); return; }
+    setExtraSaving(true); setExtraMsg(null);
+    try {
+      await onLogExtraordinary(equipo.id, { tipo: "correctivo", ...extraForm });
+      setExtraMsg({ ok: true, text: "✓ Registrado en la hoja de vida del equipo." });
+      setExtraForm({ descripcion: "", costo: "", fotos: [] });
+      setShowExtra(false);
+    } catch (e) {
+      setExtraMsg({ ok: false, text: e.message || "No se pudo registrar." });
+    }
+    setExtraSaving(false);
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0" style={{ background: "rgba(10,14,20,0.5)", zIndex: 150 }} onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] overflow-y-auto pm-stagger-in" style={{ background: C.panel, zIndex: 151, boxShadow: "-8px 0 24px rgba(0,0,0,0.15)" }}>
+        <div className="sticky top-0 flex items-start justify-between gap-2 p-4 border-b" style={{ background: C.panel, borderColor: C.line }}>
+          <div className="min-w-0">
+            <div className="text-base font-semibold" style={{ color: C.ink }}>{equipo.nombre}</div>
+            <div className="text-xs" style={{ color: C.gray }}>{equipo.sistema} · {MESES_LABELS[mesNum - 1]} {year}</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Última intervención de este mes</div>
+            {lastReal ? (
+              <div className="rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg }}>
+                <div className="text-sm font-medium" style={{ color: C.ink }}>{lastReal.tipo === "preventivo" ? "Preventivo" : "Correctivo"} · {fmtDT(lastReal.fecha)}</div>
+                <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>Técnico: {lastReal.tecnico || "—"}</div>
+                {lastReal.descripcion && <div className="text-xs mt-1" style={{ color: C.ink }}>{lastReal.descripcion}</div>}
+                {lastReal.fotos && lastReal.fotos.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                    {lastReal.fotos.map((url, i) => (
+                      <button key={i} onClick={() => onZoom(url)}>
+                        <img src={url} alt="" className="w-14 h-14 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg, color: C.gray }}>
+                {entry?.tecnico ? `Programado para ${entry.tecnico}${entry.fechaEjecucion ? `, ${fmtDT(entry.fechaEjecucion)}` : ""} — sin registro de ejecución todavía.` : "Sin registro de mantenimiento para este mes todavía."}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Reprogramar</div>
+              {!reprogramming && <button onClick={() => setReprogramming(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Cambiar</button>}
+            </div>
+            {reprogramming ? (
+              <div className="rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg }}>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <select value={newEstado} onChange={e => setNewEstado(e.target.value)}
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="atrasado">Atrasado</option>
+                    <option value="ejecutado">Ejecutado</option>
+                  </select>
+                  <input type="date" value={newFecha ? newFecha.slice(0, 10) : ""} onChange={e => setNewFecha(e.target.value)}
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" disabled={reprogSaving} onClick={doReprogram}>{reprogSaving ? "Guardando…" : "Guardar"}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setReprogramming(false)}>Cancelar</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs" style={{ color: C.inkSoft }}>
+                Estado actual: <b style={{ color: entry ? MTTO_ESTADO_COLORS[entry.estado]?.fg : C.gray }}>{entry ? MTTO_ESTADO_COLORS[entry.estado]?.label : "Sin programar"}</b>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Mantenimiento extraordinario</div>
+            {!showExtra ? (
+              <Button size="sm" variant="ghost" onClick={() => setShowExtra(true)}>+ Registrar mantenimiento extraordinario</Button>
+            ) : (
+              <div className="rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg }}>
+                <textarea value={extraForm.descripcion} onChange={e => setExtraForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
+                  className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <input type="number" value={extraForm.costo} onChange={e => setExtraForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none w-32 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
+                <PhotoPicker photos={extraForm.fotos} onChange={fotos => setExtraForm(f => ({ ...f, fotos }))} max={4} />
+                {extraMsg && <div className="text-xs mt-1.5" style={{ color: extraMsg.ok ? C.green : C.red }}>{extraMsg.text}</div>}
+                <div className="flex items-center gap-2 mt-2">
+                  <Button size="sm" disabled={extraSaving} onClick={doExtra}>{extraSaving ? "Guardando…" : "Guardar"}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowExtra(false)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+            {!showExtra && extraMsg && <div className="text-xs mt-1.5" style={{ color: extraMsg.ok ? C.green : C.red }}>{extraMsg.text}</div>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, onLogMaintenance, onUpdateCronograma, reportEmail, onLogSent, currentUser }) {
   const activeEquipos = equipos.filter(e => e.active !== false);
   const sistemas = useMemo(() => [...new Set(activeEquipos.map(e => e.sistema))].sort(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeEquipos]);
   const [sistemaFilter, setSistemaFilter] = useState("");
+  const [estadoFilter, setEstadoFilter] = useState(""); // "" | "atrasado" | "proximo" | "ejecutado" | "pendiente"
+  const [search, setSearch] = useState("");
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [selectedCell, setSelectedCell] = useState(null); // { equipo, mesNum } | null
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const now = new Date();
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { if (!sistemaFilter && sistemas.length) setSistemaFilter(sistemas[0]); }, [sistemas, sistemaFilter]);
 
-  const eqInSistema = activeEquipos.filter(e => e.sistema === sistemaFilter);
+  const eqInSistema = activeEquipos
+    .filter(e => e.sistema === sistemaFilter)
+    .filter(e => !search.trim() || normalizeSearchText(e.nombre).includes(normalizeSearchText(search.trim())));
 
   const cronoByEquipo = useMemo(() => {
     const map = {};
@@ -5460,10 +5621,21 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eqInSistema, mttoCronograma]);
 
+  // Cuando hay filtro de estado activo, solo se muestran los equipos que tengan AL MENOS una
+  // celda con ese estado en el año — no oculta el resto de las celdas de esa fila, solo filtra
+  // qué filas vale la pena mostrar.
+  const eqVisible = !estadoFilter ? eqInSistema : eqInSistema.filter(eq => {
+    for (let m = 1; m <= 12; m++) {
+      const visual = cronogramaCellVisual(cronoByEquipo[eq.id]?.[m], m, now);
+      if (visual.tone === estadoFilter) return true;
+    }
+    return false;
+  });
+
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
     const header = ["Equipo", ...MESES_LABELS];
-    const data = eqInSistema.map(eq => {
+    const data = eqVisible.map(eq => {
       const row = [eq.nombre];
       for (let m = 1; m <= 12; m++) {
         const c = cronoByEquipo[eq.id]?.[m];
@@ -5513,21 +5685,44 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
     setSending(false);
   };
 
+  const filterSelectClass = "text-sm border rounded-md px-2 py-2 outline-none";
+  const filterSelectStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Cronograma Anual de Mantenimiento</h2>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>El año completo, mes a mes, por sistema — para hacerle seguimiento a lo programado.</p>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>El año completo, mes a mes, por sistema — toca cualquier celda para ver el detalle.</p>
 
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        <select value={sistemaFilter} onChange={e => setSistemaFilter(e.target.value)}
-          className="text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          {sistemas.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <span className="text-xs" style={{ color: C.gray }}>
-          <span style={{ color: C.green }}>■</span> Ejecutado &nbsp;
-          <span style={{ color: C.red }}>■</span> Atrasado &nbsp;
-          <span style={{ color: "#7a5405" }}>■</span> Pendiente
-        </span>
+      {/* Filtros */}
+      <div className="rounded-xl border p-3 mb-3 flex items-end gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Sistema</div>
+          <select value={sistemaFilter} onChange={e => setSistemaFilter(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+            {sistemas.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Estado del cronograma</div>
+          <select value={estadoFilter} onChange={e => setEstadoFilter(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+            <option value="">Todos</option>
+            <option value="atrasado">Solo atrasados</option>
+            <option value="proximo">Solo por vencer</option>
+            <option value="programado">Solo programados</option>
+            <option value="ejecutado">Solo ejecutados</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[160px]">
+          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Buscar equipo</div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre del equipo…" className={filterSelectClass} style={{ ...filterSelectStyle, width: "100%" }} />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap mb-3 text-xs" style={{ color: C.gray }}>
+        <span className="flex items-center gap-1"><span style={{ color: C.green }}>●</span> Ejecutado</span>
+        <span className="flex items-center gap-1"><span style={{ color: "#7a5405" }}>●</span> Por vencer</span>
+        <span className="flex items-center gap-1"><span style={{ color: C.blue }}>●</span> Programado</span>
+        <span className="flex items-center gap-1"><span style={{ color: C.red }}>●</span> Atrasado</span>
+        <span className="flex items-center gap-1"><span style={{ color: C.gray }}>○</span> Sin programar</span>
       </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -5547,31 +5742,41 @@ function CronogramaAnualView({ equipos, mttoCronograma, reportEmail, onLogSent, 
         <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: C.steelDark, color: "#fff" }}>
-              <th className="text-left px-2 py-2" style={{ minWidth: 220 }}>Equipo</th>
+              <th className="text-left px-2 py-2 sticky left-0" style={{ minWidth: 220, background: C.steelDark, zIndex: 1 }}>Equipo</th>
               {MESES_LABELS.map(m => <th key={m} className="px-2 py-2 text-center" style={{ minWidth: 56 }}>{m}</th>)}
             </tr>
           </thead>
           <tbody>
-            {eqInSistema.map((eq, i) => (
+            {eqVisible.map((eq, i) => (
               <tr key={eq.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
-                <td className="px-2 py-1.5" style={{ color: C.ink }}>{eq.nombre}</td>
+                <td className="px-2 py-1.5 sticky left-0" style={{ color: C.ink, background: i % 2 ? C.cardAlt : C.panel }}>{eq.nombre}</td>
                 {Array.from({ length: 12 }, (_, idx) => idx + 1).map(m => {
                   const c = cronoByEquipo[eq.id]?.[m];
-                  const colors = c ? MTTO_ESTADO_COLORS[c.estado] : null;
+                  const visual = cronogramaCellVisual(c, m, now);
                   return (
-                    <td key={m} className="px-1 py-1.5 text-center" style={{ background: colors?.bg || "transparent", color: colors?.fg || C.gray, fontWeight: colors ? 600 : 400 }}>
-                      {colors ? colors.label.slice(0, 4) : "—"}
+                    <td key={m} onClick={() => setSelectedCell({ equipo: eq, mesNum: m })}
+                      className="px-1 py-1.5 text-center cursor-pointer transition hover:opacity-75"
+                      style={{ background: visual.bg, color: visual.fg, fontWeight: visual.tone !== "vacio" ? 600 : 400, minHeight: 32 }}>
+                      {visual.tone === "vacio" ? "—" : visual.label.slice(0, 4)}
                     </td>
                   );
                 })}
               </tr>
             ))}
-            {eqInSistema.length === 0 && (
-              <tr><td colSpan={13} className="px-2 py-6 text-center text-xs" style={{ color: C.gray }}>Sin equipos en este sistema.</td></tr>
+            {eqVisible.length === 0 && (
+              <tr><td colSpan={13} className="px-2 py-6 text-center text-xs" style={{ color: C.gray }}>Ningún equipo coincide con estos filtros.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {selectedCell && (
+        <CronogramaDetailDrawer equipo={selectedCell.equipo} mesNum={selectedCell.mesNum}
+          entry={cronoByEquipo[selectedCell.equipo.id]?.[selectedCell.mesNum]}
+          mttoLog={mttoLog} onClose={() => setSelectedCell(null)}
+          onReprogram={onUpdateCronograma} onLogExtraordinary={onLogMaintenance} onZoom={setLightboxUrl} />
+      )}
+      <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   );
 }
@@ -11475,6 +11680,20 @@ export default function App() {
     return rec;
   };
 
+  /** Reprograma una celda del cronograma anual (equipo + mes) — si no existía todavía una entrada
+   *  para ese mes, la crea; si ya existía, la actualiza. Usado por "Reprogramar" en el detalle. */
+  const updateCronogramaEntry = async (equipoId, mesNum, patch) => {
+    const existing = mttoCronograma.find(c => c.equipoId === equipoId && c.mesNum === mesNum);
+    let next;
+    if (existing) {
+      next = mttoCronograma.map(c => c === existing ? { ...c, ...patch, updatedBy: displayName, updatedAt: nowIso() } : c);
+    } else {
+      next = [...mttoCronograma, { id: uid("cr"), equipoId, mesNum, programado: true, tipo: "interno", tecnico: "", createdAt: nowIso(), ...patch, updatedBy: displayName, updatedAt: nowIso() }];
+    }
+    setMttoCronograma(next);
+    await sSet("mtto-cronograma", next, true);
+  };
+
   const adjustInvStock = async (item, delta, type, note) => {
     const newQty = Math.max(0, item.quantity + delta);
     const nextItems = invItems.map(it => it.id === item.id ? { ...it, quantity: newQty, updatedAt: nowIso() } : it);
@@ -12675,7 +12894,8 @@ export default function App() {
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "maintenance-schedule" && isAdmin && (
-            <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma}
+            <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma} mttoLog={mttoLog}
+              onLogMaintenance={logMaintenance} onUpdateCronograma={updateCronogramaEntry}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "laundry" && (

@@ -3557,6 +3557,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                     <input type="number" value={mttoForm.costo} onChange={e => setMttoForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"
                       className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, color: C.ink }} />
                   </div>
+                  <MaintenanceTextSuggestions sistema={linkedEquipo.sistema} tipo={mttoForm.tipo} onPick={t => setMttoForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
                   <textarea value={mttoForm.descripcion} onChange={e => setMttoForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
                     className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, color: C.ink }} />
                   <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
@@ -4569,6 +4570,106 @@ function PartsPicker({ invItems, parts, onChange }) {
   );
 }
 
+/**
+ * Frases sugeridas de "qué se hizo", según la especialidad (sistema) del equipo — para que el
+ * técnico no tenga que redactar desde cero un mantenimiento de rutina, y solo agregue lo que
+ * hizo de más. Búsqueda por palabra clave, no exacta, porque el nombre del sistema en el
+ * inventario real puede variar ("Eléctrico", "Sistema Eléctrico", "Tableros Eléctricos", etc.).
+ */
+const MAINTENANCE_TEMPLATES = [
+  { match: ["electric", "tablero"], preventivo: [
+      "Limpieza general del tablero eléctrico, revisión de conexiones y ajuste de breakers. Sin novedades.",
+      "Medición de amperaje en las líneas principales y verificación de contactores. Todo dentro de rango normal.",
+      "Revisión de puestas a tierra y torque de terminales. Se ajustaron conexiones flojas encontradas.",
+    ], correctivo: [
+      "Se identificó y corrigió falla en el circuito. Se reemplazó el componente dañado y se verificó el funcionamiento.",
+      "Se reparó conexión suelta que causaba intermitencia. Se ajustó y se probó el sistema, quedando operativo.",
+      "Se reemplazó breaker/contactor dañado y se verificó que el circuito quedara protegido correctamente.",
+    ] },
+  { match: ["hvac", "aire acondicionado", "climatiz", "manejadora", "chiller"], preventivo: [
+      "Limpieza de filtros y serpentines, y verificación de la presión del refrigerante. Sin fugas detectadas.",
+      "Revisión del funcionamiento del compresor y lubricación de rodamientos del motor.",
+      "Verificación de temperaturas de entrada/salida y limpieza de bandeja de condensado.",
+    ], correctivo: [
+      "Se identificó fuga de refrigerante, se reparó y se recargó el sistema a la presión correcta.",
+      "Se reemplazó componente dañado (motor/capacitor/contactor) y se verificó el arranque correcto del equipo.",
+      "Se destapó línea de condensado obstruida y se verificó el drenaje correcto.",
+    ] },
+  { match: ["hidraul", "fontaner", "plomer", "bomba", "agua"], preventivo: [
+      "Revisión de conexiones y empaques en busca de fugas. Se verificó la presión del sistema.",
+      "Purga de aire en las líneas y verificación del funcionamiento de la bomba.",
+      "Lubricación de rodamientos y verificación de vibración/ruido anormal en la bomba.",
+    ], correctivo: [
+      "Se reparó fuga en la tubería/empaque y se verificó que no quedara humedad ni goteo.",
+      "Se reemplazó la bomba/componente dañado y se verificó el correcto funcionamiento del sistema.",
+      "Se destapó obstrucción en la línea y se restableció el flujo normal.",
+    ] },
+  { match: ["incendio", "contraincendio", "extintor", "rociador"], preventivo: [
+      "Revisión de presión en el sistema y verificación visual de rociadores/válvulas. Sin novedades.",
+      "Verificación del estado y vigencia de extintores en el área asignada.",
+    ], correctivo: [
+      "Se corrigió la falla de presión detectada y se verificó que el sistema quedara operativo.",
+      "Se reemplazó componente dañado del sistema contra incendios y se probó su funcionamiento.",
+    ] },
+  { match: ["refriger", "cuarto frio", "nevera", "cava"], preventivo: [
+      "Limpieza de serpentines y verificación de temperatura interna. Dentro del rango correcto.",
+      "Revisión de empaques de puerta y verificación del ciclo de deshielo.",
+    ], correctivo: [
+      "Se identificó y corrigió la causa de la pérdida de frío. Se verificó que la temperatura volviera a rango.",
+      "Se reemplazó componente dañado (termostato/compresor/empaque) y se verificó el funcionamiento.",
+    ] },
+  { match: ["ascensor", "elevador", "escalera electrica"], preventivo: [
+      "Revisión de frenos, cables y niveles de aceite según protocolo. Sin novedades encontradas.",
+      "Verificación de puertas, sensores de seguridad y botoneras. Todo operativo.",
+    ], correctivo: [
+      "Se identificó y corrigió la falla reportada. Se realizaron pruebas de funcionamiento y quedó operativo.",
+    ] },
+  { match: ["generador", "planta electrica", "acpm", "combustible", "gas"], preventivo: [
+      "Prueba de encendido y verificación de nivel de combustible y aceite. Sin novedades.",
+      "Revisión de batería, filtros y conexiones. Todo dentro de parámetros normales.",
+    ], correctivo: [
+      "Se identificó y corrigió la falla de arranque/funcionamiento. Se verificó el correcto funcionamiento tras la reparación.",
+    ] },
+];
+const MAINTENANCE_TEMPLATE_FALLBACK = {
+  preventivo: [
+    "Se realizó inspección general del equipo, limpieza y verificación de funcionamiento. Sin novedades.",
+    "Se verificaron parámetros normales de operación y se hizo mantenimiento de rutina según protocolo.",
+  ],
+  correctivo: [
+    "Se identificó y corrigió la falla reportada. Se verificó el correcto funcionamiento del equipo tras la reparación.",
+    "Se reemplazó el componente dañado y se realizaron pruebas de funcionamiento.",
+  ],
+};
+function getMaintenanceTemplates(sistema, tipo) {
+  const s = normalizeSearchText(sistema || "");
+  const found = MAINTENANCE_TEMPLATES.find(g => g.match.some(kw => s.includes(kw)));
+  const group = found || MAINTENANCE_TEMPLATE_FALLBACK;
+  return tipo === "correctivo" ? group.correctivo : group.preventivo;
+}
+
+/** Chips de sugerencia sobre el campo de descripción — tocar una la agrega al texto (no lo
+ * reemplaza si ya hay algo escrito, para que se pueda combinar con lo que el técnico ya puso). */
+function MaintenanceTextSuggestions({ sistema, tipo, onPick }) {
+  const templates = getMaintenanceTemplates(sistema, tipo);
+  if (!templates.length) return null;
+  return (
+    <div className="mb-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>
+        Sugerencias para {sistema || "este equipo"} — toca una para usarla
+      </div>
+      <div className="flex flex-col gap-1">
+        {templates.map((t, i) => (
+          <button key={i} type="button" onClick={() => onPick(t)}
+            className="text-left text-xs px-2 py-1.5 rounded-md border" style={{ borderColor: C.line, background: C.bg, color: C.inkSoft, minHeight: 32 }}>
+            {t}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance }) {
   const [tipo, setTipo] = useState("preventivo");
   const [descripcion, setDescripcion] = useState("");
@@ -4651,6 +4752,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
             <input type="number" min="0" value={costo} onChange={e => setCosto(e.target.value)} placeholder="Costo (opcional)"
               className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
+          <MaintenanceTextSuggestions sistema={equipo.sistema} tipo={tipo} onPick={t => setDescripcion(d => d.trim() ? `${d.trim()} ${t}` : t)} />
           <div className="flex items-start gap-1.5 mb-2">
             <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={3} placeholder="¿Qué se hizo?"
               className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
@@ -5768,6 +5870,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
               <Button size="sm" variant="ghost" onClick={() => setShowExtra(true)}>+ Registrar mantenimiento extraordinario</Button>
             ) : (
               <div className="rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg }}>
+                <MaintenanceTextSuggestions sistema={equipo.sistema} tipo="correctivo" onPick={t => setExtraForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
                 <textarea value={extraForm.descripcion} onChange={e => setExtraForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <input type="number" value={extraForm.costo} onChange={e => setExtraForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"

@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -3400,7 +3400,15 @@ const KANBAN_COLUMNS = [
 /** Tarjeta compacta de una columna del Kanban — se puede arrastrar y soltar en otra columna
  * (escritorio) o tocar "Mover a…" para un menú rápido de un solo toque (más confiable en
  * celular/tablet, donde arrastrar y soltar es más difícil de acertar con el dedo). */
-function TaskKanbanCard({ task, accounts, canAct, onOpenDrawer, onMove, onZoom }) {
+/** El cargo (puesto) de quien tiene una cuenta, cruzando su perfil con la lista de empleados —
+ * usado para el tooltip del avatar (nombre + cargo). */
+function cargoForUsername(username, accounts, employees) {
+  if (!username || !employees) return null;
+  const empId = accounts?.[username]?.linked_employee_id;
+  return employees.find(e => e.id === empId)?.cargo || null;
+}
+
+function TaskKanbanCard({ task, accounts, employees, canAct, onOpenDrawer, onMove, onZoom }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const estado = normalizeTaskState(task.estado);
   const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : null;
@@ -3411,7 +3419,7 @@ function TaskKanbanCard({ task, accounts, canAct, onOpenDrawer, onMove, onZoom }
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-[10px] font-bold shrink-0" style={{ color: TASK_PRIORITY_COLORS[task.prioridad] }}>●</span>
         <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
-        <Avatar name={assigneeName} size={20} />
+        <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={20} />
       </div>
       <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
       {task.fotosAntes && task.fotosAntes.length > 0 && (
@@ -3447,7 +3455,7 @@ function TaskKanbanCard({ task, accounts, canAct, onOpenDrawer, onMove, onZoom }
   );
 }
 
-function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
+function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
   const [closeSaving, setCloseSaving] = useState(false);
@@ -3505,10 +3513,10 @@ function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, invItems, onLogM
 
         <div className="p-4 space-y-4">
           <div className="flex items-center gap-2">
-            <Avatar name={assigneeName} size={32} />
+            <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={32} />
             <div>
               <div className="text-sm font-semibold" style={{ color: C.ink }}>{assigneeName}</div>
-              <div className="text-xs" style={{ color: C.gray }}>Prioridad {TASK_PRIORITIES.find(p => p.code === task.prioridad)?.label}</div>
+              <Badge tone={badgeToneFor("prioridad", task.prioridad)}>{TASK_PRIORITIES.find(p => p.code === task.prioridad)?.label}</Badge>
             </div>
             <div className="ml-auto"><TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} /></div>
           </div>
@@ -3528,8 +3536,9 @@ function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, invItems, onLogM
                 <div className="mb-2">
                   <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Historial reciente</div>
                   {equipoHistory.map(r => (
-                    <div key={r.id} className="text-xs py-0.5" style={{ color: C.inkSoft }}>
-                      · {fmtDT(r.fecha)} ({r.tipo}) — {r.descripcion || "sin descripción"}
+                    <div key={r.id} className="text-xs py-0.5 flex items-center gap-1.5" style={{ color: C.inkSoft }}>
+                      <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{r.tipo === "preventivo" ? "Preventivo" : "Correctivo"}</Badge>
+                      {fmtDT(r.fecha)} — {r.descripcion || "sin descripción"}
                     </div>
                   ))}
                 </div>
@@ -4053,7 +4062,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                 {colTasks.length === 0 ? (
                   <div className="text-[11px] text-center py-4" style={{ color: C.gray }}>Vacío</div>
                 ) : colTasks.map(t => (
-                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} canAct={isAdmin || t.asignadoA === currentUsername}
+                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} canAct={isAdmin || t.asignadoA === currentUsername}
                     onOpenDrawer={setDrawerTaskId}
                     onMove={(task, code) => code === "finalizada" ? setDrawerTaskId(task.id) : transitionTask(task, code)}
                     onZoom={setLightboxUrl} />
@@ -4078,12 +4087,12 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             onClick={() => setDrawerTaskId(t.id)}>
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div className="flex items-start gap-2.5 flex-1 min-w-[200px]">
-                <Avatar name={assigneeName} />
+                <Avatar name={assigneeName} cargo={cargoForUsername(t.asignadoA, accounts, employees)} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                    <span className="text-xs font-bold" style={{ color: TASK_PRIORITY_COLORS[t.prioridad] }}>● {TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</span>
+                    <Badge tone={badgeToneFor("prioridad", t.prioridad)}>{TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</Badge>
                     <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.titulo}</div>
-                    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: stateColors.bg, color: stateColors.fg }}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</span>
+                    <Badge tone={badgeToneFor("taskEstado", t.estado)}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</Badge>
                     {estado === "pausada" && (
                       <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: "#8a5a00" }}>
                         ⏳ En espera
@@ -4132,7 +4141,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       }))}
 
       {drawerTask && (
-        <TaskDrawer task={drawerTask} accounts={accounts} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
+        <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl} />
@@ -4899,6 +4908,41 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
  * una línea divisoria (ej: "Preventivo 12 / Correctivo 8") — el mismo patrón de las tarjetas
  * de reportes tipo BI (número protagonista + contexto secundario, sin saturar).
  */
+/**
+ * Etiqueta de estado/prioridad estandarizada para toda la app — una sola paleta fija en vez de
+ * que cada vista invente su propio estilo: azul = preventivo, rojo = correctivo/crítico/vencido,
+ * ámbar = en proceso/advertencia, verde = terminado/ejecutado.
+ */
+const BADGE_TONES = {
+  blue: { bg: C.blueSoft, fg: C.blue },
+  red: { bg: C.redSoft, fg: C.red },
+  amber: { bg: C.amberSoft, fg: "#7a5405" },
+  green: { bg: C.greenSoft, fg: C.green },
+  gray: { bg: C.bg, fg: C.gray },
+};
+function Badge({ tone = "gray", pulse = false, children }) {
+  const t = BADGE_TONES[tone] || BADGE_TONES.gray;
+  return (
+    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full inline-block leading-none ${pulse ? "animate-pulse" : ""}`} style={{ background: t.bg, color: t.fg }}>
+      {children}
+    </span>
+  );
+}
+/** Traduce los distintos "vocabularios" de estado de la app (tipo de mantenimiento, estado de
+ * tarea, estado de cronograma, prioridad) a un mismo tono de color, consistente en todos lados. */
+function badgeToneFor(kind, value) {
+  if (kind === "tipoMtto") return value === "preventivo" ? "blue" : "red";
+  if (kind === "taskEstado") {
+    const e = normalizeTaskState(value);
+    if (e === "finalizada") return "green";
+    if (e === "en-proceso" || e === "pausada") return "amber";
+    return "gray";
+  }
+  if (kind === "cronograma") return value === "ejecutado" ? "green" : value === "atrasado" ? "red" : "amber";
+  if (kind === "prioridad") return value === "alta" ? "red" : value === "media" ? "amber" : "blue";
+  return "gray";
+}
+
 function StatCard({ label, value, valueColor, leading, breakdown, trend }) {
   return (
     <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel }}>
@@ -5588,7 +5632,9 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Última intervención de este mes</div>
             {lastReal ? (
               <div className="rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg }}>
-                <div className="text-sm font-medium" style={{ color: C.ink }}>{lastReal.tipo === "preventivo" ? "Preventivo" : "Correctivo"} · {fmtDT(lastReal.fecha)}</div>
+                <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
+                  <Badge tone={badgeToneFor("tipoMtto", lastReal.tipo)}>{lastReal.tipo === "preventivo" ? "Preventivo" : "Correctivo"}</Badge> {fmtDT(lastReal.fecha)}
+                </div>
                 <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>Técnico: {lastReal.tecnico || "—"}</div>
                 {lastReal.descripcion && <div className="text-xs mt-1" style={{ color: C.ink }}>{lastReal.descripcion}</div>}
                 {lastReal.fotos && lastReal.fotos.length > 0 && (
@@ -6749,6 +6795,30 @@ function computeStaleIssues(activeIssues, thresholdDays = 15) {
     .sort((a, b) => b.daysOpen - a.daysOpen);
 }
 
+/**
+ * Estado de red en la barra superior: verde "En línea" cuando hay conexión de verdad con
+ * internet, ámbar "Guardando localmente" cuando no — para que quede claro que lo que se registre
+ * ahora se sube solo apenas vuelva la señal, sin que nadie se quede con la duda.
+ */
+function NetworkStatusIndicator() {
+  const [online, setOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, []);
+  return (
+    <div title={online ? "Conectado — todo se guarda en la nube al instante." : "Sin señal — lo que registres se guarda en este celular y se sube solo apenas vuelva la conexión."}
+      className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
+      style={{ background: online ? C.greenSoft : C.amberSoft, color: online ? C.green : "#7a5405" }}>
+      {online ? <Cloud size={13} /> : <CloudOff size={13} />}
+      {online ? "En línea" : "Guardando localmente"}
+    </div>
+  );
+}
+
 function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
@@ -7318,15 +7388,16 @@ function TaskTimer({ assignedAt, finishedAt, estado }) {
 
 /** Avatar redondo con las iniciales de la persona — color consistente según su nombre, para
  * reconocer de un vistazo quién tiene asignada cada tarjeta sin tener que leer el nombre completo. */
-function Avatar({ name, size = 28 }) {
+function Avatar({ name, cargo, size = 28 }) {
   const label = (name || "?").trim();
   const initials = label.split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
   const palette = [C.blue, C.amber, C.green, C.red, "#8b5cf6", "#0ea5e9", "#db2777"];
   let hash = 0;
   for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) % palette.length;
   const bg = palette[Math.abs(hash)];
+  const tooltipText = name ? (cargo ? `${name} — ${cargo}` : name) : "Sin asignar";
   return (
-    <div className="rounded-full flex items-center justify-center shrink-0 font-bold text-white" title={name || "Sin asignar"}
+    <div className="rounded-full flex items-center justify-center shrink-0 font-bold text-white" title={tooltipText}
       style={{ width: size, height: size, background: bg, fontSize: size * 0.4 }}>
       {initials}
     </div>
@@ -12844,6 +12915,7 @@ export default function App() {
             </>
           )}
           <div className="flex items-center gap-2">
+            <NetworkStatusIndicator />
             {pendingSync > 0 && (
               <span className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }}>
                 <AlertTriangle size={12} /> {pendingSync} sin subir

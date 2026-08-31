@@ -905,6 +905,33 @@ function computeUpcomingMaintenance(now, equipos, mttoCronograma) {
   return { daysLeft, items };
 }
 
+/**
+ * Sugerencias inteligentes de mantenimiento: por cada equipo activo, compara cuánto tiempo lleva
+ * desde su último mantenimiento (mttoLog) contra la frecuencia que de verdad tiene programada en
+ * el cronograma anual (cuántos meses al año tiene marcados como "programado"). Si no tiene nada
+ * programado, asume trimestral (90 días) como un supuesto razonable por defecto. Ordena de más a
+ * menos atrasado — lo primero de la lista es lo más crítico.
+ */
+function computeMaintenanceSuggestions(equipos, mttoLog, mttoCronograma, now = new Date()) {
+  const activeEquipos = (equipos || []).filter(e => e.active !== false);
+  const results = activeEquipos.map(eq => {
+    const records = (mttoLog || []).filter(r => r.equipoId === eq.id);
+    const last = records.length ? records.reduce((a, b) => new Date(a.fecha) > new Date(b.fecha) ? a : b) : null;
+    const diasSinIntervencion = last ? Math.floor(hoursBetween(last.fecha, now) / 24) : null;
+
+    const mesesProgramados = new Set((mttoCronograma || []).filter(c => c.equipoId === eq.id && c.programado).map(c => c.mesNum)).size;
+    const frecuenciaEsperadaDias = mesesProgramados > 0 ? Math.round(365 / mesesProgramados) : 90;
+
+    const overdueDays = diasSinIntervencion == null ? frecuenciaEsperadaDias : diasSinIntervencion - frecuenciaEsperadaDias;
+    return {
+      equipo: eq, diasSinIntervencion, frecuenciaEsperadaDias, overdueDays,
+      lastDate: last?.fecha || null, lastTipo: last?.tipo || null,
+      nuncaIntervenido: !last,
+    };
+  });
+  return results.filter(r => r.overdueDays > 0).sort((a, b) => b.overdueDays - a.overdueDays);
+}
+
 /* ============================================================
    PANEL EJECUTIVO — helpers
    ============================================================ */
@@ -3267,17 +3294,47 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
             </div>
           )}
 
-          {low.map(it => (
-            <div key={it.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.red, background: C.redSoft }}>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium" style={{ color: C.ink }}>{it.name}{it.sku ? ` · ${it.sku}` : ""}</div>
-                  <div className="text-xs" style={{ color: C.inkSoft }}>{it.bodegaName} · Estantería {it.shelfCode}</div>
-                </div>
-                <div className="text-sm font-bold" style={{ color: C.red }}>{it.quantity} / {it.minThreshold} {it.unit}</div>
-              </div>
-            </div>
-          ))}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <StatCard label="Stock bajo" value={low.length} valueColor={low.length ? "#8a5a00" : C.ink}
+              leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><TrendingDown size={18} color="#8a5a00" /></div>} />
+            <StatCard label="Stock crítico (≤50% del mínimo)" value={low.filter(it => it.quantity <= it.minThreshold * 0.5).length} valueColor={C.red}
+              leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.redSoft }}><AlertTriangle size={18} color={C.red} /></div>} />
+          </div>
+
+          <div className="rounded-xl border overflow-x-auto" style={{ borderColor: C.line, background: C.panel }}>
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: C.bg }}>
+                  <th className="text-left px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Repuesto</th>
+                  <th className="text-left px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Ubicación</th>
+                  <th className="text-right px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Cantidad</th>
+                  <th className="text-right px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Mínimo</th>
+                  <th className="text-right px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>% del mínimo</th>
+                  <th className="text-left px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {low.map((it, i) => {
+                  const pct = it.minThreshold > 0 ? Math.round((it.quantity / it.minThreshold) * 100) : 0;
+                  const critical = it.quantity <= it.minThreshold * 0.5;
+                  return (
+                    <tr key={it.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
+                      <td className="px-3 py-2" style={{ color: C.ink }}>{it.name}{it.sku ? <span style={{ color: C.gray }}> · {it.sku}</span> : ""}</td>
+                      <td className="px-3 py-2" style={{ color: C.inkSoft }}>{it.bodegaName} · Est. {it.shelfCode}</td>
+                      <td className="px-3 py-2 text-right font-semibold" style={{ color: critical ? C.red : "#8a5a00" }}>{it.quantity} {it.unit}</td>
+                      <td className="px-3 py-2 text-right" style={{ color: C.gray }}>{it.minThreshold} {it.unit}</td>
+                      <td className="px-3 py-2 text-right font-bold" style={{ color: critical ? C.red : "#8a5a00" }}>{pct}%</td>
+                      <td className="px-3 py-2">
+                        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: critical ? C.redSoft : C.amberSoft, color: critical ? C.red : "#8a5a00" }}>
+                          {critical ? "Crítico" : "Bajo"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
@@ -3390,15 +3447,21 @@ function TaskKanbanCard({ task, accounts, canAct, onOpenDrawer, onMove, onZoom }
   );
 }
 
-function TaskDrawer({ task, accounts, canAct, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
+function TaskDrawer({ task, accounts, canAct, equipos, mttoLog, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
+  const [showMttoForm, setShowMttoForm] = useState(false);
+  const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [] });
+  const [mttoSaving, setMttoSaving] = useState(false);
+  const [mttoMsg, setMttoMsg] = useState(null);
 
   const estado = normalizeTaskState(task.estado);
   const stateColors = TASK_STATE_COLORS[estado];
   const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : "Sin asignar";
+  const linkedEquipo = task.equipoId && equipos ? equipos.find(e => e.id === task.equipoId) : null;
+  const equipoHistory = linkedEquipo ? (mttoLog || []).filter(r => r.equipoId === linkedEquipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 5) : [];
 
   const doClose = async () => {
     if (closePhotos.length === 0) { setCloseMsg({ ok: false, text: "Necesitas al menos una foto de cómo quedó, para poder cerrarla." }); return; }
@@ -3410,6 +3473,20 @@ function TaskDrawer({ task, accounts, canAct, onClose, onTransition, onCloseTask
       setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea." });
     }
     setCloseSaving(false);
+  };
+
+  const doLogMaintenance = async () => {
+    if (mttoForm.fotos.length === 0) { setMttoMsg({ ok: false, text: "Adjunta al menos una foto del mantenimiento." }); return; }
+    setMttoSaving(true); setMttoMsg(null);
+    try {
+      await onLogMaintenance(linkedEquipo.id, mttoForm);
+      setShowMttoForm(false);
+      setMttoForm({ tipo: "preventivo", descripcion: "", costo: "", fotos: [] });
+      setMttoMsg({ ok: true, text: "✓ Mantenimiento registrado en la hoja de vida del equipo." });
+    } catch (e) {
+      setMttoMsg({ ok: false, text: e.message || "No se pudo registrar el mantenimiento." });
+    }
+    setMttoSaving(false);
   };
 
   const timeline = [...(task.timeLog || [])].sort((a, b) => new Date(a.at) - new Date(b.at));
@@ -3440,6 +3517,51 @@ function TaskDrawer({ task, accounts, canAct, onClose, onTransition, onCloseTask
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Descripción</div>
             <div className="text-sm" style={{ color: C.ink }}>{task.descripcion || "Sin descripción adicional."}</div>
           </div>
+
+          {linkedEquipo && (
+            <div className="rounded-lg border p-2.5" style={{ borderColor: C.blueSoft, background: "#f5f9ff" }}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "#1a4f8a" }}>🔗 Equipo vinculado</div>
+              <div className="text-sm font-semibold" style={{ color: C.ink }}>{linkedEquipo.nombre}</div>
+              <div className="text-xs mb-2" style={{ color: C.gray }}>{linkedEquipo.sistema}</div>
+
+              {equipoHistory.length > 0 && (
+                <div className="mb-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Historial reciente</div>
+                  {equipoHistory.map(r => (
+                    <div key={r.id} className="text-xs py-0.5" style={{ color: C.inkSoft }}>
+                      · {fmtDT(r.fecha)} ({r.tipo}) — {r.descripcion || "sin descripción"}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!showMttoForm ? (
+                <Button size="sm" variant="ghost" onClick={() => setShowMttoForm(true)}>+ Registrar Mantenimiento</Button>
+              ) : (
+                <div className="rounded-md p-2 mt-1" style={{ background: "#fff" }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <select value={mttoForm.tipo} onChange={e => setMttoForm(f => ({ ...f, tipo: e.target.value }))}
+                      className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, color: C.ink }}>
+                      <option value="preventivo">Preventivo</option>
+                      <option value="correctivo">Correctivo</option>
+                    </select>
+                    <input type="number" value={mttoForm.costo} onChange={e => setMttoForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"
+                      className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, color: C.ink }} />
+                  </div>
+                  <textarea value={mttoForm.descripcion} onChange={e => setMttoForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
+                    className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, color: C.ink }} />
+                  <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
+                  <PhotoPicker photos={mttoForm.fotos} onChange={fotos => setMttoForm(f => ({ ...f, fotos }))} max={4} />
+                  {mttoMsg && <div className="text-xs mt-1.5" style={{ color: mttoMsg.ok ? C.green : C.red }}>{mttoMsg.text}</div>}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button size="sm" disabled={mttoSaving} onClick={doLogMaintenance}>{mttoSaving ? "Guardando…" : "Guardar"}</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setShowMttoForm(false)}>Cancelar</Button>
+                  </div>
+                </div>
+              )}
+              {!showMttoForm && mttoMsg && <div className="text-xs mt-1.5" style={{ color: mttoMsg.ok ? C.green : C.red }}>{mttoMsg.text}</div>}
+            </div>
+          )}
 
           {task.fotosAntes && task.fotosAntes.length > 0 && (
             <div>
@@ -3513,11 +3635,12 @@ function TaskDrawer({ task, accounts, canAct, onClose, onTransition, onCloseTask
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, onCreateTask, onUpdateTask, onDeleteTask }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, onLogMaintenance, onCreateTask, onUpdateTask, onDeleteTask }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [] });
+  const [newTab, setNewTab] = useState("manual"); // "manual" | "sugerencias"
+  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [assignMode, setAssignMode] = useState("now"); // "now" (por defecto) | "manual"
@@ -3552,6 +3675,30 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showNew, assignMode, assignableUsernames.join("|")]);
 
+  // Sugerencias inteligentes del cronograma: equipos atrasados según su último mantenimiento real
+  // vs. su frecuencia programada — de más a menos crítico.
+  const suggestions = useMemo(
+    () => (equipos ? computeMaintenanceSuggestions(equipos, mttoLog || [], mttoCronograma || []) : []),
+    [equipos, mttoLog, mttoCronograma]
+  );
+
+  /** Convierte una sugerencia en el borrador de una tarea nueva: nombre del equipo, sistema y su
+   * historial reciente quedan precargados; la persona solo revisa y confirma. */
+  const applySuggestion = (s) => {
+    const recientes = (mttoLog || []).filter(r => r.equipoId === s.equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 3);
+    const historialTxt = recientes.length
+      ? "\n\nHistorial reciente:\n" + recientes.map(r => `· ${fmtDT(r.fecha)} (${r.tipo}): ${r.descripcion || "sin descripción"}`).join("\n")
+      : "\n\n(Este equipo no tiene mantenimientos registrados todavía.)";
+    setForm(f => ({
+      ...f,
+      titulo: `Mantenimiento preventivo — ${s.equipo.nombre}`,
+      descripcion: `${s.nuncaIntervenido ? "Nunca se le ha registrado mantenimiento." : `Lleva ${s.diasSinIntervencion} días sin intervención`} (esperado cada ${s.frecuenciaEsperadaDias} días, según el cronograma).${historialTxt}`,
+      prioridad: s.overdueDays > 60 ? "alta" : s.overdueDays > 20 ? "media" : "baja",
+      equipoId: s.equipo.id,
+    }));
+    setNewTab("manual");
+  };
+
   const doCreate = async () => {
     if (!form.titulo.trim()) return;
     setSaving(true); setSaveMsg(null);
@@ -3563,8 +3710,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         fotosAntes,
         async (payload, urls) => { await onCreateTask({ ...payload, fotosAntes: urls }); }
       );
-      setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [] });
-      setShowNew(false);
+      setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
+      setShowNew(false); setNewTab("manual");
       if (res.queued) setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." });
     } catch (e) {
       setSaveMsg({ ok: false, text: e.message || "No se pudo crear la tarea." });
@@ -3641,6 +3788,15 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
           timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
         });
+        // Si la tarea está vinculada a un equipo, el cierre también queda como su mantenimiento
+        // realizado — así el cronograma "reinicia el contador" solo, sin doble trabajo.
+        if (t.equipoId && onLogMaintenance) {
+          await onLogMaintenance(t.equipoId, {
+            tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
+            descripcion: `${t.titulo}${payload.notaCierre ? " — " + payload.notaCierre : ""}`,
+            fotos: urls,
+          });
+        }
       }
     );
     if (res.queued) setSaveMsg({ ok: true, text: "✓ Cierre guardado en este celular — no había señal. Se sube solo apenas vuelva." });
@@ -3688,14 +3844,57 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
 
       {showNew && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="flex items-center gap-1 mb-2">
-            <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
-              className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-            <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
-          </div>
-          <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
-            className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-          <div className="rounded-md p-2 mb-2" style={{ background: C.bg }}>
+          {equipos && (
+            <div className="flex rounded-md border overflow-hidden text-xs mb-3 w-fit" style={{ borderColor: C.line }}>
+              <button type="button" onClick={() => setNewTab("manual")} className="px-3 font-semibold" style={{ background: newTab === "manual" ? C.amber : C.panel, color: newTab === "manual" ? "#fff" : C.inkSoft, minHeight: 32 }}>
+                Manual
+              </button>
+              <button type="button" onClick={() => setNewTab("sugerencias")} className="px-3 font-semibold flex items-center gap-1.5" style={{ background: newTab === "sugerencias" ? C.amber : C.panel, color: newTab === "sugerencias" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 32 }}>
+                Sugerencias del cronograma
+                {suggestions.length > 0 && <NavBadge count={suggestions.length} urgent={newTab !== "sugerencias"} />}
+              </button>
+            </div>
+          )}
+
+          {newTab === "sugerencias" ? (
+            <div>
+              <p className="text-xs mb-3" style={{ color: C.inkSoft }}>
+                Equipos atrasados según cuánto tiempo llevan sin mantenimiento, comparado con lo que dice su cronograma — de más a menos crítico.
+              </p>
+              {suggestions.length === 0 ? (
+                <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Ningún equipo está atrasado según su cronograma ahora mismo. 🎉</p>
+              ) : (
+                <div className="space-y-2">
+                  {suggestions.map(s => (
+                    <div key={s.equipo.id} className="rounded-md p-2.5 flex items-center justify-between gap-2 flex-wrap" style={{ background: s.overdueDays > 60 ? C.redSoft : C.amberSoft }}>
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: C.ink }}>{s.equipo.nombre} <span style={{ color: C.gray, fontWeight: 400 }}>· {s.equipo.sistema}</span></div>
+                        <div className="text-xs" style={{ color: s.overdueDays > 60 ? C.red : "#8a5a00" }}>
+                          {s.nuncaIntervenido ? "Nunca se le ha registrado mantenimiento" : `${s.diasSinIntervencion} días sin intervención`} · {s.overdueDays} días atrasado (esperado cada {s.frecuenciaEsperadaDias} días)
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={() => applySuggestion(s)}>Convertir en Tarea Pendiente</Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {form.equipoId && (
+                <div className="text-xs rounded-md px-2 py-1.5 mb-2 flex items-center justify-between" style={{ background: C.blueSoft, color: "#1a4f8a" }}>
+                  <span>🔗 Vinculada a {equipos.find(e => e.id === form.equipoId)?.nombre || "un equipo"}</span>
+                  <button onClick={() => setForm(f => ({ ...f, equipoId: null }))} className="font-semibold">Quitar</button>
+                </div>
+              )}
+              <div className="flex items-center gap-1 mb-2">
+                <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
+                  className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
+              </div>
+              <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
+                className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <div className="rounded-md p-2 mb-2" style={{ background: C.bg }}>
             <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
               <div className="text-xs font-medium" style={{ color: C.inkSoft }}>¿A quién se la vas a asignar?</div>
               <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
@@ -3769,6 +3968,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           </div>
           {saveMsg && <div className="text-xs mb-2" style={{ color: saveMsg.ok ? C.green : C.red }}>{saveMsg.text}</div>}
           <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear tarea"}</Button>
+            </>
+          )}
         </div>
       )}
 
@@ -3926,6 +4127,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
 
       {drawerTask && (
         <TaskDrawer task={drawerTask} accounts={accounts} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
+          equipos={equipos} mttoLog={mttoLog} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl} />
       )}
@@ -6260,19 +6462,19 @@ function computeStaleIssues(activeIssues, thresholdDays = 15) {
     .sort((a, b) => b.daysOpen - a.daysOpen);
 }
 
-function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, fuelAlerts, onNavigate }) {
+function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
     "Check List Caldera": "boiler", "Equipos de Lavandería": "laundry",
   };
-  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalStock?.length || 0) + (fuelAlerts?.length || 0);
+  const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (fuelAlerts?.length || 0);
   return (
     <div className="relative">
       <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
         <Bell size={16} color={C.ink} />
         {totalCount > 0 && (
-          <span className={`absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${(criticalStock?.length || fuelAlerts?.length) ? "animate-pulse" : ""}`} style={{ background: C.red, color: "#fff" }}>
+          <span className={`absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${fuelAlerts?.length ? "animate-pulse" : ""}`} style={{ background: C.red, color: "#fff" }}>
             {totalCount}
           </span>
         )}
@@ -6296,20 +6498,6 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, criticalStock, 
                     <button key={i} onClick={() => { onNavigate("fuel"); setOpen(false); }}
                       className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
                       · {t.nombre} — {t.pct}% <span style={{ color: C.gray }}>(mínimo 20%)</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {criticalStock && criticalStock.length > 0 && (
-              <>
-                <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.red }}>⚠ Stock crítico — reabastecer ya</div>
-                <div className="px-3 pb-3">
-                  {criticalStock.map((it, i) => (
-                    <button key={i} onClick={() => { onNavigate("inventory-alerts"); setOpen(false); }}
-                      className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
-                      · {it.name} — quedan {it.quantity} <span style={{ color: C.gray }}>(mínimo {it.minThreshold})</span>
                     </button>
                   ))}
                 </div>
@@ -6922,7 +7110,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "meters", label: "Lecturas de Medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies },
     { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
     { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock, urgentBadge: false },
-    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock, urgentBadge: false },
+    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock, urgentBadge: counts.criticalLowStock > 0, pulse: counts.criticalLowStock > 0 },
     { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv },
     { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true },
     { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia },
@@ -11594,6 +11782,7 @@ export default function App() {
       recurrencia: recurrence, recurrenceGroupId: recurrence ? id : null,
       recurrencePeriodKey: recurrence ? periodKeyFor(new Date(), recurrence) : null,
       fotosAntes: form.fotosAntes || [], fotosDespues: [], notaCierre: "",
+      equipoId: form.equipoId || null, origen: form.equipoId ? "cronograma" : "manual",
       assignedAt: form.asignadoA ? now : null, startedAt: null, finishedAt: null,
       timeLog: [{ estado: "asignada", at: now }],
       createdBy: displayName, createdAt: now, updatedAt: now,
@@ -12165,7 +12354,7 @@ export default function App() {
         ...((isAdmin || isGerencia) ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
         ...((isAdmin || isGerencia) ? [{ id: "executive", label: "Panel Ejecutivo", icon: Gauge }] : []),
         ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
-        ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length, urgentBadge: false }] : []),
+        ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length, urgentBadge: criticalStockItems.length > 0, pulse: criticalStockItems.length > 0 }] : []),
         ...((isAdmin || isAlmacenista) ? [{ id: "inventory-movements", label: "Movimientos de Inventario", icon: History }] : []),
       ],
     },
@@ -12283,7 +12472,7 @@ export default function App() {
                         style={{ background: view === n.id ? "#2a3f56" : undefined, color: view === n.id ? "#fff" : "#c3d0dd" }}>
                         <n.icon size={15} />
                         <span className="flex-1 text-left">{n.label}</span>
-                        <NavBadge count={n.badge} urgent={n.urgentBadge !== false} />
+                        <NavBadge count={n.badge} urgent={n.urgentBadge !== false} pulse={n.pulse} />
                       </button>
                     ))}
                   </div>
@@ -12378,7 +12567,7 @@ export default function App() {
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
             {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
-            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} criticalStock={criticalStockItems} fuelAlerts={criticalFuelTanks} onNavigate={setView} />}
+            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} />}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
@@ -12399,7 +12588,7 @@ export default function App() {
               lowStockDetail={lowStockItems}
               activeIssuesList={Object.values(activeIssues)}
               mttoWeekCount={mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length}
-              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => t.estado !== "hecho").length, pendingAccounts: pendingAccountsCount }} />
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, pendingAccounts: pendingAccountsCount }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
@@ -12515,6 +12704,7 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
+              equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} onLogMaintenance={logMaintenance}
               onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (

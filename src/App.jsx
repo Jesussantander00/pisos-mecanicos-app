@@ -3165,11 +3165,19 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
-  const low = useMemo(() => computeLowStock(invItems).map(it => ({
-    ...it,
-    bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
-    shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
-  })), [invItems, bodegas, shelves]);
+  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const onSort = (key) => setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+
+  const low = useMemo(() => computeLowStock(invItems).map(it => {
+    const pct = it.minThreshold > 0 ? Math.round((it.quantity / it.minThreshold) * 100) : 0;
+    return {
+      ...it,
+      bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
+      shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
+      pct, critical: it.quantity <= it.minThreshold * 0.5,
+    };
+  }), [invItems, bodegas, shelves]);
+  const sortedLow = useMemo(() => sortRows(low, sort), [low, sort]);
 
   const forecast = useMemo(() => computeReorderForecast(invItems, invMovements).map(it => ({
     ...it,
@@ -3305,33 +3313,25 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
             <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: C.bg }}>
-                  <th className="text-left px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Repuesto</th>
-                  <th className="text-left px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Ubicación</th>
-                  <th className="text-right px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Cantidad</th>
-                  <th className="text-right px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Mínimo</th>
-                  <th className="text-right px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>% del mínimo</th>
+                  <SortableTh label="Repuesto" sortKey="name" sort={sort} onSort={onSort} />
+                  <SortableTh label="Ubicación" sortKey="bodegaName" sort={sort} onSort={onSort} />
+                  <SortableTh label="Cantidad" sortKey="quantity" sort={sort} onSort={onSort} align="right" />
+                  <SortableTh label="Mínimo" sortKey="minThreshold" sort={sort} onSort={onSort} align="right" />
+                  <SortableTh label="% del mínimo" sortKey="pct" sort={sort} onSort={onSort} align="right" />
                   <th className="text-left px-3 py-2 font-semibold" style={{ color: C.inkSoft }}>Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {low.map((it, i) => {
-                  const pct = it.minThreshold > 0 ? Math.round((it.quantity / it.minThreshold) * 100) : 0;
-                  const critical = it.quantity <= it.minThreshold * 0.5;
-                  return (
-                    <tr key={it.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
-                      <td className="px-3 py-2" style={{ color: C.ink }}>{it.name}{it.sku ? <span style={{ color: C.gray }}> · {it.sku}</span> : ""}</td>
-                      <td className="px-3 py-2" style={{ color: C.inkSoft }}>{it.bodegaName} · Est. {it.shelfCode}</td>
-                      <td className="px-3 py-2 text-right font-semibold" style={{ color: critical ? C.red : "#8a5a00" }}>{it.quantity} {it.unit}</td>
-                      <td className="px-3 py-2 text-right" style={{ color: C.gray }}>{it.minThreshold} {it.unit}</td>
-                      <td className="px-3 py-2 text-right font-bold" style={{ color: critical ? C.red : "#8a5a00" }}>{pct}%</td>
-                      <td className="px-3 py-2">
-                        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: critical ? C.redSoft : C.amberSoft, color: critical ? C.red : "#8a5a00" }}>
-                          {critical ? "Crítico" : "Bajo"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {sortedLow.map((it, i) => (
+                  <tr key={it.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-3 py-2" style={{ color: C.ink }}>{it.name}{it.sku ? <span style={{ color: C.gray }}> · {it.sku}</span> : ""}</td>
+                    <td className="px-3 py-2" style={{ color: C.inkSoft }}>{it.bodegaName} · Est. {it.shelfCode}</td>
+                    <td className="px-3 py-2 text-right font-semibold" style={{ color: it.critical ? C.red : "#8a5a00" }}>{it.quantity} {it.unit}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: C.gray }}>{it.minThreshold} {it.unit}</td>
+                    <td className="px-3 py-2 text-right font-bold" style={{ color: it.critical ? C.red : "#8a5a00" }}>{it.pct}%</td>
+                    <td className="px-3 py-2"><Badge tone={it.critical ? "red" : "amber"}>{it.critical ? "Crítico" : "Bajo"}</Badge></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -3850,6 +3850,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         <StatCard label="Tareas totales" value={totalTareas}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><ClipboardCheck size={18} color={C.blue} /></div>} />
         <StatCard label="Tiempo prom. de cierre" value={tiempoCierrePromedio != null ? fmtHours(tiempoCierrePromedio) : "—"}
+          tooltip="Promedio de horas desde que una tarea se asigna hasta que se marca Finalizada, contando solo las tareas ya cerradas."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
         <StatCard label="Críticas vencidas (>24h)" value={criticasVencidas} valueColor={criticasVencidas ? C.red : C.ink}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: criticasVencidas ? C.redSoft : C.greenSoft }}><AlertTriangle size={18} color={criticasVencidas ? C.red : C.green} /></div>} />
@@ -4928,6 +4929,33 @@ function Badge({ tone = "gray", pulse = false, children }) {
     </span>
   );
 }
+
+/** Cabecera de tabla ordenable — toca la columna y ordena ascendente/descendente, con una
+ * flechita que muestra cuál columna manda y en qué sentido. */
+function SortableTh({ label, sortKey, sort, onSort, align = "left" }) {
+  const active = sort.key === sortKey;
+  return (
+    <th onClick={() => onSort(sortKey)} className={`px-3 py-2 font-semibold cursor-pointer select-none text-${align}`}
+      style={{ color: active ? C.ink : C.inkSoft, minHeight: 32 }}>
+      <span className="inline-flex items-center gap-1" style={{ flexDirection: align === "right" ? "row-reverse" : "row" }}>
+        {label}
+        <span style={{ color: active ? C.amber : C.line, fontSize: 10 }}>{active && sort.dir === "desc" ? "▼" : "▲"}</span>
+      </span>
+    </th>
+  );
+}
+/** Ordena una lista por una llave, alternando ascendente/descendente al tocar la misma columna
+ * otra vez — usado junto con SortableTh en todas las tablas de la app. */
+function sortRows(rows, sort) {
+  if (!sort.key) return rows;
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[sort.key], bv = b[sort.key];
+    if (typeof av === "number" && typeof bv === "number") return av - bv;
+    return String(av ?? "").localeCompare(String(bv ?? ""), "es");
+  });
+  return sort.dir === "desc" ? sorted.reverse() : sorted;
+}
+
 /** Traduce los distintos "vocabularios" de estado de la app (tipo de mantenimiento, estado de
  * tarea, estado de cronograma, prioridad) a un mismo tono de color, consistente en todos lados. */
 function badgeToneFor(kind, value) {
@@ -4943,10 +4971,24 @@ function badgeToneFor(kind, value) {
   return "gray";
 }
 
-function StatCard({ label, value, valueColor, leading, breakdown, trend }) {
+function StatCard({ label, value, valueColor, leading, breakdown, trend, tooltip }) {
+  const [showTip, setShowTip] = useState(false);
   return (
-    <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel }}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>{label}</div>
+    <div className="rounded-xl border p-5 relative" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="flex items-center justify-between gap-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>{label}</div>
+        {tooltip && (
+          <div className="relative shrink-0" onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}>
+            <button type="button" onClick={() => setShowTip(v => !v)} className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold"
+              style={{ background: C.bg, color: C.gray }}>?</button>
+            {showTip && (
+              <div className="absolute right-0 top-5 w-52 rounded-lg border shadow-lg p-2.5 text-xs z-20" style={{ background: C.panel, borderColor: C.line, color: C.inkSoft }}>
+                {tooltip}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div className="flex items-center gap-3 mt-2">
         {leading}
         <div className="text-3xl font-bold leading-none tabular-nums" style={{ color: valueColor || C.ink }}>{value}</div>
@@ -5120,15 +5162,18 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         <StatCard label="Costo global de operación" value={cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}
           trend={!hasActiveFilters ? <TrendBadge current={cost.total} previous={costPrev.total} unit="$" goodDirection="down" /> : null} />
         <StatCard label="Eficiencia global de planta" value={`${avgUptime}%`} valueColor={avgUptime >= 90 ? C.green : C.red}
+          tooltip="Promedio de disponibilidad de todos los sistemas: qué % de sus equipos están funcionando (no fuera de servicio) ahora mismo."
           leading={<MiniGauge value={avgUptime} max={100} size={44} color={avgUptime >= 90 ? C.green : C.red} />} />
         <StatCard label="Órdenes cerradas" value={ordenesCerradas}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><ClipboardCheck size={18} color={C.blue} /></div>} />
         <StatCard label="Horas hombre invertidas" value={fmtHours(horasHombre)}
+          tooltip="Suma del tiempo que las tareas estuvieron realmente 'En proceso' (no el tiempo total abierto, solo cuando alguien estaba trabajando en ellas activamente), según los filtros de arriba."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
         <StatCard label="Cumplimiento de rondas" value={`${compliance.ronda.pct}%`} valueColor={compliance.ronda.pct >= 90 ? C.green : C.red}
+          tooltip="Rondas de revisión guardadas este mes, sobre el total que deberían haberse hecho a este punto del mes."
           leading={<MiniGauge value={compliance.ronda.pct} max={100} size={40} stroke={5} color={compliance.ronda.pct >= 90 ? C.green : C.red} />}
           trend={<TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />} />
       </div>
@@ -5425,10 +5470,13 @@ function MaintenanceAnalyticsView({ equipos, mttoLog, issueHistory, activeIssues
             { label: "Correctivo", value: totalCorrectivos, color: C.red },
           ] : null} />
         <StatCard label="MTTR (reparación)" value={mttr != null ? fmtHours(mttr) : "—"}
+          tooltip="Tiempo Medio de Reparación: el promedio de horas que un equipo pasa fuera de servicio, desde que se marca dañado hasta que se resuelve. Se calcula con todos los incidentes ya cerrados."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
         <StatCard label="MTBF (entre fallas)" value={mtbf != null ? fmtHours(mtbf) : "—"}
+          tooltip="Tiempo Medio Entre Fallas: el promedio de tiempo que pasa entre el cierre de una falla y el inicio de la siguiente, en el mismo equipo. Más alto es mejor — indica equipos más confiables."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><TrendingUp size={18} color={C.blue} /></div>} />
         <StatCard label="Cumplimiento de rondas" value={`${roundsPctDecimal.toFixed(1)}%`} valueColor={roundsPctDecimal >= 90 ? C.green : C.red}
+          tooltip="Rondas de revisión guardadas este mes, sobre el total que deberían haberse hecho a este punto del mes (según el número de pisos y días transcurridos)."
           leading={<MiniGauge value={roundsPctDecimal} max={100} size={40} stroke={5} color={roundsPctDecimal >= 90 ? C.green : C.red} />} />
         <StatCard label="Costo acumulado (filtro)" value={totalCosto ? `$${totalCosto.toLocaleString("es-CO")}` : "—"}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Gauge size={18} color={C.amber} /></div>} />
@@ -7452,7 +7500,7 @@ function normalizeSearchText(s) {
 
 const MAX_FAVORITES = 5;
 
-function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, lowStockDetail, activeIssuesList, mttoWeekCount }) {
+function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState(() => {
@@ -7531,23 +7579,28 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           </div>
           <Gauge size={28} color={C.amber} />
         </div>
-        {!gerenciaLocked && tourProgress.total > 0 && (
-          <div className="mt-3" title={`${tourProgress.done} de ${tourProgress.total} pisos revisados en tu recorrido de hoy`}>
-            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: "#8fa3b8" }}>
-              <span>Progreso del recorrido de hoy</span>
-              <span className="font-semibold" style={{ color: tourProgress.done >= tourProgress.total ? C.green : "#cdd8e2" }}>
-                {tourProgress.done}/{tourProgress.total}
-              </span>
+        {!gerenciaLocked && (tourProgress.total > 0 || tasksToday?.length > 0) && (() => {
+          const tasksDone = (tasksToday || []).filter(t => normalizeTaskState(t.estado) === "finalizada").length;
+          const tasksTotal = tasksToday?.length || 0;
+          const totalDone = tourProgress.done + tasksDone;
+          const totalExpected = tourProgress.total + tasksTotal;
+          const pct = totalExpected > 0 ? Math.round((totalDone / totalExpected) * 100) : 0;
+          return (
+            <div className="mt-3" title={`${tourProgress.done}/${tourProgress.total} pisos del recorrido · ${tasksDone}/${tasksTotal} tareas de hoy`}>
+              <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: "#8fa3b8" }}>
+                <span>Progreso general del turno</span>
+                <span className="font-semibold" style={{ color: pct >= 100 ? C.green : "#cdd8e2" }}>{pct}%</span>
+              </div>
+              <div className="w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)", height: 6 }}>
+                <div className="h-full rounded-full" style={{
+                  width: `${Math.min(100, pct)}%`,
+                  background: pct >= 100 ? C.green : C.amber,
+                  transition: "width 700ms var(--ease-out)",
+                }} />
+              </div>
             </div>
-            <div className="w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)", height: 6 }}>
-              <div className="h-full rounded-full" style={{
-                width: `${Math.min(100, (tourProgress.done / tourProgress.total) * 100)}%`,
-                background: tourProgress.done >= tourProgress.total ? C.green : C.amber,
-                transition: "width 500ms var(--ease-out)",
-              }} />
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       <div className="relative mb-4">
@@ -10685,6 +10738,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <StatCard label="Fallas críticas (>24h)" value={fallasCriticas} valueColor={fallasCriticas ? C.red : C.ink}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: fallasCriticas ? C.redSoft : C.greenSoft }}><AlertTriangle size={18} color={fallasCriticas ? C.red : C.green} /></div>} />
         <StatCard label="Tiempo prom. de diagnóstico" value={mttr != null ? fmtHours(mttr) : "—"}
+          tooltip="Promedio de horas que un equipo estuvo fuera de servicio hasta resolverse, entre los incidentes ya cerrados en el período filtrado."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
         <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Mayor incidencia</div>
@@ -12972,6 +13026,7 @@ export default function App() {
               lowStockDetail={lowStockItems}
               activeIssuesList={Object.values(activeIssues)}
               mttoWeekCount={mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length}
+              tasksToday={tasks.filter(t => localDateIso(new Date(t.createdAt)) === localDateIso(new Date()) && (t.asignadoA === currentUser || t.createdBy === displayName))}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, pendingAccounts: pendingAccountsCount }} />
           )}
           {view === "ronda" && (

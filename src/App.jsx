@@ -12551,7 +12551,7 @@ export default function App() {
         { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
         { id: "maintenance", label: "Mantenimiento", icon: Wrench },
         { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false },
-        { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => t.estado !== "hecho").length, urgentBadge: false },
+        { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, urgentBadge: false },
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
       ],

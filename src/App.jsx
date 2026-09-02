@@ -1413,6 +1413,13 @@ const DEFAULT_STANDING_RULES = `- Quintana Jesus Daniel: descansa todos los sáb
 /** Se precarga la primera vez que alguien abre "Novedades", con un resumen de lo construido
  *  hasta ahora — de ahí en adelante, el admin agrega las suyas desde la misma pantalla. */
 const DEFAULT_CHANGELOG_SEED = [
+  { id: "cl-seed-13", title: "Sugerencias de texto al registrar mantenimiento", description: "Al escribir qué se hizo en un mantenimiento, ahora aparecen frases sugeridas según la especialidad del equipo (eléctrico, HVAC, hidráulico, etc.) — tócalas para usarlas y agrega lo que hiciste de más.", at: "2026-08-31T20:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-12", title: "Repuestos usados se descuentan solos", description: "Al registrar un mantenimiento, ahora puedes marcar qué repuestos usaste y se descuentan solos del inventario — sin tener que ir aparte a hacer el retiro a mano.", at: "2026-08-31T12:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-11", title: "Cronograma en matriz con detalle por celda", description: "El cronograma anual ahora se ve como una tabla de equipo × mes con colores, y tocar cualquier celda abre el detalle: última intervención, reprogramar, o registrar un mantenimiento extraordinario.", at: "2026-08-30T18:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-10", title: "Sugerencias inteligentes del cronograma en Tareas", description: "\"Nueva tarea\" ahora tiene una pestaña de Sugerencias: equipos atrasados según su cronograma real, con un botón para convertir la sugerencia en tarea de un solo toque.", at: "2026-08-30T14:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-9", title: "Tablero Kanban de tareas", description: "Las tareas ahora se pueden ver como tablero (Pendiente / En progreso / En espera de repuesto / Hecho), con arrastrar-y-soltar en computador y \"Mover a…\" de un toque en celular.", at: "2026-08-29T22:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-8", title: "Combustibles y gas", description: "Nuevo módulo que toma las lecturas de ACPM del recorrido diario y las convierte en niveles, alertas de reabastecimiento y gráficas — sin registro aparte.", at: "2026-08-29T16:00:00.000Z", by: "Sistema" },
+  { id: "cl-seed-7", title: "Cronómetro, cierre con foto y reporte automático en tareas", description: "Las tareas ahora tienen estados con cronómetro en vivo, exigen una foto del \"después\" para cerrarse, y generan un reporte descargable con el historial completo.", at: "2026-08-28T18:00:00.000Z", by: "Sistema" },
   { id: "cl-seed-6", title: "Cuentas y seguridad reforzadas", description: "Ahora se entra con correo y contraseña de verdad (Supabase Auth), con aprobación del admin. La base de datos, el correo y las notificaciones push ya exigen una sesión real — antes de esto, cualquiera con la clave pública podía leer o escribir todo.", at: "2026-08-12T20:00:00.000Z", by: "Sistema" },
   { id: "cl-seed-5", title: "Cambio a Gemini para las funciones de IA", description: "Lectura de medidores por foto y horario mensual con IA ahora corren en Gemini en vez de Claude, para aprovechar la capa gratis.", at: "2026-08-11T23:00:00.000Z", by: "Sistema" },
   { id: "cl-seed-4", title: "Horario Mensual con IA", description: "Generación automática del horario a partir de reglas escritas en español, respetando reglas generales guardadas, con revisión antes de guardar.", at: "2026-08-11T18:00:00.000Z", by: "Sistema" },
@@ -2545,7 +2552,7 @@ function MetersWeeklyView({ meterHistory, reportEmail, onLogSent, currentUser, m
     try {
       const wb = buildMetersWeekWorkbook(grid, weekLabel);
       XLSX.writeFile(wb, `lecturas-medidores-${weekLabel.replace(/[\s/]+/g, "-")}.xlsx`);
-    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel — revisa la conexión e intenta de nuevo." }); }
     setDownloading(false);
   };
 
@@ -2810,7 +2817,7 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
       const res = await onImportInventory();
       setImportMsg({ ok: true, text: `Listo: ${res.newBodegasCount} bodega(s), ${res.newShelvesCount} estantería(s) y ${res.newItemsCount} repuesto(s) nuevos importados.` });
     } catch {
-      setImportMsg({ ok: false, text: "No se pudo importar. Intenta de nuevo." });
+      setImportMsg({ ok: false, text: "No se pudo importar — revisa que el archivo sea el formato correcto e intenta de nuevo." });
     }
     setImporting(false);
   };
@@ -3218,7 +3225,7 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
       ws["!cols"] = [{ wch: 35 }, { wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
       XLSX.utils.book_append_sheet(wb, ws, "Lista de compras");
       XLSX.writeFile(wb, `lista-de-compras-${todayStr().replace(/\//g, "-")}.xlsx`);
-    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel — revisa la conexión e intenta de nuevo." }); }
     setDownloading(false);
   };
   const doSend = async () => {
@@ -3478,7 +3485,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
       await onCloseTask(task, closePhotos, closeNote.trim());
       onClose();
     } catch (e) {
-      setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea." });
+      setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo." });
     }
     setCloseSaving(false);
   };
@@ -3492,7 +3499,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
       setMttoForm({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
       setMttoMsg({ ok: true, text: "✓ Mantenimiento registrado en la hoja de vida del equipo." });
     } catch (e) {
-      setMttoMsg({ ok: false, text: e.message || "No se pudo registrar el mantenimiento." });
+      setMttoMsg({ ok: false, text: e.message || "No se pudo registrar el mantenimiento — revisa tu conexión e intenta de nuevo." });
     }
     setMttoSaving(false);
   };
@@ -3561,7 +3568,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                   <textarea value={mttoForm.descripcion} onChange={e => setMttoForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
                     className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, color: C.ink }} />
                   <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
-                  <PhotoPicker photos={mttoForm.fotos} onChange={fotos => setMttoForm(f => ({ ...f, fotos }))} max={4} />
+                  <PhotoPicker photos={mttoForm.fotos} onChange={fotos => setMttoForm(f => ({ ...f, fotos }))} max={6} />
                   {invItems && (
                     <>
                       <div className="text-xs font-medium mb-1 mt-2" style={{ color: C.inkSoft }}>Repuestos usados (opcional)</div>
@@ -3730,7 +3737,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       setShowNew(false); setNewTab("manual");
       if (res.queued) setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." });
     } catch (e) {
-      setSaveMsg({ ok: false, text: e.message || "No se pudo crear la tarea." });
+      setSaveMsg({ ok: false, text: e.message || "No se pudo crear la tarea — revisa tu conexión e intenta de nuevo." });
     }
     setSaving(false);
   };
@@ -3755,8 +3762,20 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterOperario || filterPrioridad;
   const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); };
 
+  const [onlyMine, setOnlyMine] = useState(() => {
+    try { const saved = localStorage.getItem(`pm-local:tasks-only-mine:${currentUsername}`); return saved != null ? saved === "1" : !isAdmin; } catch { return !isAdmin; }
+  });
+  const toggleOnlyMine = () => {
+    setOnlyMine(v => {
+      const next = !v;
+      try { localStorage.setItem(`pm-local:tasks-only-mine:${currentUsername}`, next ? "1" : "0"); } catch { /* noop */ }
+      return next;
+    });
+  };
+
   const priorityOrder = { alta: 0, media: 1, baja: 2 };
   const filtered = tasks
+    .filter(t => !onlyMine || t.asignadoA === currentUsername)
     .filter(t => !filterEstado || normalizeTaskState(t.estado) === filterEstado)
     .filter(t => {
       const d = new Date(t.createdAt);
@@ -3839,6 +3858,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <p className="text-sm" style={{ color: C.inkSoft }}>El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento.</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={toggleOnlyMine} className="text-xs font-semibold px-2.5 rounded-md border" style={{ background: onlyMine ? C.amberSoft : C.panel, color: onlyMine ? "#7a5405" : C.inkSoft, borderColor: onlyMine ? C.amber : C.line, minHeight: 36 }}>
+            {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
+          </button>
           <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
             <button onClick={() => setViewMode("kanban")} className="px-2.5 font-semibold" style={{ background: viewMode === "kanban" ? C.steelDark : C.panel, color: viewMode === "kanban" ? "#fff" : C.inkSoft, minHeight: 36 }}>Kanban</button>
             <button onClick={() => setViewMode("list")} className="px-2.5 font-semibold" style={{ background: viewMode === "list" ? C.steelDark : C.panel, color: viewMode === "list" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>Lista</button>
@@ -4195,7 +4217,7 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
     try {
       const wb = buildWorkbook();
       XLSX.writeFile(wb, `movimientos-inventario-${todayStr().replace(/\//g, "-")}.xlsx`);
-    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel — revisa la conexión e intenta de nuevo." }); }
     setDownloading(false);
   };
 
@@ -4320,7 +4342,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
     try {
       const res = await onImportCatalog();
       setImportMsg({ ok: true, text: `Listo: ${res.newEquiposCount} equipo(s) nuevo(s), ${res.newCronoCount} registro(s) del cronograma anual, y ${res.newLogsCount} mantenimiento(s) ya ejecutados cargados al historial.` });
-    } catch { setImportMsg({ ok: false, text: "No se pudo importar. Intenta de nuevo." }); }
+    } catch { setImportMsg({ ok: false, text: "No se pudo importar — revisa que el archivo sea el formato correcto e intenta de nuevo." }); }
     setImporting(false);
   };
 
@@ -4721,7 +4743,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
         ? { ok: true, text: "✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva, sin que tengas que escribir nada de nuevo." }
         : { ok: true, text: "✓ Mantenimiento registrado." });
     } catch (e) {
-      setSaveMsg({ ok: false, text: e.message || "No se pudo guardar." });
+      setSaveMsg({ ok: false, text: e.message || "No se pudo guardar — revisa tu conexión e intenta de nuevo." });
     }
     setSaving(false);
   };
@@ -4759,7 +4781,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
             <VoiceInputButton onResult={text => setDescripcion(d => (d ? d + " " : "") + text)} />
           </div>
           <div className="text-xs mb-1" style={{ color: C.gray }}>Fotos (opcional, hasta 2)</div>
-          <PhotoPicker photos={photos} onChange={setPhotos} />
+          <PhotoPicker photos={photos} onChange={setPhotos} max={6} />
           {invItems && (
             <>
               <div className="text-xs mb-1 mt-2" style={{ color: C.gray }}>Repuestos usados (opcional) — se descuentan solos del inventario</div>
@@ -4916,7 +4938,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
     try {
       const wb = buildWorkbook();
       XLSX.writeFile(wb, `mantenimientos-realizados-${todayStr().replace(/\//g, "-")}.xlsx`);
-    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel — revisa la conexión e intenta de nuevo." }); }
     setDownloading(false);
   };
 
@@ -5239,7 +5261,7 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
     try {
       const doc = await generateExecutivePdf(uptime, compliance, cost, currentUser, compliancePrev, costPrev);
       doc.save(`panel-ejecutivo-${todayStr().replace(/\//g, "-")}.pdf`);
-    } catch { setMsg("No se pudo generar el PDF."); }
+    } catch { setMsg("No se pudo generar el PDF — revisa la conexión e intenta de nuevo."); }
     setDownloading(false);
   };
 
@@ -5791,7 +5813,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
       setExtraForm({ descripcion: "", costo: "", fotos: [], repuestos: [] });
       setShowExtra(false);
     } catch (e) {
-      setExtraMsg({ ok: false, text: e.message || "No se pudo registrar." });
+      setExtraMsg({ ok: false, text: e.message || "No se pudo registrar — revisa tu conexión e intenta de nuevo." });
     }
     setExtraSaving(false);
   };
@@ -5876,7 +5898,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
                 <input type="number" value={extraForm.costo} onChange={e => setExtraForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"
                   className="text-sm border rounded-md px-2 py-1.5 outline-none w-32 mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
-                <PhotoPicker photos={extraForm.fotos} onChange={fotos => setExtraForm(f => ({ ...f, fotos }))} max={4} />
+                <PhotoPicker photos={extraForm.fotos} onChange={fotos => setExtraForm(f => ({ ...f, fotos }))} max={6} />
                 {invItems && (
                   <>
                     <div className="text-xs font-medium mb-1 mt-2" style={{ color: C.inkSoft }}>Repuestos usados (opcional)</div>
@@ -5966,7 +5988,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
     try {
       const wb = buildWorkbook();
       XLSX.writeFile(wb, `cronograma-${sistemaFilter.replace(/[^a-z0-9]+/gi, "-")}.xlsx`);
-    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel." }); }
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel — revisa la conexión e intenta de nuevo." }); }
     setDownloading(false);
   };
 
@@ -6357,7 +6379,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
       const res = await importFn();
       setImportMsg({ ok: true, text: `Listo: ${res.newEmployeesCount} empleado(s) nuevo(s) creados, ${res.entriesCount} registros de horario cargados (${label}).` });
     } catch {
-      setImportMsg({ ok: false, text: "No se pudo importar. Intenta de nuevo." });
+      setImportMsg({ ok: false, text: "No se pudo importar — revisa que el archivo sea el formato correcto e intenta de nuevo." });
     }
     setImporting(false);
   };
@@ -7643,7 +7665,34 @@ function normalizeSearchText(s) {
 
 const MAX_FAVORITES = 5;
 
-function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount }) {
+/**
+ * Avisa de la novedad más reciente una sola vez por persona — se guarda en este dispositivo cuál
+ * fue la última que ya vio, y no la vuelve a mostrar hasta que haya una entrada nueva de verdad.
+ */
+function WhatsNewBanner({ entries, currentUser }) {
+  const latest = entries?.[0];
+  const storageKey = `pm-local:changelog-seen:${currentUser}`;
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(storageKey) === latest?.id; } catch { return false; }
+  });
+  if (!latest || dismissed) return null;
+  const dismiss = () => {
+    setDismissed(true);
+    try { localStorage.setItem(storageKey, latest.id); } catch { /* noop */ }
+  };
+  return (
+    <div className="rounded-lg p-3 mb-4 flex items-start justify-between gap-3" style={{ background: C.blueSoft, border: `1px solid ${C.blue}` }}>
+      <div className="min-w-0">
+        <div className="text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: C.blue }}>✨ Novedad</div>
+        <div className="text-sm font-semibold" style={{ color: C.ink }}>{latest.title}</div>
+        <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{latest.description}</div>
+      </div>
+      <button onClick={dismiss} className="p-0.5 shrink-0" style={{ minWidth: 24, minHeight: 24 }}><X size={16} color={C.gray} /></button>
+    </div>
+  );
+}
+
+function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState(() => {
@@ -7678,6 +7727,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
     { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
     { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM y gas, calderas y planta eléctrica", access: true },
+    { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true },
+    { id: "calibration", label: "Calibración de instrumentos", icon: Gauge, desc: "Manómetros, termómetros, multímetros", access: true },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
@@ -7745,6 +7796,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           );
         })()}
       </div>
+
+      <WhatsNewBanner entries={changelogEntries} currentUser={currentUser} />
 
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.gray }} />
@@ -8461,20 +8514,23 @@ const FUEL_TANK_TYPES = ["Diesel (ACPM)", "Gas propano", "Gasolina"];
  * cada piso), igual que ya hace "Tanques agua potable" — no es un registro aparte. Mismo formato
  * de tarjetas, gráfica y detalle por equipo que Análisis de fallas.
  */
-function FuelTanksView({ latestValues, fuelHistory, onNavigate }) {
+function FuelTanksView({ latestValues, fuelHistory, onManualUpdate, onNavigate }) {
   const [expanded, setExpanded] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [savedFlash, setSavedFlash] = useState(null);
 
   const pctTanks = FUEL_ITEMS.filter(it => it.u === "%").map(it => {
     const v = latestValues[it.id];
     return {
-      id: it.id, label: `${it.n} (${it.floorName})`, pct: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
+      id: it.id, item: it, label: `${it.n} (${it.floorName})`, pct: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
       updatedAt: v?.updatedAt || null, updatedBy: v?.updatedBy || null,
     };
   });
   const meterTanks = FUEL_ITEMS.filter(it => it.u === "gln").map(it => {
     const v = latestValues[it.id];
     return {
-      id: it.id, label: `${it.n} (${it.floorName})`, value: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
+      id: it.id, item: it, label: `${it.n} (${it.floorName})`, value: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
       updatedAt: v?.updatedAt || null, updatedBy: v?.updatedBy || null,
     };
   });
@@ -8562,21 +8618,48 @@ function FuelTanksView({ latestValues, fuelHistory, onNavigate }) {
         <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Detalle e historial por tanque</div>
         {[...pctTanks, ...meterTanks].map(t => {
           const hist = [...(fuelHistory[t.id] || [])].reverse();
+          const unit = t.pct != null || t.item.u === "%" ? "%" : " gln";
+          const isEditing = editingId === t.id;
           return (
             <div key={t.id} className="border-b last:border-0 py-2" style={{ borderColor: C.line }}>
-              <button onClick={() => setExpanded(expanded === t.id ? null : t.id)} className="w-full flex items-center justify-between text-left">
-                <div className="text-sm font-medium" style={{ color: C.ink }}>
-                  {t.label} <span style={{ color: C.gray, fontWeight: 400 }}>· {(t.pct ?? t.value) != null ? `${t.pct ?? t.value}${t.pct != null ? "%" : " gln"}` : "sin lectura"}</span>
+              <div className="flex items-center justify-between gap-2">
+                <button onClick={() => setExpanded(expanded === t.id ? null : t.id)} className="flex-1 flex items-center justify-between text-left min-w-0">
+                  <div className="text-sm font-medium truncate" style={{ color: C.ink }}>
+                    {t.label} <span style={{ color: C.gray, fontWeight: 400 }}>· {(t.pct ?? t.value) != null ? `${t.pct ?? t.value}${unit}` : "sin lectura"}</span>
+                  </div>
+                  {expanded === t.id ? <ChevronDown size={16} style={{ color: C.gray }} className="shrink-0" /> : <ChevronRight size={16} style={{ color: C.gray }} className="shrink-0" />}
+                </button>
+                {!isEditing && (
+                  <button onClick={() => { setEditingId(t.id); setDraft(t.pct ?? t.value ?? ""); setSavedFlash(null); }}
+                    className="text-xs font-semibold px-2 py-1 rounded-md shrink-0" style={{ background: C.bg, color: C.inkSoft }}>
+                    Actualizar
+                  </button>
+                )}
+              </div>
+              {isEditing && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input type="number" value={draft} onChange={e => setDraft(e.target.value)} autoFocus
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none w-24" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <span className="text-xs" style={{ color: C.gray }}>{unit === "%" ? "%" : "galones"}</span>
+                  <Button size="sm" onClick={async () => {
+                    const num = Number(draft);
+                    if (draft === "" || isNaN(num) || num < 0 || (unit === "%" && num > 100)) return;
+                    await onManualUpdate(t.item, num);
+                    setEditingId(null);
+                    setSavedFlash(t.id);
+                    setTimeout(() => setSavedFlash(null), 2500);
+                  }}>Guardar</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
                 </div>
-                {expanded === t.id ? <ChevronDown size={16} style={{ color: C.gray }} /> : <ChevronRight size={16} style={{ color: C.gray }} />}
-              </button>
+              )}
+              {savedFlash === t.id && <div className="text-xs mt-1" style={{ color: C.green }}>✓ Actualizado — el técnico lo verá en su próxima ronda de este piso.</div>}
               {expanded === t.id && (
                 <div className="mt-2 pl-1">
                   {hist.length === 0 ? (
                     <div className="text-xs py-1" style={{ color: C.gray }}>Sin historial todavía.</div>
                   ) : hist.map((h, i) => (
                     <div key={i} className="text-xs py-1 border-b last:border-0" style={{ borderColor: C.line, color: C.ink }}>
-                      {h.value}{t.pct != null ? "%" : " gln"} <span style={{ color: C.gray }}>· {h.by} · {h.shift ? `${h.shift} · ` : ""}{fmtDT(h.at)}</span>
+                      {h.value}{unit} <span style={{ color: C.gray }}>· {h.by} · {h.shift ? `${h.shift} · ` : ""}{fmtDT(h.at)}{h.manual ? " · manual" : ""}</span>
                     </div>
                   ))}
                 </div>
@@ -8585,6 +8668,188 @@ function FuelTanksView({ latestValues, fuelHistory, onNavigate }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inventario de herramientas — distinto al de repuestos: las herramientas no se consumen, se
+ * prestan y se devuelven. Quién tiene qué prestado en este momento, para no perder herramientas
+ * caras (multímetro, taladro, etc.).
+ */
+function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onReturnTool }) {
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ nombre: "", categoria: "", nota: "" });
+  const [saving, setSaving] = useState(false);
+  const [lendingId, setLendingId] = useState(null);
+  const [lendTo, setLendTo] = useState("");
+  const [search, setSearch] = useState("");
+
+  const doCreate = async () => {
+    if (!form.nombre.trim()) return;
+    setSaving(true);
+    await onCreateTool(form);
+    setForm({ nombre: "", categoria: "", nota: "" });
+    setShowNew(false);
+    setSaving(false);
+  };
+
+  const filtered = tools.filter(t => !search.trim() || normalizeSearchText(t.nombre).includes(normalizeSearchText(search.trim())));
+  const prestadas = filtered.filter(t => t.estado === "prestada");
+  const disponibles = filtered.filter(t => t.estado !== "prestada");
+
+  const inputCls = "text-sm border rounded-md px-2 py-1.5 outline-none";
+  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Herramientas</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Quién tiene prestado qué ahora mismo — para no perder herramientas caras.</p>
+        </div>
+        {isAdmin && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva herramienta"}</Button>}
+      </div>
+
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar herramienta…" className={`${inputCls} w-full mb-4`} style={inputStyle} />
+
+      {showNew && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="grid sm:grid-cols-2 gap-2 mb-2">
+            <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre (ej: Multímetro Fluke)" className={inputCls} style={inputStyle} />
+            <input value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} placeholder="Categoría (opcional)" className={inputCls} style={inputStyle} />
+          </div>
+          <input value={form.nota} onChange={e => setForm(f => ({ ...f, nota: e.target.value }))} placeholder="Nota (opcional, ej: número de serie)" className={`${inputCls} w-full mb-2`} style={inputStyle} />
+          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear herramienta"}</Button>
+        </div>
+      )}
+
+      {prestadas.length > 0 && (
+        <>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Prestadas ahora ({prestadas.length})</div>
+          <div className="space-y-2 mb-4">
+            {prestadas.map(t => (
+              <div key={t.id} className="rounded-lg border p-3 flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.amber, background: C.amberSoft }}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Avatar name={accounts?.[t.prestadaA]?.display_name || t.prestadaA} size={28} />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate" style={{ color: C.ink }}>{t.nombre}</div>
+                    <div className="text-xs" style={{ color: "#7a5405" }}>Con {accounts?.[t.prestadaA]?.display_name || t.prestadaA} · desde {fmtDT(t.prestadaDesde)}</div>
+                  </div>
+                </div>
+                <Button size="sm" onClick={() => onReturnTool(t.id)}>Marcar devuelta</Button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Disponibles ({disponibles.length})</div>
+      {disponibles.length === 0 ? (
+        <p className="text-sm py-8 text-center" style={{ color: C.gray }}>Nada disponible — o no hay coincidencias con la búsqueda.</p>
+      ) : disponibles.map(t => (
+        <div key={t.id} className="rounded-lg border p-3 mb-2 flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="min-w-0">
+            <div className="text-sm font-medium" style={{ color: C.ink }}>{t.nombre}</div>
+            <div className="text-xs" style={{ color: C.gray }}>{t.categoria || "Sin categoría"}{t.nota ? ` · ${t.nota}` : ""}</div>
+          </div>
+          {lendingId === t.id ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={lendTo} onChange={e => setLendTo(e.target.value)} className={inputCls} style={inputStyle}>
+                <option value="">¿A quién?</option>
+                {Object.entries(accounts || {}).map(([uid, acc]) => <option key={uid} value={uid}>{acc.display_name || acc.email}</option>)}
+              </select>
+              <Button size="sm" disabled={!lendTo} onClick={() => { onLendTool(t.id, lendTo); setLendingId(null); setLendTo(""); }}>Confirmar</Button>
+              <Button size="sm" variant="ghost" onClick={() => setLendingId(null)}>Cancelar</Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setLendingId(t.id)}>Prestar</Button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Calibración de instrumentos de medición (manómetros, termómetros, multímetros, etc.) — avisa
+ * cuándo toca recalibrar según la última fecha registrada y la frecuencia esperada, con los
+ * mismos 3 niveles de urgencia que el resto de la app (al día / por vencer / vencido).
+ */
+function calibrationStatus(inst, now = new Date()) {
+  const last = new Date(inst.ultimaCalibracion);
+  const next = new Date(last);
+  next.setDate(next.getDate() + (inst.frecuenciaDias || 365));
+  const daysLeft = Math.floor((next - now) / 864e5);
+  if (daysLeft < 0) return { tone: "red", label: "Vencida", next, daysLeft };
+  if (daysLeft <= 30) return { tone: "amber", label: "Por vencer", next, daysLeft };
+  return { tone: "green", label: "Al día", next, daysLeft };
+}
+function CalibrationView({ instruments, isAdmin, onCreateInstrument, onMarkCalibrated }) {
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ nombre: "", tipo: "", frecuenciaDias: "365" });
+  const [saving, setSaving] = useState(false);
+
+  const doCreate = async () => {
+    if (!form.nombre.trim()) return;
+    setSaving(true);
+    await onCreateInstrument(form);
+    setForm({ nombre: "", tipo: "", frecuenciaDias: "365" });
+    setShowNew(false);
+    setSaving(false);
+  };
+
+  const now = new Date();
+  const withStatus = instruments.map(i => ({ ...i, status: calibrationStatus(i, now) }))
+    .sort((a, b) => a.status.daysLeft - b.status.daysLeft);
+  const vencidas = withStatus.filter(i => i.status.tone === "red").length;
+
+  const inputCls = "text-sm border rounded-md px-2 py-1.5 outline-none";
+  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Calibración de instrumentos</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Manómetros, termómetros, multímetros — cuándo tocó la última calibración y cuándo toca la próxima.</p>
+        </div>
+        {isAdmin && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nuevo instrumento"}</Button>}
+      </div>
+
+      {vencidas > 0 && (
+        <div className="rounded-lg p-3 mb-4" style={{ background: C.redSoft, border: `1px solid ${C.red}` }}>
+          <div className="text-sm font-semibold" style={{ color: C.red }}>⚠ {vencidas} instrumento{vencidas === 1 ? "" : "s"} con la calibración vencida</div>
+        </div>
+      )}
+
+      {showNew && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="grid sm:grid-cols-3 gap-2 mb-2">
+            <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre (ej: Manómetro #3)" className={inputCls} style={inputStyle} />
+            <input value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} placeholder="Tipo (opcional)" className={inputCls} style={inputStyle} />
+            <input type="number" value={form.frecuenciaDias} onChange={e => setForm(f => ({ ...f, frecuenciaDias: e.target.value }))} placeholder="Cada cuántos días" className={inputCls} style={inputStyle} />
+          </div>
+          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear instrumento"}</Button>
+        </div>
+      )}
+
+      {withStatus.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todavía no hay instrumentos registrados.</p>
+      ) : withStatus.map(inst => (
+        <div key={inst.id} className="rounded-lg border p-3 mb-2 flex items-center justify-between gap-2 flex-wrap"
+          style={{ borderColor: inst.status.tone === "red" ? C.red : C.line, background: inst.status.tone === "red" ? C.redSoft : C.panel }}>
+          <div className="min-w-0">
+            <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
+              {inst.nombre} <Badge tone={inst.status.tone}>{inst.status.label}</Badge>
+            </div>
+            <div className="text-xs" style={{ color: C.gray }}>
+              {inst.tipo || "Sin tipo"} · Última: {fmtDT(inst.ultimaCalibracion)} · Próxima: {fmtDT(inst.status.next.toISOString())}
+            </div>
+          </div>
+          <Button size="sm" onClick={() => onMarkCalibrated(inst.id)}>Marcar recién calibrado</Button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -11040,12 +11305,15 @@ function BackupButton() {
   );
 }
 
-function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, loginLog, currentUsername, aiUsageStats }) {
+function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
   const [waSaved, setWaSaved] = useState(false);
   const [resettingUser, setResettingUser] = useState(null);
+  const [transferringUser, setTransferringUser] = useState(null);
+  const [transferTo, setTransferTo] = useState("");
+  const [transferMsg, setTransferMsg] = useState(null);
   const [newPw, setNewPw] = useState("");
   const [resetMsg, setResetMsg] = useState("");
   const list = Object.entries(accounts).sort((a, b) => (a[1].created_at || "").localeCompare(b[1].created_at || ""));
@@ -11163,6 +11431,14 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
                 <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uid ? null : uid); setNewPw(""); setResetMsg(""); }}>
                   Restablecer contraseña
                 </Button>
+                {(() => {
+                  const openCount = (tasks || []).filter(t => t.asignadoA === uid && normalizeTaskState(t.estado) !== "finalizada").length;
+                  return openCount > 0 ? (
+                    <Button size="sm" variant="ghost" onClick={() => { setTransferringUser(transferringUser === uid ? null : uid); setTransferTo(""); setTransferMsg(null); }}>
+                      Traspasar {openCount} tarea{openCount === 1 ? "" : "s"}
+                    </Button>
+                  ) : null;
+                })()}
                 <Button size="sm" variant="ghost" disabled={acc.is_admin && adminCount === 1} onClick={() => onToggleAdmin(uid)}>
                   {acc.is_admin ? "Quitar admin" : "Hacer admin"}
                 </Button>
@@ -11184,6 +11460,27 @@ function AdminView({ accounts, reportEmail, reportWhatsapp, onSaveEmail, onSaveW
                 {resetMsg && <span className="text-xs" style={{ color: resetMsg.startsWith("✓") ? C.green : C.red }}>{resetMsg}</span>}
               </div>
             )}
+            {transferringUser === uid && (
+              <div className="mt-2 rounded-md p-2" style={{ background: C.bg }}>
+                <div className="text-xs mb-1.5" style={{ color: C.inkSoft }}>
+                  Pasa todas las tareas abiertas de {acc.display_name || acc.email} a otra persona (por ejemplo, si sale de vacaciones o cambia de turno fijo):
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select value={transferTo} onChange={e => setTransferTo(e.target.value)}
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                    <option value="">Elige a quién…</option>
+                    {list.filter(([u2]) => u2 !== uid).map(([u2, acc2]) => <option key={u2} value={u2}>{acc2.display_name || acc2.email}</option>)}
+                  </select>
+                  <Button size="sm" disabled={!transferTo} onClick={async () => {
+                    const count = await onTransferTasks(uid, transferTo);
+                    setTransferMsg({ uid, ok: true, text: `✓ Se pasaron ${count} tarea${count === 1 ? "" : "s"}.` });
+                    setTransferringUser(null);
+                  }}>Traspasar</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setTransferringUser(null)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+            {transferMsg?.uid === uid && transferringUser !== uid && <div className="text-xs mt-1" style={{ color: C.green }}>{transferMsg.text}</div>}
           </div>
         ))}
       </div>
@@ -11333,6 +11630,8 @@ export default function App() {
   const [latestValues, setLatestValues] = useState({});
   const [tankHistory, setTankHistory] = useState({});
   const [fuelHistory, setFuelHistory] = useState({});
+  const [tools, setTools] = useState([]);
+  const [calibrations, setCalibrations] = useState([]);
   const [latestColdValues, setLatestColdValues] = useState({});
   const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
   const [lastColdRound, setLastColdRound] = useState(null);
@@ -11398,7 +11697,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls, cal] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -11421,6 +11720,8 @@ export default function App() {
         sGet("changelog", true),
         sGet("general-edit-log", true),
         sGet("fuel-history", true),
+        sGet("tools", true),
+        sGet("calibrations", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -11459,9 +11760,16 @@ export default function App() {
       setTrash(trs || []);
       setLoginLog(llog || []);
       setScheduleEditLog(schLog || []);
-      setChangelogEntries(chgl && chgl.length ? chgl : DEFAULT_CHANGELOG_SEED);
+      // Fusiona las entradas "de fábrica" con las que ya haya guardadas — así, cada vez que se
+      // agreguen novedades nuevas al código, le llegan también a cuentas que ya tenían historial
+      // guardado (antes solo se usaba el seed si la lista estaba vacía del todo).
+      const existingIds = new Set((chgl || []).map(e => e.id));
+      const missingSeed = DEFAULT_CHANGELOG_SEED.filter(e => !existingIds.has(e.id));
+      setChangelogEntries([...missingSeed, ...(chgl || [])]);
       setGeneralEditLog(gel || []);
       setFuelHistory(fh || {});
+      setTools(tls || []);
+      setCalibrations(cal || []);
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);
@@ -11806,6 +12114,22 @@ export default function App() {
     await Promise.all([
       sSet("latest-values", newLatest, true),
       sSet("tank-history", newTankHist, true),
+    ]);
+  };
+
+  /** Actualiza manualmente un nivel de ACPM desde el módulo de Combustibles (sin esperar al
+   *  recorrido) — escribe exactamente en el mismo lugar que ya usa el recorrido (latestValues +
+   *  fuelHistory), así que el próximo técnico que revise ese piso ve este valor como "el de
+   *  antes" en su ronda, sin que nadie tenga que avisarle aparte. */
+  const saveFuelReading = async (item, value) => {
+    const ts = nowIso();
+    const newLatest = { ...latestValues, [item.id]: { value, updatedAt: ts, updatedBy: displayName, shift, code: item.c, name: item.n, floorName: item.floorName, manual: true } };
+    const arr = (fuelHistory[item.id] || []).concat([{ value, at: ts, by: displayName, shift, manual: true }]).slice(-30);
+    const newFuelHist = { ...fuelHistory, [item.id]: arr };
+    setLatestValues(newLatest); setFuelHistory(newFuelHist);
+    await Promise.all([
+      sSet("latest-values", newLatest, true),
+      sSet("fuel-history", newFuelHist, true),
     ]);
   };
 
@@ -12420,6 +12744,62 @@ export default function App() {
     }
   };
 
+  /** Pasa todas las tareas abiertas (no finalizadas) de una persona a otra de un jalón — por
+   *  ejemplo si alguien sale de vacaciones o cambia de turno fijo. Deja registro en la
+   *  cronología de cada tarea y en el historial de auditoría general. */
+  const transferTasks = async (fromUsername, toUsername) => {
+    const ts = nowIso();
+    const toMove = tasks.filter(t => t.asignadoA === fromUsername && normalizeTaskState(t.estado) !== "finalizada");
+    if (toMove.length === 0) return 0;
+    const next = tasks.map(t => {
+      if (t.asignadoA !== fromUsername || normalizeTaskState(t.estado) === "finalizada") return t;
+      return { ...t, asignadoA: toUsername, assignedAt: ts, updatedAt: ts, timeLog: [...(t.timeLog || []), { estado: normalizeTaskState(t.estado), at: ts, nota: "Traspasada a otra persona" }] };
+    });
+    setTasks(next);
+    await sSet("tasks", next, true);
+    logGeneralEdit({
+      kind: "tarea", action: "edicion", entityLabel: `${toMove.length} tarea${toMove.length === 1 ? "" : "s"}`,
+      field: "Asignado a", before: profiles[fromUsername]?.display_name || fromUsername, after: profiles[toUsername]?.display_name || toUsername,
+    });
+    return toMove.length;
+  };
+
+  /* ---- Herramientas (distinto a repuestos: se prestan y devuelven, no se consumen) ---- */
+  const createTool = async (form) => {
+    const rec = { id: uid("tool"), nombre: form.nombre.trim(), categoria: (form.categoria || "").trim(), nota: (form.nota || "").trim(), estado: "disponible", prestadaA: null, prestadaDesde: null, createdBy: displayName, createdAt: nowIso() };
+    const next = [...tools, rec];
+    setTools(next);
+    await sSet("tools", next, true);
+    return rec;
+  };
+
+  const lendTool = async (toolId, toUsername) => {
+    const next = tools.map(t => t.id === toolId ? { ...t, estado: "prestada", prestadaA: toUsername, prestadaDesde: nowIso() } : t);
+    setTools(next);
+    await sSet("tools", next, true);
+  };
+
+  const returnTool = async (toolId) => {
+    const next = tools.map(t => t.id === toolId ? { ...t, estado: "disponible", prestadaA: null, prestadaDesde: null } : t);
+    setTools(next);
+    await sSet("tools", next, true);
+  };
+
+  /* ---- Calibración de instrumentos de medición ---- */
+  const createCalibrationInstrument = async (form) => {
+    const rec = { id: uid("cal"), nombre: form.nombre.trim(), tipo: (form.tipo || "").trim(), frecuenciaDias: Number(form.frecuenciaDias) || 365, ultimaCalibracion: nowIso(), createdBy: displayName, createdAt: nowIso() };
+    const next = [...calibrations, rec];
+    setCalibrations(next);
+    await sSet("calibrations", next, true);
+    return rec;
+  };
+
+  const markCalibrated = async (id) => {
+    const next = calibrations.map(c => c.id === id ? { ...c, ultimaCalibracion: nowIso() } : c);
+    setCalibrations(next);
+    await sSet("calibrations", next, true);
+  };
+
   const deleteTask = async (id) => {
     const item = tasks.find(t => t.id === id);
     if (item) {
@@ -12926,6 +13306,8 @@ export default function App() {
         { id: "reports", label: "Reportes", icon: History },
         { id: "tanks", label: "Tanques agua potable", icon: Droplets },
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
+        { id: "tools", label: "Herramientas", icon: Wrench },
+        { id: "calibration", label: "Calibración de instrumentos", icon: Gauge },
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
       ],
     },
@@ -13170,6 +13552,7 @@ export default function App() {
               activeIssuesList={Object.values(activeIssues)}
               mttoWeekCount={mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length}
               tasksToday={tasks.filter(t => localDateIso(new Date(t.createdAt)) === localDateIso(new Date()) && (t.asignadoA === currentUser || t.createdBy === displayName))}
+              changelogEntries={changelogEntries}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, pendingAccounts: pendingAccountsCount }} />
           )}
           {view === "ronda" && (
@@ -13219,7 +13602,9 @@ export default function App() {
               sentReports={sentReports} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
-          {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onNavigate={setView} />}
+          {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
+          {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
+          {view === "calibration" && <CalibrationView instruments={calibrations} isAdmin={isAdmin} onCreateInstrument={createCalibrationInstrument} onMarkCalibrated={markCalibrated} />}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
@@ -13291,10 +13676,10 @@ export default function App() {
               onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (
-            <AdminView accounts={profiles} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
+            <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
               onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
-              onApproveAccount={approveAccount} onRejectAccount={rejectAccount} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />
+              onApproveAccount={approveAccount} onRejectAccount={rejectAccount} onTransferTasks={transferTasks} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />
           )}
           {view === "trash" && isAdmin && (
             <TrashView trash={trash} onRestore={restoreFromTrash} onPurge={purgeFromTrash} />

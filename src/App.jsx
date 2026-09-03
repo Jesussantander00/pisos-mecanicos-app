@@ -9120,6 +9120,19 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
         Exporta el reporte "Órdenes Pendientes" desde HotSOS (Excel) y súbelo aquí. Se convierten en tareas, cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide — las que no coincidan quedan sin asignar, para elegir a mano.
       </p>
 
+      <details className="mb-4 text-xs rounded-md border p-2" style={{ borderColor: C.line, color: C.inkSoft }}>
+        <summary className="cursor-pointer font-semibold" style={{ color: C.ink }}>
+          Ver cuentas disponibles para el cruce ({Object.keys(accounts || {}).length}) — útil si algo no está quedando asignado como debería
+        </summary>
+        <div className="mt-2 space-y-0.5">
+          {Object.keys(accounts || {}).length === 0 ? (
+            <div style={{ color: C.red }}>⚠ No llegó ninguna cuenta a esta pantalla — por eso nada se puede cruzar. Avísame si ves esto.</div>
+          ) : Object.entries(accounts).map(([uid, acc]) => (
+            <div key={uid}>· {acc.display_name || <span style={{ color: C.red }}>(sin nombre — cuenta {uid.slice(0, 8)})</span>}</div>
+          ))}
+        </div>
+      </details>
+
       <div className="rounded-lg border border-dashed p-6 text-center mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <input type="file" accept=".xlsx,.xls" id="hotsos-file-input" className="hidden" onChange={handleFile} />
         <label htmlFor="hotsos-file-input" className="cursor-pointer block">

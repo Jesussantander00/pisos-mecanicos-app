@@ -648,6 +648,17 @@ async function requestAiAssistant(question, contextSummary, history) {
   return resp.json();
 }
 
+/** Le pide a la IA un procedimiento paso a paso para una tarea específica en un equipo, usando
+ *  el historial real de ese equipo como referencia. Ver api/generate-procedure.js. */
+async function requestProcedure({ equipoNombre, sistema, tarea, historial }) {
+  const resp = await fetch("/api/generate-procedure", {
+    method: "POST",
+    headers: aiRequestHeaders(),
+    body: JSON.stringify({ equipoNombre, sistema, tarea, historial }),
+  });
+  return resp.json();
+}
+
 /**
  * Suma 1 al contador de uso de IA que corresponda (fotos de medidores leídas, horarios generados,
  * resúmenes semanales, notas de reorden) — solo para el panel de "Salud de la app" del admin, un
@@ -7855,7 +7866,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
     { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM y gas, calderas y planta eléctrica", access: true },
     { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true },
-    { id: "calibration", label: "Calibración de instrumentos", icon: Gauge, desc: "Manómetros, termómetros, multímetros", access: true },
+    { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA para procedimientos paso a paso", access: true },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
@@ -7882,7 +7893,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
   };
   const favModules = modules.filter(m => favorites.includes(m.id) && m.access);
   const searchNorm = normalizeSearchText(search.trim());
-  const visibleModules = searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules;
+  const visibleModules = (searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules).filter(m => m.access);
 
   const oldestIssue = activeIssuesList.length
     ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
@@ -8642,159 +8653,143 @@ const FUEL_TANK_TYPES = ["Diesel (ACPM)", "Gas propano", "Gasolina"];
  * de tarjetas, gráfica y detalle por equipo que Análisis de fallas.
  */
 function FuelTanksView({ latestValues, fuelHistory, onManualUpdate, onNavigate }) {
-  const [expanded, setExpanded] = useState(null);
-  const [editingId, setEditingId] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState("");
   const [savedFlash, setSavedFlash] = useState(null);
 
-  const pctTanks = FUEL_ITEMS.filter(it => it.u === "%").map(it => {
+  const pctData = FUEL_ITEMS.filter(it => it.u === "%").map(it => {
     const v = latestValues[it.id];
-    return {
-      id: it.id, item: it, label: `${it.n} (${it.floorName})`, pct: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
-      updatedAt: v?.updatedAt || null, updatedBy: v?.updatedBy || null,
-    };
+    const val = v && v.value !== "" && v.value !== undefined ? Number(v.value) : null;
+    return { id: it.id, item: it, name: it.n, floor: it.floorName, value: val, updatedAt: v?.updatedAt, updatedBy: v?.updatedBy };
   });
-  const meterTanks = FUEL_ITEMS.filter(it => it.u === "gln").map(it => {
+  const meterData = FUEL_ITEMS.filter(it => it.u === "gln").map(it => {
     const v = latestValues[it.id];
-    return {
-      id: it.id, item: it, label: `${it.n} (${it.floorName})`, value: v && v.value !== undefined && v.value !== "" ? Number(v.value) : null,
-      updatedAt: v?.updatedAt || null, updatedBy: v?.updatedBy || null,
-    };
+    const val = v && v.value !== "" && v.value !== undefined ? Number(v.value) : null;
+    return { id: it.id, item: it, name: it.n, floor: it.floorName, value: val, updatedAt: v?.updatedAt, updatedBy: v?.updatedBy };
   });
 
-  const readTanks = pctTanks.filter(t => t.pct != null);
-  const criticalTanks = readTanks.filter(t => t.pct <= 20);
-  const promedioPlanta = readTanks.length ? Math.round(readTanks.reduce((s, t) => s + t.pct, 0) / readTanks.length) : null;
-  const lowest = readTanks.length ? [...readTanks].sort((a, b) => a.pct - b.pct)[0] : null;
-  const totalLecturas = [...pctTanks, ...meterTanks].filter(t => (t.pct ?? t.value) != null).length;
+  const colorFor = (v) => v === null ? C.gray : v < 20 ? C.red : v < 50 ? C.amber : C.green;
 
-  const barData = readTanks.sort((a, b) => a.pct - b.pct);
+  const startEdit = (d) => { setEditing(d.id); setDraft(d.value === null ? "" : String(d.value)); setSavedFlash(null); };
+  const doSave = async (d, isPct) => {
+    const num = Number(draft);
+    if (draft === "" || isNaN(num) || num < 0 || (isPct && num > 100)) return;
+    await onManualUpdate(d.item, num);
+    setEditing(null);
+    setSavedFlash(d.id);
+    setTimeout(() => setSavedFlash(null), 2500);
+  };
+
+  const readPct = pctData.filter(d => d.value !== null);
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Combustibles y gas</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
-        Nivel de ACPM en plantas eléctricas y calderas — tomado directamente de las lecturas del recorrido diario de cada piso.
+        Nivel de ACPM en plantas eléctricas y calderas. Se alimenta de los valores capturados en cada ronda, pero
+        también puedes actualizar cualquiera manualmente aquí mismo — el técnico lo verá como valor anterior en su
+        próxima ronda de ese piso, igual que con los tanques de agua potable.
       </p>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard label="Tanques en nivel crítico" value={criticalTanks.length} valueColor={criticalTanks.length ? C.red : C.ink}
-          leading={
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: criticalTanks.length ? C.redSoft : C.greenSoft }}>
-              {criticalTanks.length ? <AlertTriangle size={18} color={C.red} /> : <CheckCircle2 size={18} color={C.green} />}
-            </div>
-          } />
-        <StatCard label="Nivel promedio de planta" value={promedioPlanta != null ? `${promedioPlanta}%` : "—"} valueColor={promedioPlanta != null && promedioPlanta <= 20 ? C.red : C.ink}
-          leading={promedioPlanta != null ? <MiniGauge value={promedioPlanta} max={100} size={40} stroke={5} color={promedioPlanta <= 20 ? C.red : promedioPlanta <= 35 ? C.amber : C.green} /> : null} />
-        <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Tanque con menor nivel</div>
-          <div className="flex items-center gap-3 mt-2">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Gauge size={18} color={C.amber} /></div>
-            <div className="text-sm font-bold leading-tight" style={{ color: C.ink }}>{lowest ? `${lowest.label} · ${lowest.pct}%` : "Sin lecturas"}</div>
-          </div>
-        </div>
-        <StatCard label="Lecturas registradas" value={totalLecturas}
-          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><ClipboardCheck size={18} color={C.blue} /></div>} />
-      </div>
-
-      {readTanks.length === 0 ? (
-        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
-          Todavía no hay lecturas de ACPM registradas. Se llenan solas cuando alguien marca esos ítems durante el recorrido de un piso.
-        </p>
-      ) : (
-        <>
-          <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-            <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Nivel actual por tanque</div>
-            <HorizontalBarChart data={barData} labelKey="label" valueKey="pct" max={100}
-              colorFor={t => t.pct <= 20 ? C.red : t.pct <= 35 ? C.amber : C.green} gradient formatValue={v => `${v}%`} />
-          </div>
-
-          {criticalTanks.length > 0 && (
-            <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
-              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.red }}>⚠ Reabastecer pronto — por debajo del 20%</div>
-              {criticalTanks.map(t => (
-                <div key={t.id} className="text-xs py-1" style={{ color: "#7a1030" }}>
-                  <b>{t.label}</b> — {t.pct}% · última lectura {t.updatedAt ? fmtDT(t.updatedAt) : "—"}
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {meterTanks.some(t => t.value != null) && (
-        <div className="rounded-xl border p-5 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Medidores de ACPM (galones)</div>
-          <div className="text-xs mb-3" style={{ color: C.gray }}>Estos son lecturas de medidor acumuladas, no un % de llenado — la tendencia muestra cómo ha subido el consumo con el tiempo.</div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {meterTanks.filter(t => t.value != null).map(t => {
-              const hist = (fuelHistory[t.id] || []).slice(-12).map(h => ({ t: fmtDT(h.at).slice(0, 11), v: Number(h.value) }));
-              return (
-                <div key={t.id} className="rounded-lg border p-3" style={{ borderColor: C.line }}>
-                  <div className="text-xs font-medium mb-0.5" style={{ color: C.ink }}>{t.label}</div>
-                  <div className="text-lg font-bold" style={{ color: C.ink }}>{t.value.toLocaleString("es-CO")} <span className="text-xs font-normal" style={{ color: C.gray }}>gln</span></div>
-                  {hist.length > 1 ? <Sparkline points={hist} height={40} color={C.blue} /> : <div className="text-xs py-2" style={{ color: C.gray }}>Sin histórico suficiente todavía</div>}
-                </div>
-              );
-            })}
+      {readPct.length > 0 && (
+        <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <VerticalBarChart data={pctData} labelKey="name" valueKey="value" colorFor={colorFor} formatValue={v => `${v}%`} />
+          <div className="flex items-center gap-4 justify-center mt-2 text-xs flex-wrap" style={{ color: C.inkSoft }}>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.green }} /> ≥ 50%</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.amber }} /> 20–49%</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.red }} /> &lt; 20%</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.gray }} /> Sin datos</span>
           </div>
         </div>
       )}
 
-      <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Detalle e historial por tanque</div>
-        {[...pctTanks, ...meterTanks].map(t => {
-          const hist = [...(fuelHistory[t.id] || [])].reverse();
-          const unit = t.pct != null || t.item.u === "%" ? "%" : " gln";
-          const isEditing = editingId === t.id;
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        {pctData.map(d => {
+          const hist = (fuelHistory[d.id] || []).slice(-12).map(h => ({ t: fmtDT(h.at).slice(0, 11), v: Number(h.value) }));
           return (
-            <div key={t.id} className="border-b last:border-0 py-2" style={{ borderColor: C.line }}>
-              <div className="flex items-center justify-between gap-2">
-                <button onClick={() => setExpanded(expanded === t.id ? null : t.id)} className="flex-1 flex items-center justify-between text-left min-w-0">
-                  <div className="text-sm font-medium truncate" style={{ color: C.ink }}>
-                    {t.label} <span style={{ color: C.gray, fontWeight: 400 }}>· {(t.pct ?? t.value) != null ? `${t.pct ?? t.value}${unit}` : "sin lectura"}</span>
-                  </div>
-                  {expanded === t.id ? <ChevronDown size={16} style={{ color: C.gray }} className="shrink-0" /> : <ChevronRight size={16} style={{ color: C.gray }} className="shrink-0" />}
-                </button>
-                {!isEditing && (
-                  <button onClick={() => { setEditingId(t.id); setDraft(t.pct ?? t.value ?? ""); setSavedFlash(null); }}
-                    className="text-xs font-semibold px-2 py-1 rounded-md shrink-0" style={{ background: C.bg, color: C.inkSoft }}>
-                    Actualizar
-                  </button>
-                )}
+            <div key={d.id} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <div className="flex items-center justify-between mb-1">
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: C.ink }}>{d.name}</div>
+                  <div className="text-xs" style={{ color: C.gray }}>{d.floor}</div>
+                </div>
+                <div className="text-lg font-bold" style={{ color: colorFor(d.value) }}>{d.value === null ? "—" : `${d.value}%`}</div>
               </div>
-              {isEditing && (
-                <div className="flex items-center gap-2 mt-2">
-                  <input type="number" value={draft} onChange={e => setDraft(e.target.value)} autoFocus
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none w-24" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                  <span className="text-xs" style={{ color: C.gray }}>{unit === "%" ? "%" : "galones"}</span>
-                  <Button size="sm" onClick={async () => {
-                    const num = Number(draft);
-                    if (draft === "" || isNaN(num) || num < 0 || (unit === "%" && num > 100)) return;
-                    await onManualUpdate(t.item, num);
-                    setEditingId(null);
-                    setSavedFlash(t.id);
-                    setTimeout(() => setSavedFlash(null), 2500);
-                  }}>Guardar</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
+
+              {editing === d.id ? (
+                <div className="flex items-center gap-2 my-2">
+                  <input type="number" min={0} max={100} autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") doSave(d, true); if (e.key === "Escape") setEditing(null); }}
+                    placeholder="0-100" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <span className="text-xs" style={{ color: C.gray }}>%</span>
+                  <Button size="sm" onClick={() => doSave(d, true)}>Guardar</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
+                </div>
+              ) : (
+                <div className="my-2">
+                  <Button size="sm" variant="ghost" onClick={() => startEdit(d)}>Actualizar nivel manualmente</Button>
+                  {savedFlash === d.id && <span className="text-xs ml-2" style={{ color: C.green }}>✓ Guardado</span>}
                 </div>
               )}
-              {savedFlash === t.id && <div className="text-xs mt-1" style={{ color: C.green }}>✓ Actualizado — el técnico lo verá en su próxima ronda de este piso.</div>}
-              {expanded === t.id && (
-                <div className="mt-2 pl-1">
-                  {hist.length === 0 ? (
-                    <div className="text-xs py-1" style={{ color: C.gray }}>Sin historial todavía.</div>
-                  ) : hist.map((h, i) => (
-                    <div key={i} className="text-xs py-1 border-b last:border-0" style={{ borderColor: C.line, color: C.ink }}>
-                      {h.value}{unit} <span style={{ color: C.gray }}>· {h.by} · {h.shift ? `${h.shift} · ` : ""}{fmtDT(h.at)}{h.manual ? " · manual" : ""}</span>
-                    </div>
-                  ))}
+
+              {hist.length > 1 ? (
+                <div style={{ width: "100%", height: 70 }}>
+                  <Sparkline points={hist} />
                 </div>
-              )}
+              ) : <div className="text-xs py-4 text-center" style={{ color: C.gray }}>Sin histórico suficiente</div>}
+              <div className="text-xs mt-1" style={{ color: C.gray }}>
+                {d.updatedAt ? `Últ. registro: ${fmtDT(d.updatedAt)} · ${d.updatedBy}` : "Sin registros aún"}
+              </div>
             </div>
           );
         })}
       </div>
+
+      {meterData.some(d => d.value !== null) && (
+        <>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Medidores de ACPM (galones acumulados, no % de llenado)</div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {meterData.map(d => {
+              const hist = (fuelHistory[d.id] || []).slice(-12).map(h => ({ t: fmtDT(h.at).slice(0, 11), v: Number(h.value) }));
+              return (
+                <div key={d.id} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: C.ink }}>{d.name}</div>
+                      <div className="text-xs" style={{ color: C.gray }}>{d.floor}</div>
+                    </div>
+                    <div className="text-lg font-bold" style={{ color: C.ink }}>{d.value === null ? "—" : d.value.toLocaleString("es-CO")} <span className="text-xs font-normal" style={{ color: C.gray }}>gln</span></div>
+                  </div>
+
+                  {editing === d.id ? (
+                    <div className="flex items-center gap-2 my-2">
+                      <input type="number" min={0} autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") doSave(d, false); if (e.key === "Escape") setEditing(null); }}
+                        placeholder="galones" className="w-28 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                      <Button size="sm" onClick={() => doSave(d, false)}>Guardar</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
+                    </div>
+                  ) : (
+                    <div className="my-2">
+                      <Button size="sm" variant="ghost" onClick={() => startEdit(d)}>Actualizar lectura manualmente</Button>
+                      {savedFlash === d.id && <span className="text-xs ml-2" style={{ color: C.green }}>✓ Guardado</span>}
+                    </div>
+                  )}
+
+                  {hist.length > 1 ? (
+                    <div style={{ width: "100%", height: 70 }}>
+                      <Sparkline points={hist} />
+                    </div>
+                  ) : <div className="text-xs py-4 text-center" style={{ color: C.gray }}>Sin histórico suficiente</div>}
+                  <div className="text-xs mt-1" style={{ color: C.gray }}>
+                    {d.updatedAt ? `Últ. registro: ${fmtDT(d.updatedAt)} · ${d.updatedBy}` : "Sin registros aún"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -8899,87 +8894,93 @@ function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onRetur
 }
 
 /**
- * Calibración de instrumentos de medición (manómetros, termómetros, multímetros, etc.) — avisa
- * cuándo toca recalibrar según la última fecha registrada y la frecuencia esperada, con los
- * mismos 3 niveles de urgencia que el resto de la app (al día / por vencer / vencido).
+ * Copiloto de Procedimientos: eliges un equipo, describes qué necesitas hacer, y la IA arma un
+ * procedimiento paso a paso — apoyándose en el historial real de ese equipo (qué se le ha hecho
+ * antes, qué piezas se le han cambiado), no en un manual genérico de internet.
  */
-function calibrationStatus(inst, now = new Date()) {
-  const last = new Date(inst.ultimaCalibracion);
-  const next = new Date(last);
-  next.setDate(next.getDate() + (inst.frecuenciaDias || 365));
-  const daysLeft = Math.floor((next - now) / 864e5);
-  if (daysLeft < 0) return { tone: "red", label: "Vencida", next, daysLeft };
-  if (daysLeft <= 30) return { tone: "amber", label: "Por vencer", next, daysLeft };
-  return { tone: "green", label: "Al día", next, daysLeft };
-}
-function CalibrationView({ instruments, isAdmin, onCreateInstrument, onMarkCalibrated }) {
-  const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ nombre: "", tipo: "", frecuenciaDias: "365" });
-  const [saving, setSaving] = useState(false);
+function ProcedureCopilotView({ equipos, mttoLog }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [task, setTask] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
 
-  const doCreate = async () => {
-    if (!form.nombre.trim()) return;
-    setSaving(true);
-    await onCreateInstrument(form);
-    setForm({ nombre: "", tipo: "", frecuenciaDias: "365" });
-    setShowNew(false);
-    setSaving(false);
+  const activeEquipos = equipos.filter(e => e.active !== false);
+  const matches = search.trim() && !selectedId
+    ? activeEquipos.filter(e => normalizeSearchText(e.nombre).includes(normalizeSearchText(search.trim()))).slice(0, 8)
+    : [];
+  const selected = activeEquipos.find(e => e.id === selectedId);
+
+  const doGenerate = async () => {
+    if (!selected || !task.trim()) return;
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const historial = mttoLog.filter(r => r.equipoId === selected.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 8)
+        .map(r => `${r.tipo === "preventivo" ? "Preventivo" : "Correctivo"} (${fmtDT(r.fecha)}): ${r.descripcion || "sin descripción"}`);
+      const res = await requestProcedure({ equipoNombre: selected.nombre, sistema: selected.sistema, tarea: task.trim(), historial });
+      if (res.procedure) { setResult(res.procedure); bumpAiUsage("procedureRequests"); }
+      else setError(res.message || "No se pudo generar el procedimiento.");
+    } catch {
+      setError("No me pude conectar. Revisa tu conexión e intenta de nuevo.");
+    }
+    setLoading(false);
   };
-
-  const now = new Date();
-  const withStatus = instruments.map(i => ({ ...i, status: calibrationStatus(i, now) }))
-    .sort((a, b) => a.status.daysLeft - b.status.daysLeft);
-  const vencidas = withStatus.filter(i => i.status.tone === "red").length;
 
   const inputCls = "text-sm border rounded-md px-2 py-1.5 outline-none";
   const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Calibración de instrumentos</h2>
-          <p className="text-sm" style={{ color: C.inkSoft }}>Manómetros, termómetros, multímetros — cuándo tocó la última calibración y cuándo toca la próxima.</p>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Procedimientos</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Describe qué necesitas hacer con un equipo, y la IA arma un procedimiento paso a paso — apoyándose en el historial real de ese equipo.
+      </p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Equipo</div>
+        <div className="relative mb-2">
+          {selected ? (
+            <div className="flex items-center justify-between text-sm border rounded-md px-2 py-1.5" style={{ borderColor: C.line, background: C.bg, color: C.ink }}>
+              <span>{selected.nombre} <span style={{ color: C.gray }}>· {selected.sistema}</span></span>
+              <button onClick={() => { setSelectedId(""); setSearch(""); }} className="text-xs font-semibold" style={{ color: C.amber }}>Cambiar</button>
+            </div>
+          ) : (
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar equipo…" className={`${inputCls} w-full`} style={inputStyle} />
+          )}
+          {matches.length > 0 && (
+            <div className="rounded-md border mt-1 overflow-hidden" style={{ borderColor: C.line }}>
+              {matches.map(eq => (
+                <button key={eq.id} onClick={() => { setSelectedId(eq.id); setSearch(""); }}
+                  className="block w-full text-left text-xs px-2 py-1.5" style={{ color: C.ink, background: C.panel }}>
+                  {eq.nombre} <span style={{ color: C.gray }}>· {eq.sistema}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        {isAdmin && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nuevo instrumento"}</Button>}
+        <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>¿Qué necesitas hacer?</div>
+        <textarea value={task} onChange={e => setTask(e.target.value)} rows={2} placeholder="Ej: destapar la válvula de drenaje, cambiar el filtro, revisar por qué hace ruido…"
+          className={`${inputCls} w-full resize-y mb-2`} style={inputStyle} />
+        <Button icon={Sparkles} disabled={!selected || !task.trim() || loading} onClick={doGenerate}>
+          {loading ? "Generando…" : "Generar procedimiento"}
+        </Button>
+        {error && <div className="text-xs mt-2" style={{ color: C.red }}>{error}</div>}
       </div>
 
-      {vencidas > 0 && (
-        <div className="rounded-lg p-3 mb-4" style={{ background: C.redSoft, border: `1px solid ${C.red}` }}>
-          <div className="text-sm font-semibold" style={{ color: C.red }}>⚠ {vencidas} instrumento{vencidas === 1 ? "" : "s"} con la calibración vencida</div>
+      {result && (
+        <div className="rounded-lg border p-4" style={{ borderColor: C.blue, background: "#f5f9ff" }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: "#1a4f8a" }}>
+            <Sparkles size={13} /> Procedimiento sugerido — {selected?.nombre}
+          </div>
+          <div className="text-sm whitespace-pre-wrap" style={{ color: C.ink, lineHeight: 1.6 }}>{result}</div>
+          <div className="text-xs mt-3" style={{ color: C.gray }}>Generado por IA a partir del historial de este equipo — revísalo con criterio antes de aplicarlo.</div>
         </div>
       )}
-
-      {showNew && (
-        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
-          <div className="grid sm:grid-cols-3 gap-2 mb-2">
-            <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre (ej: Manómetro #3)" className={inputCls} style={inputStyle} />
-            <input value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} placeholder="Tipo (opcional)" className={inputCls} style={inputStyle} />
-            <input type="number" value={form.frecuenciaDias} onChange={e => setForm(f => ({ ...f, frecuenciaDias: e.target.value }))} placeholder="Cada cuántos días" className={inputCls} style={inputStyle} />
-          </div>
-          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear instrumento"}</Button>
-        </div>
-      )}
-
-      {withStatus.length === 0 ? (
-        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todavía no hay instrumentos registrados.</p>
-      ) : withStatus.map(inst => (
-        <div key={inst.id} className="rounded-lg border p-3 mb-2 flex items-center justify-between gap-2 flex-wrap"
-          style={{ borderColor: inst.status.tone === "red" ? C.red : C.line, background: inst.status.tone === "red" ? C.redSoft : C.panel }}>
-          <div className="min-w-0">
-            <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
-              {inst.nombre} <Badge tone={inst.status.tone}>{inst.status.label}</Badge>
-            </div>
-            <div className="text-xs" style={{ color: C.gray }}>
-              {inst.tipo || "Sin tipo"} · Última: {fmtDT(inst.ultimaCalibracion)} · Próxima: {fmtDT(inst.status.next.toISOString())}
-            </div>
-          </div>
-          <Button size="sm" onClick={() => onMarkCalibrated(inst.id)}>Marcar recién calibrado</Button>
-        </div>
-      ))}
     </div>
   );
 }
+
 
 /* ============================================================
    INFORME (texto) + IMPRESIÓN A PDF + ENVÍO POR CORREO
@@ -11758,7 +11759,6 @@ export default function App() {
   const [tankHistory, setTankHistory] = useState({});
   const [fuelHistory, setFuelHistory] = useState({});
   const [tools, setTools] = useState([]);
-  const [calibrations, setCalibrations] = useState([]);
   const [latestColdValues, setLatestColdValues] = useState({});
   const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
   const [lastColdRound, setLastColdRound] = useState(null);
@@ -11824,7 +11824,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls, cal] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -11848,7 +11848,6 @@ export default function App() {
         sGet("general-edit-log", true),
         sGet("fuel-history", true),
         sGet("tools", true),
-        sGet("calibrations", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -11896,7 +11895,6 @@ export default function App() {
       setGeneralEditLog(gel || []);
       setFuelHistory(fh || {});
       setTools(tls || []);
-      setCalibrations(cal || []);
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);
@@ -12912,21 +12910,6 @@ export default function App() {
     await sSet("tools", next, true);
   };
 
-  /* ---- Calibración de instrumentos de medición ---- */
-  const createCalibrationInstrument = async (form) => {
-    const rec = { id: uid("cal"), nombre: form.nombre.trim(), tipo: (form.tipo || "").trim(), frecuenciaDias: Number(form.frecuenciaDias) || 365, ultimaCalibracion: nowIso(), createdBy: displayName, createdAt: nowIso() };
-    const next = [...calibrations, rec];
-    setCalibrations(next);
-    await sSet("calibrations", next, true);
-    return rec;
-  };
-
-  const markCalibrated = async (id) => {
-    const next = calibrations.map(c => c.id === id ? { ...c, ultimaCalibracion: nowIso() } : c);
-    setCalibrations(next);
-    await sSet("calibrations", next, true);
-  };
-
   const deleteTask = async (id) => {
     const item = tasks.find(t => t.id === id);
     if (item) {
@@ -13438,7 +13421,7 @@ export default function App() {
         { id: "tanks", label: "Tanques agua potable", icon: Droplets },
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
         { id: "tools", label: "Herramientas", icon: Wrench },
-        { id: "calibration", label: "Calibración de instrumentos", icon: Gauge },
+        { id: "procedures", label: "Procedimientos", icon: Sparkles },
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
       ],
     },
@@ -13736,7 +13719,7 @@ export default function App() {
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
           {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
           {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
-          {view === "calibration" && <CalibrationView instruments={calibrations} isAdmin={isAdmin} onCreateInstrument={createCalibrationInstrument} onMarkCalibrated={markCalibrated} />}
+          {view === "procedures" && <ProcedureCopilotView equipos={mttoEquipos} mttoLog={mttoLog} />}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

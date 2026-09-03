@@ -636,6 +636,18 @@ async function requestReorderNotes({ items }) {
   return resp.json();
 }
 
+/** Le pregunta algo en español simple al asistente de IA, mandándole un resumen compacto de los
+ *  datos actuales de la app (no la base de datos completa) para que responda con información
+ *  real, no genérica. Ver api/ai-assistant.js. */
+async function requestAiAssistant(question, contextSummary, history) {
+  const resp = await fetch("/api/ai-assistant", {
+    method: "POST",
+    headers: aiRequestHeaders(),
+    body: JSON.stringify({ question, contextSummary, history }),
+  });
+  return resp.json();
+}
+
 /**
  * Suma 1 al contador de uso de IA que corresponda (fotos de medidores leídas, horarios generados,
  * resúmenes semanales, notas de reorden) — solo para el panel de "Salud de la app" del admin, un
@@ -930,6 +942,45 @@ function computeMaintenanceSuggestions(equipos, mttoLog, mttoCronograma, now = n
     };
   });
   return results.filter(r => r.overdueDays > 0).sort((a, b) => b.overdueDays - a.overdueDays);
+}
+
+/**
+ * Arma un resumen compacto (texto plano, no la base de datos completa) con lo más importante de
+ * la operación ahora mismo — esto es lo que se le manda a la IA junto con la pregunta, para que
+ * responda con datos reales de este hotel y no con información genérica.
+ */
+function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical }) {
+  const L = [];
+  L.push(`Fecha y hora actual: ${fmtDT(nowIso())}`);
+
+  const equiposActivos = (equipos || []).filter(e => e.active !== false);
+  L.push(`Equipos de mantenimiento activos: ${equiposActivos.length}`);
+
+  const outOfService = Object.values(activeIssues || {});
+  L.push(`Equipos fuera de servicio ahora mismo: ${outOfService.length}`);
+  outOfService.slice(0, 12).forEach(iss => L.push(`  - ${iss.name} (${iss.floorName || "sin piso"}), fuera de servicio desde ${fmtDT(iss.openedAt)}`));
+
+  const openTasks = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada");
+  L.push(`Tareas abiertas (sin contar las ya finalizadas): ${openTasks.length}`);
+  openTasks.slice(0, 15).forEach(t => L.push(`  - "${t.titulo}" — prioridad ${t.prioridad}, estado ${normalizeTaskState(t.estado)}, asignada a ${t.asignadoA || "nadie todavía"}`));
+
+  const lowStock = computeLowStock(invItems || []);
+  L.push(`Repuestos con stock bajo o crítico: ${lowStock.length}`);
+  lowStock.slice(0, 12).forEach(it => L.push(`  - ${it.name}: quedan ${it.quantity} ${it.unit} (mínimo ${it.minThreshold})`));
+
+  if (fuelTanksCritical && fuelTanksCritical.length) {
+    L.push(`Tanques de combustible (ACPM) en nivel crítico: ${fuelTanksCritical.length}`);
+    fuelTanksCritical.forEach(t => L.push(`  - ${t.nombre}: ${t.pct}%`));
+  }
+
+  const suggestions = computeMaintenanceSuggestions(equipos, mttoLog, mttoCronograma);
+  L.push(`Equipos atrasados según su cronograma de mantenimiento (comparando el último mantenimiento real contra la frecuencia programada): ${suggestions.length}`);
+  suggestions.slice(0, 15).forEach(s => L.push(`  - ${s.equipo.nombre} (${s.equipo.sistema}): ${s.nuncaIntervenido ? "nunca se le ha registrado mantenimiento" : `${s.diasSinIntervencion} días sin intervención`}, ${s.overdueDays} días atrasado respecto a lo esperado`));
+
+  const mtto30 = (mttoLog || []).filter(m => hoursBetween(m.fecha, nowIso()) / 24 <= 30);
+  L.push(`Mantenimientos registrados en los últimos 30 días: ${mtto30.length} (${mtto30.filter(m => m.tipo === "preventivo").length} preventivos, ${mtto30.filter(m => m.tipo === "correctivo").length} correctivos)`);
+
+  return L.join("\n");
 }
 
 /* ============================================================
@@ -7013,6 +7064,82 @@ function computeStaleIssues(activeIssues, thresholdDays = 15) {
  * internet, ámbar "Guardando localmente" cuando no — para que quede claro que lo que se registre
  * ahora se sube solo apenas vuelva la señal, sin que nadie se quede con la duda.
  */
+/**
+ * Asistente conversacional con IA: un botón flotante que abre un chat donde cualquiera pregunta
+ * algo en español simple sobre la operación ("¿qué equipos llevan más de 60 días sin
+ * mantenimiento?") y la IA responde usando los datos reales de este hotel (ver
+ * buildAiContextSummary), no información genérica.
+ */
+function AiAssistantWidget({ contextSummary }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([]); // [{ role: "user" | "assistant", text }]
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, open, sending]);
+
+  const send = async () => {
+    const q = input.trim();
+    if (!q || sending) return;
+    setInput("");
+    const nextMessages = [...messages, { role: "user", text: q }];
+    setMessages(nextMessages);
+    setSending(true);
+    try {
+      const history = messages.slice(-6).map(m => `${m.role === "user" ? "Persona" : "Asistente"}: ${m.text}`).join("\n");
+      const res = await requestAiAssistant(q, contextSummary, history);
+      setMessages(m => [...m, { role: "assistant", text: res.answer || res.message || "No pude responder eso — intenta preguntarlo de otra forma." }]);
+      bumpAiUsage("assistantQueries");
+    } catch {
+      setMessages(m => [...m, { role: "assistant", text: "No me pude conectar. Revisa tu conexión e intenta de nuevo." }]);
+    }
+    setSending(false);
+  };
+
+  return (
+    <>
+      <button onClick={() => setOpen(v => !v)} title="Pregúntale a la IA sobre la operación del hotel"
+        className="fixed bottom-5 right-5 rounded-full shadow-lg flex items-center justify-center"
+        style={{ width: 52, height: 52, background: C.steelDark, color: "#fff", zIndex: 45 }}>
+        {open ? <X size={22} /> : <Sparkles size={22} />}
+      </button>
+      {open && (
+        <div className="fixed bottom-20 right-3 left-3 sm:left-auto sm:w-96 rounded-xl border shadow-2xl flex flex-col"
+          style={{ height: "62vh", maxHeight: 520, background: C.panel, borderColor: C.line, zIndex: 45 }}>
+          <div className="flex items-center justify-between p-3 border-b shrink-0" style={{ borderColor: C.line }}>
+            <div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: C.ink }}>
+              <Sparkles size={15} color={C.amber} /> Pregúntale a la app
+            </div>
+            <button onClick={() => setOpen(false)}><X size={16} color={C.gray} /></button>
+          </div>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+            {messages.length === 0 && (
+              <div className="text-xs rounded-lg p-2.5" style={{ background: C.bg, color: C.inkSoft }}>
+                Prueba con algo como: <i>"¿qué equipos llevan más de 60 días sin mantenimiento?"</i>, <i>"¿cuántas tareas abiertas hay?"</i>, o <i>"¿qué repuestos están bajos?"</i> — respondo con los datos reales de tu app ahora mismo.
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className="text-sm rounded-lg px-3 py-2 max-w-[85%]"
+                style={{ background: m.role === "user" ? C.steelDark : C.bg, color: m.role === "user" ? "#fff" : C.ink, marginLeft: m.role === "user" ? "auto" : 0 }}>
+                {m.text}
+              </div>
+            ))}
+            {sending && <div className="text-xs" style={{ color: C.gray }}>Pensando…</div>}
+          </div>
+          <div className="p-2 border-t flex items-center gap-1.5 shrink-0" style={{ borderColor: C.line }}>
+            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} placeholder="Escribe tu pregunta…"
+              className="flex-1 text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }} />
+            <Button size="sm" disabled={sending || !input.trim()} onClick={send}>Enviar</Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function NetworkStatusIndicator() {
   const [online, setOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
@@ -13190,6 +13317,10 @@ export default function App() {
     }).filter(t => t && t.pct <= 20);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestValues]);
+  const aiContextSummary = useMemo(
+    () => buildAiContextSummary({ equipos: mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical: criticalFuelTanks }),
+    [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks]
+  );
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
@@ -13353,6 +13484,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
+      {(isAdmin || isGerencia) && account?.approved && <AiAssistantWidget contextSummary={aiContextSummary} />}
       {showQrScanner && (
         <QrScannerView
           onClose={() => setShowQrScanner(false)}

@@ -6329,7 +6329,8 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
   );
 }
 
-function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onImportExcel, onApplyAiDraft, reportEmail, onLogSent }) {
+function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, canManageSchedule, currentUser, onCreateEmployee, onUpdateEmployee, onDeleteEmployee, onSetScheduleEntry, onImportJuly, onImportAugust, onImportExcel, onApplyAiDraft, reportEmail, onLogSent }) {
+  const canEdit = isAdmin || canManageSchedule; // puede editar turnos día a día — distinto de isAdmin (que además gestiona empleados, importa en bloque y genera con IA)
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showManage, setShowManage] = useState(false);
   const [showEditLog, setShowEditLog] = useState(false);
@@ -6704,7 +6705,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
         </div>
       )}
 
-      {!isAdmin && (
+      {!canEdit && (
         <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.blueSoft, color: "#274c6e" }}>
           Solo puedes ver el horario. Si necesitas un cambio, pídeselo a un administrador.
         </div>
@@ -6842,7 +6843,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
         </Button>
       </div>
 
-      {isAdmin && editingCell && (
+      {canEdit && editingCell && (
         <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.amber, background: C.amberSoft }}>
           <div className="text-sm font-semibold mb-2" style={{ color: "#7a5405" }}>
             {activeEmployees.find(e => e.id === editingCell.employeeId)?.name} — {fmtDayFull(new Date(editingCell.dateIso + "T00:00:00"))}
@@ -6983,7 +6984,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
                             background: isDraftCell ? "#fdf0da" : (colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : "transparent")),
                             boxShadow: isDraftCell ? `inset 0 0 0 1px ${C.amber}` : "none",
                           }}>
-                            {isAdmin ? (
+                            {canEdit ? (
                               <button onClick={() => openCell(emp.id, d)} className="w-full text-xs py-1" style={{ color: colors?.fg || C.ink }}>
                                 {fmtEntryShort(entry) || "·"}{isDraftCell && <Sparkles size={9} style={{ display: "inline", marginLeft: 2, verticalAlign: "1px", color: "#8a5a00" }} />}
                               </button>
@@ -11841,7 +11842,7 @@ function BackupButton() {
   );
 }
 
-function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
+function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleScheduleManager, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -11964,6 +11965,7 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
                 {acc.is_admin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
                 {acc.is_almacenista && <Pill tone="blue">Almacenista</Pill>}
                 {acc.is_gerencia && <Pill tone="green">Gerencia</Pill>}
+                {!acc.is_admin && acc.can_manage_schedule && <Pill tone="blue">Gestiona horarios</Pill>}
                 <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uid ? null : uid); setNewPw(""); setResetMsg(""); }}>
                   Restablecer contraseña
                 </Button>
@@ -11984,6 +11986,11 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
                 <Button size="sm" variant="ghost" onClick={() => onToggleGerencia(uid)}>
                   {acc.is_gerencia ? "Quitar gerencia" : "Hacer gerencia (solo consulta)"}
                 </Button>
+                {!acc.is_admin && (
+                  <Button size="sm" variant="ghost" onClick={() => onToggleScheduleManager(uid)}>
+                    {acc.can_manage_schedule ? "Quitar acceso a horarios" : "Dar acceso a editar horarios"}
+                  </Button>
+                )}
                 <Button size="sm" variant="red" disabled={uid === currentUsername} onClick={() => onDeleteAccount(uid)}>Eliminar</Button>
               </div>
             </div>
@@ -12522,6 +12529,7 @@ export default function App() {
   const toggleAdmin = (userId) => callAdminAction("toggle-admin", userId);
   const toggleAlmacenista = (userId) => callAdminAction("toggle-almacenista", userId);
   const toggleGerencia = (userId) => callAdminAction("toggle-gerencia", userId);
+  const toggleScheduleManager = (userId) => callAdminAction("toggle-schedule-manager", userId);
   const resetPassword = (userId, newPassword) => callAdminAction("reset-password", userId, { newPassword });
   const deleteAccount = async (userId) => {
     const data = profiles[userId];
@@ -13793,6 +13801,7 @@ export default function App() {
   const isAdmin = !!account.is_admin;
   const isAlmacenista = !!account.is_almacenista;
   const isGerencia = !!account.is_gerencia;
+  const canManageSchedule = isAdmin || !!account.can_manage_schedule;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista; // gerencia "pura": solo consulta
   // Si esta cuenta está vinculada a un empleado del Horario Mensual (ver Mi Perfil), se usa su
   // cargo para que la firma en los PDF diga "Nombre — Cargo", no solo el nombre suelto.
@@ -14299,7 +14308,7 @@ export default function App() {
               onResolveIssue={resolveIssue} onSaveRound={saveGymRound} />
           )}
           {view === "schedules" && (
-            <SchedulesView employees={employees} scheduleEntries={scheduleEntries} scheduleEditLog={scheduleEditLog} isAdmin={isAdmin} currentUser={displayName}
+            <SchedulesView employees={employees} scheduleEntries={scheduleEntries} scheduleEditLog={scheduleEditLog} isAdmin={isAdmin} canManageSchedule={canManageSchedule} currentUser={displayName}
               onCreateEmployee={createEmployee} onUpdateEmployee={updateEmployee} onDeleteEmployee={deleteEmployee} onSetScheduleEntry={setScheduleEntry}
               onImportJuly={importJulySchedule2026} onImportAugust={importAugustSchedule2026} onImportExcel={importScheduleFromParsedExcel} onApplyAiDraft={applyAiScheduleDraft} reportEmail={reportEmail} onLogSent={logSentReport} />
           )}
@@ -14311,7 +14320,7 @@ export default function App() {
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
+              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onToggleScheduleManager={toggleScheduleManager} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
               onApproveAccount={approveAccount} onRejectAccount={rejectAccount} onTransferTasks={transferTasks} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />
           )}
           {view === "trash" && isAdmin && (

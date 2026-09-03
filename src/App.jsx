@@ -1034,14 +1034,21 @@ function classifyHotsosProblem(problema) {
 }
 
 /** Cruza el nombre tal como viene escrito en HotSOS ("Jesus Daniel Quintana") contra los nombres
- *  de las cuentas ya creadas en la app, para no tener que reasignar a mano lo que HotSOS ya
- *  asignó — normaliza tildes/mayúsculas para que pequeñas diferencias de escritura no rompan el
- *  cruce. Si no encuentra una coincidencia clara, la deja sin asignar. */
+ *  de las cuentas ya creadas en la app. No exige que el nombre completo sea idéntico — HotSOS y
+ *  la app casi nunca tienen el nombre escrito exactamente igual (segundo nombre, apellidos en
+ *  otro orden, etc.) — en vez de eso cuenta cuántas palabras del nombre coinciden, y solo asigna
+ *  si comparten al menos 2 (para no confundir a dos personas que solo comparten el primer
+ *  nombre). Si no encuentra una coincidencia suficientemente clara, la deja sin asignar. */
 function matchHotsosAssignee(nombreHotsos, accounts) {
   if (!nombreHotsos || !nombreHotsos.trim()) return null;
-  const target = normalizeSearchText(nombreHotsos.trim());
-  const entry = Object.entries(accounts || {}).find(([, acc]) => normalizeSearchText(acc.display_name || "") === target);
-  return entry ? entry[0] : null;
+  const targetWords = normalizeSearchText(nombreHotsos.trim()).split(/\s+/).filter(w => w.length > 2);
+  let best = null, bestScore = 0;
+  Object.entries(accounts || {}).forEach(([uid, acc]) => {
+    const nameWords = normalizeSearchText(acc.display_name || "").split(/\s+/).filter(w => w.length > 2);
+    const score = targetWords.filter(w => nameWords.includes(w)).length;
+    if (score > bestScore) { bestScore = score; best = uid; }
+  });
+  return bestScore >= 2 ? best : null;
 }
 
 /* ============================================================
@@ -9038,13 +9045,14 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
  * cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide.
  * No duplica órdenes ya importadas antes (las reconoce por su número de orden de HotSOS).
  */
-function HotsosImportView({ accounts, existingOrderIds, onImport }) {
+function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, onImport }) {
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState({});
   const [parseError, setParseError] = useState(null);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
+  const [filterAsignado, setFilterAsignado] = useState("");
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
@@ -9082,7 +9090,14 @@ function HotsosImportView({ accounts, existingOrderIds, onImport }) {
   };
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
-  const toggleAll = (val) => { const next = {}; rows.forEach(r => { next[r.orderId] = val && !r.alreadyImported; }); setSelected(next); };
+  const toggleAll = (val) => {
+    const next = { ...selected };
+    visibleRows.forEach(r => { next[r.orderId] = val && !r.alreadyImported; });
+    setSelected(next);
+  };
+  const visibleRows = filterAsignado.trim()
+    ? rows.filter(r => normalizeSearchText(r.asignadoHotsos).includes(normalizeSearchText(filterAsignado.trim())))
+    : rows;
 
   const doImport = async () => {
     const toImport = rows.filter(r => selected[r.orderId] && !r.alreadyImported);
@@ -9116,12 +9131,22 @@ function HotsosImportView({ accounts, existingOrderIds, onImport }) {
 
       {rows.length > 0 && (
         <>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <input value={filterAsignado} onChange={e => setFilterAsignado(e.target.value)} placeholder="Filtrar por nombre del asignado en HotSOS…"
+              className="text-xs border rounded-md px-2 py-1.5 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
+            {currentUserDisplayName && (
+              <button onClick={() => setFilterAsignado(v => v ? "" : currentUserDisplayName.split(" ")[0])}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={{ background: filterAsignado ? C.amberSoft : C.bg, color: filterAsignado ? "#7a5405" : C.inkSoft }}>
+                {filterAsignado ? "Quitar filtro" : "Solo las mías"}
+              </button>
+            )}
+          </div>
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="text-xs" style={{ color: C.inkSoft }}>
-              {rows.length} órdenes en el archivo · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {selectedCount} seleccionadas
+              {visibleRows.length} de {rows.length} órdenes visibles · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {selectedCount} seleccionadas
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => toggleAll(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Marcar todas</button>
+              <button onClick={() => toggleAll(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Marcar visibles</button>
               <button onClick={() => toggleAll(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Ninguna</button>
             </div>
           </div>
@@ -9140,7 +9165,9 @@ function HotsosImportView({ accounts, existingOrderIds, onImport }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
+                {visibleRows.length === 0 ? (
+                  <tr><td colSpan={7} className="p-4 text-center" style={{ color: C.gray }}>Nadie coincide con ese filtro.</td></tr>
+                ) : visibleRows.map((r, i) => (
                   <tr key={r.orderId} style={{ background: i % 2 ? C.cardAlt : C.panel, opacity: r.alreadyImported ? 0.5 : 1 }}>
                     <td className="p-2"><input type="checkbox" disabled={r.alreadyImported} checked={!!selected[r.orderId]} onChange={e => setSelected(s => ({ ...s, [r.orderId]: e.target.checked }))} /></td>
                     <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}</td>
@@ -13936,7 +13963,7 @@ export default function App() {
           {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
           {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
           {view === "procedures" && <ProcedureCopilotView equipos={mttoEquipos} mttoLog={mttoLog} />}
-          {view === "hotsos-import" && isAdmin && <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} onImport={importHotsosOrders} />}
+          {view === "hotsos-import" && isAdmin && <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} onImport={importHotsosOrders} />}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

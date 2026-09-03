@@ -994,6 +994,56 @@ function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activeIssues
   return L.join("\n");
 }
 
+/**
+ * Helpers para importar el Excel de "Órdenes Pendientes" que exporta HotSOS — columnas:
+ * Núm. de orden | Edad | Problema | Habitación/equipo | Asignado | Seguimiento.
+ * No es una integración en tiempo real (HotSOS no tiene API pública para este hotel todavía);
+ * es una carga rápida del reporte que ya exporta la misma plataforma — nada de scraping.
+ */
+
+/** "1d 14h 56m" / "19h 21m" / "45m" → horas totales, para reconstruir cuándo se abrió la orden
+ *  de verdad en HotSOS (no solo "ahora", que es cuando se importa). */
+function parseHotsosAge(str) {
+  if (!str || typeof str !== "string") return 0;
+  const d = /(\d+)\s*d/.exec(str);
+  const h = /(\d+)\s*h/.exec(str);
+  const m = /(\d+)\s*m/.exec(str);
+  return (d ? Number(d[1]) * 24 : 0) + (h ? Number(h[1]) : 0) + (m ? Number(m[1]) / 60 : 0);
+}
+
+/** Categoriza el problema por palabras clave — no es una lista cerrada de sistemas de tu
+ *  inventario, es una guía visual para saber de un vistazo qué tipo de especialidad necesita
+ *  cada orden nueva que llega de HotSOS. */
+const HOTSOS_CATEGORIES = [
+  { match: ["aire acondicionado", "calefacci", "ventilaci", "rejilla"], label: "HVAC" },
+  { match: ["grifo", "lavamanos", "inodoro", "ducha", "bañera", "agua", "filtracion", "filtración", "cemento", "macilla", "lechada", "silicio"], label: "Hidráulico" },
+  { match: ["luz", "luces", "lámpara", "lampara", "interruptor"], label: "Eléctrico" },
+  { match: ["puerta", "cerradura", "seguro", "pestillo", "cadena", "marco", "perilla", "burlete", "bisagra"], label: "Carpintería / Cerrajería" },
+  { match: ["tv", "televisi", "control remoto", "cable telefónico", "cable telefonico"], label: "Electrónica" },
+  { match: ["mesa", "silla", "mueble", "velador", "gabinete", "tocador"], label: "Carpintería / Mobiliario" },
+  { match: ["cortina", "visillo", "varilla"], label: "Textiles / Cortinas" },
+  { match: ["detector de humo", "alarma de incendio"], label: "Contra incendios" },
+  { match: ["techo", "pared", "pintura", "pintar"], label: "Estructural / Pintura" },
+  { match: ["refrigerador", "congelador", "hielera"], label: "Refrigeración" },
+  { match: ["equipos de ejercicio"], label: "Gimnasio" },
+];
+function classifyHotsosProblem(problema) {
+  const s = normalizeSearchText(problema || "");
+  const found = HOTSOS_CATEGORIES.find(g => g.match.some(kw => s.includes(kw)));
+  return found ? found.label : "General";
+}
+
+/** Cruza el nombre tal como viene escrito en HotSOS ("Jesus Daniel Quintana") contra los nombres
+ *  de las cuentas ya creadas en la app, para no tener que reasignar a mano lo que HotSOS ya
+ *  asignó — normaliza tildes/mayúsculas para que pequeñas diferencias de escritura no rompan el
+ *  cruce. Si no encuentra una coincidencia clara, la deja sin asignar. */
+function matchHotsosAssignee(nombreHotsos, accounts) {
+  if (!nombreHotsos || !nombreHotsos.trim()) return null;
+  const target = normalizeSearchText(nombreHotsos.trim());
+  const entry = Object.entries(accounts || {}).find(([, acc]) => normalizeSearchText(acc.display_name || "") === target);
+  return entry ? entry[0] : null;
+}
+
 /* ============================================================
    PANEL EJECUTIVO — helpers
    ============================================================ */
@@ -7867,6 +7917,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM y gas, calderas y planta eléctrica", access: true },
     { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true },
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA para procedimientos paso a paso", access: true },
+    { id: "hotsos-import", label: "Importar HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
     { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
@@ -8981,6 +9032,142 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
   );
 }
 
+
+/**
+ * Importar el reporte "Órdenes Pendientes" que exporta HotSOS (Excel) y convertirlo en tareas —
+ * cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide.
+ * No duplica órdenes ya importadas antes (las reconoce por su número de orden de HotSOS).
+ */
+function HotsosImportView({ accounts, existingOrderIds, onImport }) {
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState({});
+  const [parseError, setParseError] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(null); setRows([]); setImportMsg(null); setFileName(file.name);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const dataRows = raw.slice(1).filter(r => r && r[0]);
+      const parsed = dataRows.map(r => {
+        const orderId = String(r[0]);
+        const edadStr = String(r[1] || "");
+        const problema = String(r[2] || "").replace(/^[^-]+-\s*/, "");
+        const lugar = String(r[3] || "");
+        const asignadoHotsos = String(r[4] || "").trim();
+        return {
+          orderId, edadStr, edadHoras: parseHotsosAge(edadStr), problema, lugar, asignadoHotsos,
+          matchedUser: matchHotsosAssignee(asignadoHotsos, accounts), categoria: classifyHotsosProblem(problema),
+          alreadyImported: existingOrderIds.has(orderId),
+        };
+      });
+      if (parsed.length === 0) {
+        setParseError("No se encontró ninguna orden reconocible — revisa que sea el mismo formato que exporta HotSOS (Núm. de orden, Edad, Problema, Habitación/equipo, Asignado).");
+      } else {
+        setRows(parsed);
+        const initSel = {};
+        parsed.forEach(p => { initSel[p.orderId] = !p.alreadyImported; });
+        setSelected(initSel);
+      }
+    } catch {
+      setParseError("No se pudo leer el archivo — revisa que sea el Excel exportado por HotSOS.");
+    }
+  };
+
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const toggleAll = (val) => { const next = {}; rows.forEach(r => { next[r.orderId] = val && !r.alreadyImported; }); setSelected(next); };
+
+  const doImport = async () => {
+    const toImport = rows.filter(r => selected[r.orderId] && !r.alreadyImported);
+    if (toImport.length === 0) return;
+    setImporting(true);
+    try {
+      const count = await onImport(toImport);
+      setImportMsg({ ok: true, text: `✓ Se crearon ${count} tarea${count === 1 ? "" : "s"} nueva${count === 1 ? "" : "s"}.` });
+      setRows([]); setFileName("");
+    } catch {
+      setImportMsg({ ok: false, text: "No se pudieron crear las tareas — intenta de nuevo." });
+    }
+    setImporting(false);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Importar órdenes de HotSOS</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Exporta el reporte "Órdenes Pendientes" desde HotSOS (Excel) y súbelo aquí. Se convierten en tareas, cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide — las que no coincidan quedan sin asignar, para elegir a mano.
+      </p>
+
+      <div className="rounded-lg border border-dashed p-6 text-center mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <input type="file" accept=".xlsx,.xls" id="hotsos-file-input" className="hidden" onChange={handleFile} />
+        <label htmlFor="hotsos-file-input" className="cursor-pointer block">
+          <Upload size={26} style={{ margin: "0 auto 8px", color: C.gray }} />
+          <div className="text-sm font-medium" style={{ color: C.ink }}>{fileName || "Toca para elegir el Excel exportado por HotSOS"}</div>
+        </label>
+      </div>
+      {parseError && <div className="text-xs mb-4" style={{ color: C.red }}>{parseError}</div>}
+
+      {rows.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div className="text-xs" style={{ color: C.inkSoft }}>
+              {rows.length} órdenes en el archivo · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {selectedCount} seleccionadas
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => toggleAll(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Marcar todas</button>
+              <button onClick={() => toggleAll(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Ninguna</button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border overflow-x-auto mb-4" style={{ borderColor: C.line }}>
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: C.bg }}>
+                  <th className="p-2"></th>
+                  <th className="text-left p-2">Orden</th>
+                  <th className="text-left p-2">Problema</th>
+                  <th className="text-left p-2">Ubicación</th>
+                  <th className="text-left p-2">Especialidad</th>
+                  <th className="text-left p-2">Asignado en HotSOS</th>
+                  <th className="text-left p-2">Edad</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.orderId} style={{ background: i % 2 ? C.cardAlt : C.panel, opacity: r.alreadyImported ? 0.5 : 1 }}>
+                    <td className="p-2"><input type="checkbox" disabled={r.alreadyImported} checked={!!selected[r.orderId]} onChange={e => setSelected(s => ({ ...s, [r.orderId]: e.target.checked }))} /></td>
+                    <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}</td>
+                    <td className="p-2" style={{ color: C.ink }}>{r.problema}</td>
+                    <td className="p-2" style={{ color: C.inkSoft }}>{r.lugar}</td>
+                    <td className="p-2"><Badge tone="blue">{r.categoria}</Badge></td>
+                    <td className="p-2">
+                      {r.matchedUser ? <span style={{ color: C.green }}>{r.asignadoHotsos} ✓</span>
+                        : r.asignadoHotsos ? <span style={{ color: "#8a5a00" }}>{r.asignadoHotsos} (sin cuenta en la app)</span>
+                          : <span style={{ color: C.gray }}>Sin asignar</span>}
+                    </td>
+                    <td className="p-2" style={{ color: C.gray }}>{r.edadStr}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Button disabled={selectedCount === 0 || importing} onClick={doImport}>
+            {importing ? "Importando…" : `Importar ${selectedCount} tarea${selectedCount === 1 ? "" : "s"}`}
+          </Button>
+        </>
+      )}
+      {importMsg && <div className="text-xs mt-2" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
+    </div>
+  );
+}
 
 /* ============================================================
    INFORME (texto) + IMPRESIÓN A PDF + ENVÍO POR CORREO
@@ -12826,6 +13013,33 @@ export default function App() {
     return rec;
   };
 
+  /** Convierte filas ya revisadas del Excel de HotSOS en tareas — reconstruye la fecha real de
+   *  apertura usando la "Edad" que trae HotSOS (no la fecha de hoy, que es solo cuándo se
+   *  importó), y prioriza alto automáticamente lo que ya lleva más de 2 días abierto. */
+  const importHotsosOrders = async (rowsToImport) => {
+    const importedAt = nowIso();
+    const newRecs = rowsToImport.map(r => {
+      const createdAt = new Date(Date.now() - r.edadHoras * 3600000).toISOString();
+      const id = uid("task");
+      return {
+        id, titulo: r.problema, descripcion: `${r.lugar} — orden HotSOS #${r.orderId} (categoría sugerida: ${r.categoria})`,
+        estado: "asignada", prioridad: r.edadHoras > 48 ? "alta" : r.edadHoras > 12 ? "media" : "baja",
+        asignadoA: r.matchedUser || "",
+        recurrencia: "", recurrenceGroupId: null, recurrencePeriodKey: null,
+        fotosAntes: [], fotosDespues: [], notaCierre: "",
+        equipoId: null, origen: "hotsos", hotsosOrderId: r.orderId,
+        assignedAt: r.matchedUser ? createdAt : null, startedAt: null, finishedAt: null,
+        timeLog: [{ estado: "asignada", at: createdAt }],
+        createdBy: displayName, createdAt, updatedAt: importedAt,
+      };
+    });
+    const next = [...newRecs, ...tasks];
+    setTasks(next);
+    await sSet("tasks", next, true);
+    logGeneralEdit({ kind: "tarea", action: "creacion", entityLabel: `${newRecs.length} orden(es) importadas de HotSOS` });
+    return newRecs.length;
+  };
+
   /** Revisa las tareas que se repiten: si ya empezó un nuevo periodo (semana/mes) y no hay una instancia de ese ciclo, crea una nueva copia en "asignada". */
   const checkRecurringTasks = async () => {
     const templates = tasks.filter(t => t.recurrencia && t.recurrenceGroupId);
@@ -13304,6 +13518,7 @@ export default function App() {
     () => buildAiContextSummary({ equipos: mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical: criticalFuelTanks }),
     [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks]
   );
+  const hotsosExistingOrderIds = useMemo(() => new Set(tasks.filter(t => t.hotsosOrderId).map(t => t.hotsosOrderId)), [tasks]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
@@ -13422,6 +13637,7 @@ export default function App() {
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
         { id: "tools", label: "Herramientas", icon: Wrench },
         { id: "procedures", label: "Procedimientos", icon: Sparkles },
+        ...(isAdmin ? [{ id: "hotsos-import", label: "Importar HotSOS", icon: Upload }] : []),
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
       ],
     },
@@ -13720,6 +13936,7 @@ export default function App() {
           {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
           {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
           {view === "procedures" && <ProcedureCopilotView equipos={mttoEquipos} mttoLog={mttoLog} />}
+          {view === "hotsos-import" && isAdmin && <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} onImport={importHotsosOrders} />}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

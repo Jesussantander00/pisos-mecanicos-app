@@ -9045,7 +9045,7 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
  * cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide.
  * No duplica órdenes ya importadas antes (las reconoce por su número de orden de HotSOS).
  */
-function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, onImport }) {
+function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete }) {
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState({});
   const [parseError, setParseError] = useState(null);
@@ -9053,6 +9053,9 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const [filterAsignado, setFilterAsignado] = useState("");
+  const [retrying, setRetrying] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
@@ -9132,6 +9135,39 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
           ))}
         </div>
       </details>
+
+      {hotsosTaskCount > 0 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.bg }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
+            Ya hay {hotsosTaskCount} tarea{hotsosTaskCount === 1 ? "" : "s"} importada{hotsosTaskCount === 1 ? "" : "s"} de HotSOS
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="ghost" disabled={retrying} onClick={async () => {
+              setRetrying(true);
+              const fixed = await onRetryAssignments();
+              setImportMsg({ ok: true, text: fixed > 0 ? `✓ Se asignaron ${fixed} tarea${fixed === 1 ? "" : "s"} más.` : "Ninguna tarea pendiente se pudo asignar de nuevo — puede que ya estén todas asignadas, o que sean de antes de este arreglo (esas hay que reimportarlas)." });
+              setRetrying(false);
+            }}>{retrying ? "Reintentando…" : "Reintentar asignación en las ya importadas"}</Button>
+
+            {!confirmingDelete ? (
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(true)} style={{ color: C.red }}>
+                Borrar todas las importadas (para reimportar)
+              </Button>
+            ) : (
+              <span className="flex items-center gap-2 text-xs" style={{ color: C.red }}>
+                ¿Seguro? Se van a la papelera las {hotsosTaskCount} tareas importadas de HotSOS (no toca ninguna otra tarea).
+                <Button size="sm" disabled={deleting} onClick={async () => {
+                  setDeleting(true);
+                  const removed = await onBulkDelete();
+                  setImportMsg({ ok: true, text: `✓ Se borraron ${removed} tareas. Ya puedes volver a subir el Excel para reimportarlas con el cruce corregido.` });
+                  setConfirmingDelete(false); setDeleting(false);
+                }}>{deleting ? "Borrando…" : "Sí, borrar"}</Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(false)}>Cancelar</Button>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-dashed p-6 text-center mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <input type="file" accept=".xlsx,.xls" id="hotsos-file-input" className="hidden" onChange={handleFile} />
@@ -13067,7 +13103,7 @@ export default function App() {
         asignadoA: r.matchedUser || "",
         recurrencia: "", recurrenceGroupId: null, recurrencePeriodKey: null,
         fotosAntes: [], fotosDespues: [], notaCierre: "",
-        equipoId: null, origen: "hotsos", hotsosOrderId: r.orderId,
+        equipoId: null, origen: "hotsos", hotsosOrderId: r.orderId, hotsosAsignadoOriginal: r.asignadoHotsos || "",
         assignedAt: r.matchedUser ? createdAt : null, startedAt: null, finishedAt: null,
         timeLog: [{ estado: "asignada", at: createdAt }],
         createdBy: displayName, createdAt, updatedAt: importedAt,
@@ -13078,6 +13114,40 @@ export default function App() {
     await sSet("tasks", next, true);
     logGeneralEdit({ kind: "tarea", action: "creacion", entityLabel: `${newRecs.length} orden(es) importadas de HotSOS` });
     return newRecs.length;
+  };
+
+  /** Vuelve a intentar el cruce de nombres en tareas de HotSOS que quedaron sin asignar — útil
+   *  cuando se mejora la lógica de cruce después de haber importado, o cuando se crean cuentas
+   *  nuevas después de la importación. Solo funciona en tareas que sí guardaron el nombre
+   *  original de HotSOS (hotsosAsignadoOriginal) — las importadas antes de que ese campo
+   *  existiera no se pueden recuperar así, hay que reimportarlas desde el Excel. */
+  const retryHotsosAssignments = async () => {
+    const ts = nowIso();
+    let fixed = 0;
+    const next = tasks.map(t => {
+      if (t.origen !== "hotsos" || t.asignadoA || !t.hotsosAsignadoOriginal) return t;
+      const matched = matchHotsosAssignee(t.hotsosAsignadoOriginal, profiles);
+      if (!matched) return t;
+      fixed++;
+      return { ...t, asignadoA: matched, assignedAt: t.assignedAt || ts, timeLog: [...(t.timeLog || []), { estado: normalizeTaskState(t.estado), at: ts, nota: "Asignación reintentada" }] };
+    });
+    if (fixed > 0) { setTasks(next); await sSet("tasks", next, true); }
+    return fixed;
+  };
+
+  /** Borra en bloque TODAS las tareas que vinieron de una importación de HotSOS (y solo esas —
+   *  nunca toca tareas creadas a mano ni de ningún otro origen) — pensado para el caso de
+   *  reimportar desde cero cuando algo quedó mal la primera vez, sin tener que borrar tarea por
+   *  tarea a mano. Las manda a la papelera, no las borra para siempre. */
+  const bulkDeleteHotsosTasks = async () => {
+    const toRemove = tasks.filter(t => t.origen === "hotsos");
+    if (toRemove.length === 0) return 0;
+    await Promise.all(toRemove.map(t => moveToTrash("task", t)));
+    const next = tasks.filter(t => t.origen !== "hotsos");
+    setTasks(next);
+    await sSet("tasks", next, true);
+    logGeneralEdit({ kind: "tarea", action: "eliminacion", entityLabel: `${toRemove.length} tarea(s) importadas de HotSOS (borrado en bloque para reimportar)` });
+    return toRemove.length;
   };
 
   /** Revisa las tareas que se repiten: si ya empezó un nuevo periodo (semana/mes) y no hay una instancia de ese ciclo, crea una nueva copia en "asignada". */
@@ -13559,6 +13629,7 @@ export default function App() {
     [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks]
   );
   const hotsosExistingOrderIds = useMemo(() => new Set(tasks.filter(t => t.hotsosOrderId).map(t => t.hotsosOrderId)), [tasks]);
+  const hotsosTaskCount = useMemo(() => tasks.filter(t => t.origen === "hotsos").length, [tasks]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
@@ -13976,7 +14047,10 @@ export default function App() {
           {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
           {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
           {view === "procedures" && <ProcedureCopilotView equipos={mttoEquipos} mttoLog={mttoLog} />}
-          {view === "hotsos-import" && isAdmin && <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} onImport={importHotsosOrders} />}
+          {view === "hotsos-import" && isAdmin && (
+            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount}
+              onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
+          )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />

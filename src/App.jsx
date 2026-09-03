@@ -1554,6 +1554,26 @@ function isSundayOrHoliday(dateIso) {
 }
 function scheduleKey(employeeId, dateIso) { return `${employeeId}::${dateIso}`; }
 
+/** Avisa (no bloquea) si el turno que se está por guardar se cruza con el del día anterior o el
+ *  del día siguiente de la misma persona — pensado para turnos nocturnos que cruzan medianoche,
+ *  que son el caso real donde puede pasar un doble cubrimiento sin querer. */
+function checkShiftOverlap(employeeId, dateIso, entrada, salida, scheduleEntries) {
+  if (entrada == null || salida == null) return null;
+  const d = new Date(dateIso + "T00:00:00");
+  const prevDate = new Date(d); prevDate.setDate(prevDate.getDate() - 1);
+  const nextDate = new Date(d); nextDate.setDate(nextDate.getDate() + 1);
+  const prevEntry = scheduleEntries[scheduleKey(employeeId, localDateIso(prevDate))];
+  const nextEntry = scheduleEntries[scheduleKey(employeeId, localDateIso(nextDate))];
+
+  if (prevEntry && prevEntry.entrada != null && prevEntry.salida != null && prevEntry.salida < prevEntry.entrada) {
+    if (entrada < prevEntry.salida) return `Se cruza con el turno de ayer, que termina a las ${prevEntry.salida}:00 de hoy.`;
+  }
+  if (salida < entrada && nextEntry && nextEntry.entrada != null) {
+    if (nextEntry.entrada < salida) return `Se cruza con el turno de mañana, que empieza a las ${nextEntry.entrada}:00.`;
+  }
+  return null;
+}
+
 /** Horas trabajadas ese día según la entrada/salida exactas (0 si es un código especial como VAC/LIBRE). */
 function hoursForEntry(entry) {
   if (!entry || entry.code) return 0;
@@ -3581,7 +3601,7 @@ function TaskKanbanCard({ task, accounts, employees, canAct, onOpenDrawer, onMov
   );
 }
 
-function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom }) {
+function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed }) {
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
   const [closeSaving, setCloseSaving] = useState(false);
@@ -3590,6 +3610,10 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
   const [mttoSaving, setMttoSaving] = useState(false);
   const [mttoMsg, setMttoMsg] = useState(null);
+
+  // Deja registro de quién abrió esta tarea — para saber si alguien ya se enteró de algo
+  // crítico, aunque todavía no haya actuado. Una vez por persona, no cada vez que la abre.
+  useEffect(() => { onMarkViewed(task); }, [task.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const estado = normalizeTaskState(task.estado);
   const stateColors = TASK_STATE_COLORS[estado];
@@ -3684,6 +3708,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                       className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, color: C.ink }} />
                   </div>
                   <MaintenanceTextSuggestions sistema={linkedEquipo.sistema} tipo={mttoForm.tipo} onPick={t => setMttoForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
+                  <EquipoHistorySuggestions equipoId={linkedEquipo.id} mttoLog={mttoLog} onPick={t => setMttoForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
                   <textarea value={mttoForm.descripcion} onChange={e => setMttoForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
                     className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, color: C.ink }} />
                   <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
@@ -3732,6 +3757,19 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
               ))}
             </div>
           </div>
+
+          {task.vistoPor && task.vistoPor.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Visto por</div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[...task.vistoPor].sort((a, b) => new Date(b.at) - new Date(a.at)).map((v, i) => (
+                  <span key={i} title={fmtDT(v.at)} className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: C.bg, color: C.inkSoft }}>
+                    <Avatar name={v.displayName} size={14} /> {v.displayName} · {elapsed(v.at)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {estado === "finalizada" ? (
             <>
@@ -3924,12 +3962,39 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   }).length;
   const cumplimientoPct = totalTareas > 0 ? Math.round((cerradas.length / totalTareas) * 100) : 100;
 
+  /** Si alguien tiene notablemente más tareas abiertas que el promedio del equipo esta semana
+   *  (al menos 1.5x el promedio, y al menos 2 de diferencia), lo señala — para repartir mejor,
+   *  no como un reclamo, solo un aviso simple. */
+  const workloadImbalance = useMemo(() => {
+    const weekAgo = new Date(Date.now() - 7 * 864e5);
+    const openThisWeek = tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && t.asignadoA && new Date(t.createdAt) >= weekAgo);
+    const byPerson = {};
+    openThisWeek.forEach(t => { byPerson[t.asignadoA] = (byPerson[t.asignadoA] || 0) + 1; });
+    const counts = Object.values(byPerson);
+    if (counts.length < 2) return null;
+    const avg = counts.reduce((s, v) => s + v, 0) / counts.length;
+    const [maxUser, maxCount] = Object.entries(byPerson).sort((a, b) => b[1] - a[1])[0];
+    if (avg === 0 || maxCount < avg * 1.5 || maxCount - avg < 2) return null;
+    return { username: maxUser, count: maxCount, avg: Math.round(avg * 10) / 10 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
+
   /** Cambia de estado (Iniciar / Pausar / Reanudar) y deja registro en la cronología de la tarea.
    * "Finalizar" NO pasa por aquí — ese vive en el panel de detalle porque exige foto de evidencia. */
   const transitionTask = (t, newEstado) => {
     const patch = { estado: newEstado, timeLog: [...(t.timeLog || []), { estado: newEstado, at: nowIso() }] };
     if (newEstado === "en-proceso" && !t.startedAt) patch.startedAt = nowIso();
     onUpdateTask(t.id, patch);
+  };
+
+  /** Deja registro de que esta persona abrió la tarea — una entrada por persona, se actualiza la
+   *  fecha si ya la había visto antes en vez de duplicarla. */
+  const markTaskViewed = (t) => {
+    const already = (t.vistoPor || []).find(v => v.username === currentUsername);
+    const next = already
+      ? t.vistoPor.map(v => v.username === currentUsername ? { ...v, at: nowIso() } : v)
+      : [...(t.vistoPor || []), { username: currentUsername, displayName: accounts[currentUsername]?.display_name || currentUsername, at: nowIso() }];
+    onUpdateTask(t.id, { vistoPor: next });
   };
 
   const doCloseTask = async (t, photos, note) => {
@@ -3999,6 +4064,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         <StatCard label="Cumplimiento" value={`${cumplimientoPct}%`} valueColor={cumplimientoPct >= 80 ? C.green : C.amber}
           leading={<MiniGauge value={cumplimientoPct} max={100} size={40} stroke={5} color={cumplimientoPct >= 80 ? C.green : C.amber} />} />
       </div>
+
+      {workloadImbalance && (
+        <div className="rounded-lg p-2.5 mb-4 flex items-center gap-2 text-xs" style={{ background: C.amberSoft, color: "#7a5405" }}>
+          <AlertTriangle size={14} className="shrink-0" />
+          <span><b>{accounts[workloadImbalance.username]?.display_name || workloadImbalance.username}</b> tiene {workloadImbalance.count} tareas abiertas esta semana — bien por encima del promedio del equipo ({workloadImbalance.avg}). Puede valer la pena repartir algo.</span>
+        </div>
+      )}
 
       {showNew && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -4286,7 +4358,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       {drawerTask && (
         <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
-          onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask}
+          onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask} onMarkViewed={markTaskViewed}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl} />
       )}
       <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
@@ -4811,6 +4883,37 @@ function MaintenanceTextSuggestions({ sistema, tipo, onPick }) {
   );
 }
 
+/** Frases que ya se han usado antes para ESTE equipo específico (no por especialidad general,
+ *  sino aprendiendo del propio historial) — las más recientes y sin repetir texto exacto. */
+function EquipoHistorySuggestions({ equipoId, mttoLog, onPick }) {
+  if (!equipoId) return null;
+  const past = (mttoLog || []).filter(r => r.equipoId === equipoId && r.descripcion && r.descripcion.trim())
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const seen = new Set();
+  const distinct = [];
+  for (const r of past) {
+    const key = normalizeSearchText(r.descripcion.trim());
+    if (!seen.has(key)) { seen.add(key); distinct.push(r.descripcion.trim()); }
+    if (distinct.length >= 3) break;
+  }
+  if (distinct.length === 0) return null;
+  return (
+    <div className="mb-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>
+        Lo que ya se escribió antes para este equipo
+      </div>
+      <div className="flex flex-col gap-1">
+        {distinct.map((t, i) => (
+          <button key={i} type="button" onClick={() => onPick(t)}
+            className="text-left text-xs px-2 py-1.5 rounded-md border" style={{ borderColor: C.blue, background: "#f5f9ff", color: C.inkSoft, minHeight: 32 }}>
+            {t}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance }) {
   const [tipo, setTipo] = useState("preventivo");
   const [descripcion, setDescripcion] = useState("");
@@ -4894,6 +4997,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
               className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           <MaintenanceTextSuggestions sistema={equipo.sistema} tipo={tipo} onPick={t => setDescripcion(d => d.trim() ? `${d.trim()} ${t}` : t)} />
+          <EquipoHistorySuggestions equipoId={equipo.id} mttoLog={records} onPick={t => setDescripcion(d => d.trim() ? `${d.trim()} ${t}` : t)} />
           <div className="flex items-start gap-1.5 mb-2">
             <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={3} placeholder="¿Qué se hizo?"
               className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
@@ -6012,6 +6116,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
             ) : (
               <div className="rounded-lg border p-2.5" style={{ borderColor: C.line, background: C.bg }}>
                 <MaintenanceTextSuggestions sistema={equipo.sistema} tipo="correctivo" onPick={t => setExtraForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
+                <EquipoHistorySuggestions equipoId={equipo.id} mttoLog={mttoLog} onPick={t => setExtraForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
                 <textarea value={extraForm.descripcion} onChange={e => setExtraForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <input type="number" value={extraForm.costo} onChange={e => setExtraForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"
@@ -6892,6 +6997,17 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
               )}
             </div>
           )}
+
+          {draftMode === "hours" && (() => {
+            const entrada = draftEntrada === "" ? null : Number(draftEntrada);
+            const salida = draftSalida === "" ? null : Number(draftSalida);
+            const overlapWarning = checkShiftOverlap(editingCell.employeeId, editingCell.dateIso, entrada, salida, scheduleEntries);
+            return overlapWarning ? (
+              <div className="text-xs rounded-md p-2 mb-2 flex items-center gap-1.5" style={{ background: C.redSoft, color: C.red }}>
+                <AlertTriangle size={13} className="shrink-0" /> {overlapWarning}
+              </div>
+            ) : null;
+          })()}
 
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={saveCell}>Guardar</Button>

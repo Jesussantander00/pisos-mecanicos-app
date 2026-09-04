@@ -538,7 +538,11 @@ function diagramUrl(diagramId) {
   return `${window.location.origin}${window.location.pathname}?diagram=${diagramId}`;
 }
 const DIAGRAM_COMPONENT_TIPOS = ["Válvula", "Bomba", "Chiller", "Torre", "Intercambiador", "Tanque", "Otro"];
-const DIAGRAM_ACCIONES = ["Abrir", "Cerrar", "Encender", "Apagar", "Verificar"];
+const DIAGRAM_ESTADOS = [
+  { value: "abierta", label: "Abierta / Encendida", color: "#16a34a" },
+  { value: "cerrada", label: "Cerrada / Apagada", color: "#dc2626" },
+  { value: "no-afecta", label: "No afecta", color: "#9ca3af" },
+];
 const PROCEDURE_COLORS = [
   { label: "Azul", value: C.blue }, { label: "Verde", value: C.green }, { label: "Ámbar", value: C.amber }, { label: "Rojo", value: C.red }, { label: "Morado", value: "#8b5cf6" },
 ];
@@ -1540,6 +1544,4309 @@ const DEFAULT_STANDING_RULES = `- Quintana Jesus Daniel: descansa todos los sáb
 
 /** Se precarga la primera vez que alguien abre "Novedades", con un resumen de lo construido
  *  hasta ahora — de ahí en adelante, el admin agrega las suyas desde la misma pantalla. */
+const DEFAULT_SYSTEM_PROCEDURES_SEED = [
+  {
+    "id": "proc-cond-1",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC1 / Torre 1",
+    "color": "#2563eb",
+    "componentePrincipal": "BAC1",
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-4",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-5",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-6",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-8",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-11",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-13",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-14",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-16",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-18",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-20",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-2a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC2 / Torre 1 — Opción 1",
+    "color": "#2563eb",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-4",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-5",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-6",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-8",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-14",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-18",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-20",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-2b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC2 / Torre 1 — Opción 2",
+    "color": "#2563eb",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-4",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-5",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-6",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-8",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-18",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-20",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-3a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC3 / Torre 1 — Opción 1",
+    "color": "#2563eb",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-8",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-18",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-4",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-5",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-6",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-20",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-3b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC3 / Torre 1 — Opción 2",
+    "color": "#2563eb",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-8",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-18",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-4",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-5",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-6",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-20",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-4a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC1 / Torre 2 — Opción 1",
+    "color": "#16a34a",
+    "componentePrincipal": "BAC1",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-1",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-2",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-3",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-7",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-20",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-13",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-16",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-18",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-4b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC1 / Torre 2 — Opción 2",
+    "color": "#16a34a",
+    "componentePrincipal": "BAC1",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-1",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-2",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-3",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-7",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-20",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-16",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-18",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-5a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC2 / Torre 2 — Opción 1",
+    "color": "#16a34a",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-1",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-2",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-3",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-20",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-7",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-18",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-5b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC2 / Torre 2 — Opción 2 (cierra V-7 también en Piso 33)",
+    "color": "#16a34a",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-1",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-2",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-3",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-7",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-18",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-20",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-6",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 1 / BAC3 / Torre 2",
+    "color": "#16a34a",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-1",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-2",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-3",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-18",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-20",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-7",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-10",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-7",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC3 / Torre 2 (variante A)",
+    "color": "#b45309",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-1",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-2",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-3",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-7",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-10",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-12",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-13",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-15",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-19",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-8a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC2 / Torre 2 — Opción 1",
+    "color": "#b45309",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-1",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-2",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-3",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-7",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-12",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-19",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-8b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC2 / Torre 2 — Opción 2",
+    "color": "#b45309",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-1",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-2",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-3",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-7",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-19",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-9a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC3 / Torre 2 (variante B) — Opción 1",
+    "color": "#b45309",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-7",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-17",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-1",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-2",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-3",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-19",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-9b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC3 / Torre 2 (variante B) — Opción 2",
+    "color": "#b45309",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-7",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-17",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-1",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-2",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-3",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-19",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-10a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC3 / Torre 1 — Opción 1",
+    "color": "#dc2626",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-4",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-5",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-6",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-8",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-19",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-13",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-15",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-10b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC3 / Torre 1 — Opción 2",
+    "color": "#dc2626",
+    "componentePrincipal": "BAC3",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-4",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-5",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-6",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-8",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-19",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-15",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-11a",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC2 / Torre 1 — Opción 1",
+    "color": "#dc2626",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-4",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-5",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-6",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-19",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-8",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-11b",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC2 / Torre 1 — Opción 2 (cierra V-8 también en Piso 33)",
+    "color": "#dc2626",
+    "componentePrincipal": "BAC2",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-9",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-4",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-5",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-6",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-8",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-19",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-17",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-12",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Chiller 2 / BAC1 / Torre 1",
+    "color": "#dc2626",
+    "componentePrincipal": "BAC1",
+    "pasos": [
+      {
+        "codigo": "V-0",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-4",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-5",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-6",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-17",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-19",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-8",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-11",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-13",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Ambos chillers: (Chiller 1/BAC1/Torre1) + (Chiller 2/BAC3/Torre2)",
+    "color": "#8b5cf6",
+    "componentePrincipal": null,
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-13",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-14",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Ambos chillers: (Chiller 1/BAC1/Torre1) + (Chiller 2/BAC2/Torre2)",
+    "color": "#8b5cf6",
+    "componentePrincipal": null,
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-11",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-12",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-16",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-10",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-14",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-15",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-cond-15",
+    "diagramId": "diag-seed-condensacion",
+    "nombre": "Ambos chillers: (Chiller 1/BAC2/Torre1) + (Chiller 2/BAC3/Torre2)",
+    "color": "#8b5cf6",
+    "componentePrincipal": null,
+    "pasos": [
+      {
+        "codigo": "V-1",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-2",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-3",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-4",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-5",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-6",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-7",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-8",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-10",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-13",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-14",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 11
+      },
+      {
+        "codigo": "V-15",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 12
+      },
+      {
+        "codigo": "V-17",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 13
+      },
+      {
+        "codigo": "V-18",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 14
+      },
+      {
+        "codigo": "V-19",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 15
+      },
+      {
+        "codigo": "V-20",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 16
+      },
+      {
+        "codigo": "V-0",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 17
+      },
+      {
+        "codigo": "V-9",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 18
+      },
+      {
+        "codigo": "V-11",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 19
+      },
+      {
+        "codigo": "V-12",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 20
+      },
+      {
+        "codigo": "V-16",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 21
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-1",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 1 / Bomba 1",
+    "color": "#2563eb",
+    "componentePrincipal": "BAF1",
+    "pasos": [
+      {
+        "codigo": "V-23",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-24",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-26",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-31",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-21",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-22",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-27",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-29",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-2a",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 1 / Bomba 2 — Opción 1",
+    "color": "#2563eb",
+    "componentePrincipal": "BAF2",
+    "pasos": [
+      {
+        "codigo": "V-21",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-22",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-27",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-31",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-29",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-2b",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 1 / Bomba 2 — Opción 2",
+    "color": "#2563eb",
+    "componentePrincipal": "BAF2",
+    "pasos": [
+      {
+        "codigo": "V-22",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-21",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-27",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-31",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-29",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-2c",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 1 / Bomba 2 — Opción 3",
+    "color": "#2563eb",
+    "componentePrincipal": "BAF2",
+    "pasos": [
+      {
+        "codigo": "V-21",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-22",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-27",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-31",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-29",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-3a",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 1 / Bomba 3 — Opción 1",
+    "color": "#2563eb",
+    "componentePrincipal": "BAF3",
+    "pasos": [
+      {
+        "codigo": "V-25",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-21",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-22",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-24",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-29",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-31",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-3b",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 1 / Bomba 3 — Opción 2",
+    "color": "#2563eb",
+    "componentePrincipal": "BAF3",
+    "pasos": [
+      {
+        "codigo": "V-25",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-24",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-29",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-21",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-22",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-31",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-4a",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 1 — Opción 1",
+    "color": "#b45309",
+    "componentePrincipal": "BAF1",
+    "pasos": [
+      {
+        "codigo": "V-23",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-21",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-22",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-24",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-28",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-30",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-4b",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 1 — Opción 2",
+    "color": "#b45309",
+    "componentePrincipal": "BAF1",
+    "pasos": [
+      {
+        "codigo": "V-23",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-24",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-28",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-21",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-22",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-30",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-5a",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 2 — Opción 1",
+    "color": "#b45309",
+    "componentePrincipal": "BAF2",
+    "pasos": [
+      {
+        "codigo": "V-21",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-22",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-26",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-30",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-28",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-5b",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 2 — Opción 2",
+    "color": "#b45309",
+    "componentePrincipal": "BAF2",
+    "pasos": [
+      {
+        "codigo": "V-22",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-21",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-26",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-30",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-28",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-5c",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 2 — Opción 3",
+    "color": "#b45309",
+    "componentePrincipal": "BAF2",
+    "pasos": [
+      {
+        "codigo": "V-21",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-22",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-26",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-30",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-28",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-6a",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 3 — Opción 1",
+    "color": "#b45309",
+    "componentePrincipal": "BAF3",
+    "pasos": [
+      {
+        "codigo": "V-25",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-21",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-22",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-27",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-30",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-24",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-26",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-28",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-6b",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Chiller 2 / Bomba 3 — Opción 2 (⚠ revisar V-24, ver nota)",
+    "color": "#b45309",
+    "componentePrincipal": "BAF3",
+    "pasos": [
+      {
+        "codigo": "V-25",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-27",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-30",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-21",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-22",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-26",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-28",
+        "estado": "no-afecta",
+        "nota": "",
+        "orden": 10
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-7",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Ambos chillers: (Chiller1/Bomba1) + (Chiller2/Bomba2)",
+    "color": "#8b5cf6",
+    "componentePrincipal": null,
+    "pasos": [
+      {
+        "codigo": "V-22",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-23",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-27",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-21",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-25",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-26",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  },
+  {
+    "id": "proc-evap-8",
+    "diagramId": "diag-seed-evaporacion",
+    "nombre": "Ambos chillers: (Chiller1/Bomba2) + (Chiller2/Bomba3)",
+    "color": "#8b5cf6",
+    "componentePrincipal": null,
+    "pasos": [
+      {
+        "codigo": "V-21",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 1
+      },
+      {
+        "codigo": "V-24",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 2
+      },
+      {
+        "codigo": "V-25",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 3
+      },
+      {
+        "codigo": "V-26",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 4
+      },
+      {
+        "codigo": "V-28",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 5
+      },
+      {
+        "codigo": "V-29",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 6
+      },
+      {
+        "codigo": "V-30",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 7
+      },
+      {
+        "codigo": "V-31",
+        "estado": "abierta",
+        "nota": "",
+        "orden": 8
+      },
+      {
+        "codigo": "V-22",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 9
+      },
+      {
+        "codigo": "V-23",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 10
+      },
+      {
+        "codigo": "V-27",
+        "estado": "cerrada",
+        "nota": "",
+        "orden": 11
+      }
+    ],
+    "createdBy": "Sistema (documento oficial)",
+    "createdAt": "2026-09-04T00:00:00.000Z"
+  }
+];
+
 const DEFAULT_SYSTEM_DIAGRAMS_SEED = [
   {
     "id": "diag-seed-condensacion",
@@ -10005,12 +14312,12 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
 
   const [qrDataUrl, setQrDataUrl] = useState(null);
   const [activeProcedure, setActiveProcedure] = useState(null);
-  const [checkedSteps, setCheckedSteps] = useState({});
+  const [verifiedSteps, setVerifiedSteps] = useState({});
   const [componentSearch, setComponentSearch] = useState("");
   const [zoomImage, setZoomImage] = useState(null);
   const [positioningMode, setPositioningMode] = useState(false);
   const [positioningCodigo, setPositioningCodigo] = useState("");
-  const [tappedComponent, setTappedComponent] = useState(null); // componente tocado en el diagrama interactivo
+  const [tappedComponent, setTappedComponent] = useState(null);
 
   const selected = diagrams.find(d => d.id === selectedId);
   const diagramProcedures = procedures.filter(p => p.diagramId === selectedId);
@@ -10039,7 +14346,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
     setSavingDiagram(false);
   };
 
-  const addStep = () => setProcSteps(s => [...s, { codigo: selected?.componentes?.[0]?.codigo || "", accion: DIAGRAM_ACCIONES[0], nota: "" }]);
+  const addStep = () => setProcSteps(s => [...s, { codigo: selected?.componentes?.[0]?.codigo || "", estado: "abierta", nota: "" }]);
   const doCreateProcedure = async () => {
     if (!procForm.nombre.trim() || procSteps.length === 0) return;
     setSavingProc(true);
@@ -10053,6 +14360,21 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const componentesFiltrados = selected ? selected.componentes.filter(c =>
     !componentSearch.trim() || normalizeSearchText(`${c.codigo} ${c.nombre}`).includes(normalizeSearchText(componentSearch.trim()))
   ) : [];
+
+  /** Para el diagrama activo, un mapa código → paso — así el plano se puede pintar solo
+   *  mientras se sigue una maniobra, sin tocar nada más del componente. */
+  const stepByCodigo = {};
+  if (activeProcedure) activeProcedure.pasos.forEach(s => { stepByCodigo[s.codigo] = s; });
+  const estadoInfo = (val) => DIAGRAM_ESTADOS.find(e => e.value === val) || DIAGRAM_ESTADOS[2];
+
+  const verifiedCount = activeProcedure ? activeProcedure.pasos.filter((s, i) => verifiedSteps[i]).length : 0;
+  const allVerified = activeProcedure && verifiedCount === activeProcedure.pasos.length;
+
+  // Puntos "abierta" en orden, para dibujar la línea animada de recorrido de agua sobre el plano.
+  const flowPoints = activeProcedure
+    ? activeProcedure.pasos.filter(s => s.estado === "abierta").map(s => selected?.componentes.find(c => c.codigo === s.codigo)).filter(c => c && c.x != null)
+    : [];
+  const flowPath = flowPoints.length >= 2 ? flowPoints.map(c => `${c.x},${c.y}`).join(" ") : null;
 
   // ---- Vista de lista (sin diagrama seleccionado) ----
   if (!selected) {
@@ -10099,13 +14421,26 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   // ---- Vista de detalle de un diagrama ----
   return (
     <div>
-      <button onClick={() => setSelectedId(null)} className="flex items-center gap-1 text-sm mb-3" style={{ color: C.inkSoft }}>
+      <style>{`
+        @keyframes pmPulseGreen { 0%,100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.7); } 50% { box-shadow: 0 0 0 8px rgba(22,163,74,0); } }
+        @keyframes pmFlowDash { to { stroke-dashoffset: -24; } }
+      `}</style>
+      <button onClick={() => { setSelectedId(null); setActiveProcedure(null); }} className="flex items-center gap-1 text-sm mb-3" style={{ color: C.inkSoft }}>
         <ArrowLeft size={15} /> Todos los diagramas
       </button>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
         <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{selected.nombre}</h2>
         {isAdmin && <Button size="sm" variant="ghost" onClick={() => { if (confirm("¿Borrar este diagrama y todas sus secuencias guardadas?")) { onDeleteDiagram(selected.id); setSelectedId(null); } }} style={{ color: C.red }}>Borrar diagrama</Button>}
       </div>
+
+      {activeProcedure && (
+        <div className="rounded-lg p-2.5 mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: `${activeProcedure.color}18`, border: `1.5px solid ${activeProcedure.color}` }}>
+          <div className="text-sm font-semibold" style={{ color: activeProcedure.color }}>
+            Maniobra activa: {activeProcedure.nombre} — el plano está pintado según esta secuencia
+          </div>
+          <button onClick={() => { setActiveProcedure(null); setVerifiedSteps({}); }} className="text-xs font-semibold px-2 py-1 rounded-md" style={{ background: C.panel, color: C.inkSoft }}>Salir de la maniobra</button>
+        </div>
+      )}
 
       {selected.imagenUrl && (
         <div className="mb-4">
@@ -10139,19 +14474,43 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
                 }
               }}
               className="w-full block" style={{ maxHeight: 420, objectFit: "contain", cursor: positioningMode ? "crosshair" : "zoom-in" }} />
-            {selected.componentes.filter(c => c.x != null && c.y != null).map(c => (
-              <button key={c.codigo} onClick={e => { e.stopPropagation(); if (!positioningMode) setTappedComponent(c); }}
-                className="absolute rounded-full flex items-center justify-center font-bold shadow"
-                style={{ left: `${c.x}%`, top: `${c.y}%`, width: 24, height: 24, transform: "translate(-50%, -50%)", background: C.amber, color: "#fff", fontSize: 9, border: "2px solid #fff" }}
-                title={`${c.codigo} — ${c.nombre}`}>
-                {c.codigo.slice(0, 3)}
-              </button>
-            ))}
+
+            {/* Animación del recorrido del agua: une los puntos "abierta" de la maniobra activa */}
+            {flowPath && (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <polyline points={flowPath} fill="none" stroke={activeProcedure.color} strokeWidth="0.6"
+                  strokeDasharray="3,2" style={{ animation: "pmFlowDash 1s linear infinite" }} vectorEffect="non-scaling-stroke" />
+              </svg>
+            )}
+
+            {selected.componentes.filter(c => c.x != null && c.y != null).map(c => {
+              const step = stepByCodigo[c.codigo];
+              const est = step ? estadoInfo(step.estado) : null;
+              const isDefault = !activeProcedure;
+              const bg = est ? est.color : C.amber;
+              return (
+                <button key={c.codigo} onClick={e => { e.stopPropagation(); if (!positioningMode) setTappedComponent(c); }}
+                  className="absolute rounded-full flex items-center justify-center font-bold shadow"
+                  style={{
+                    left: `${c.x}%`, top: `${c.y}%`, width: activeProcedure && step ? 30 : 24, height: activeProcedure && step ? 30 : 24,
+                    transform: "translate(-50%, -50%)", background: bg, color: "#fff", fontSize: 9, border: "2px solid #fff",
+                    opacity: activeProcedure && !step ? 0.35 : 1,
+                    animation: step?.estado === "abierta" ? "pmPulseGreen 1.4s infinite" : "none",
+                    transition: "all 150ms",
+                  }}
+                  title={`${c.codigo} — ${c.nombre}${step ? ` · ${estadoInfo(step.estado).label}` : ""}`}>
+                  {c.codigo.slice(0, 3)}
+                </button>
+              );
+            })}
           </div>
           {isAdmin && !positioningMode && (
             <div className="text-xs mt-1" style={{ color: C.gray }}>
               {selected.componentes.filter(c => c.x != null).length} de {selected.componentes.length} componentes ya ubicados en el plano.
             </div>
+          )}
+          {!isAdmin && !activeProcedure && (
+            <div className="text-xs mt-1" style={{ color: C.gray }}>🟠 Toca cualquier punto del plano para ver qué maniobras aplican, o abre una secuencia guardada abajo.</div>
           )}
         </div>
       )}
@@ -10196,21 +14555,22 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
             <option value="">¿De qué componente es esta secuencia? (opcional, para que aparezca al tocarlo en el plano)</option>
             {selected.componentes.map(c => <option key={c.codigo} value={c.codigo}>{c.codigo} — {c.nombre}</option>)}
           </select>
+          <div className="text-xs mb-1.5" style={{ color: C.inkSoft }}>Por cada válvula/equipo que participa, elige en qué estado debe quedar:</div>
           {procSteps.map((s, i) => (
             <div key={i} className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-              <span className="text-xs font-bold w-5 text-center" style={{ color: procForm.color }}>{i + 1}</span>
               <select value={s.codigo} onChange={e => setProcSteps(arr => arr.map((st, idx) => idx === i ? { ...st, codigo: e.target.value } : st))} className={inputCls} style={{ ...inputStyle, minWidth: 140 }}>
                 {selected.componentes.map(c => <option key={c.codigo} value={c.codigo}>{c.codigo} — {c.nombre}</option>)}
               </select>
-              <select value={s.accion} onChange={e => setProcSteps(arr => arr.map((st, idx) => idx === i ? { ...st, accion: e.target.value } : st))} className={inputCls} style={inputStyle}>
-                {DIAGRAM_ACCIONES.map(a => <option key={a} value={a}>{a}</option>)}
+              <select value={s.estado} onChange={e => setProcSteps(arr => arr.map((st, idx) => idx === i ? { ...st, estado: e.target.value } : st))} className={inputCls}
+                style={{ ...inputStyle, color: estadoInfo(s.estado).color, fontWeight: 700 }}>
+                {DIAGRAM_ESTADOS.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
               </select>
               <input value={s.nota} onChange={e => setProcSteps(arr => arr.map((st, idx) => idx === i ? { ...st, nota: e.target.value } : st))} placeholder="Nota (opcional)" className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 100 }} />
               <button onClick={() => setProcSteps(arr => arr.filter((_, idx) => idx !== i))}><X size={14} color={C.gray} /></button>
             </div>
           ))}
           <div className="flex items-center gap-2 mt-2">
-            <Button size="sm" variant="ghost" onClick={addStep}>+ Agregar paso</Button>
+            <Button size="sm" variant="ghost" onClick={addStep}>+ Agregar componente</Button>
             <Button size="sm" disabled={savingProc || !procForm.nombre.trim() || procSteps.length === 0} onClick={doCreateProcedure}>{savingProc ? "Guardando…" : "Guardar secuencia"}</Button>
           </div>
         </div>
@@ -10219,16 +14579,73 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
       {diagramProcedures.length === 0 ? (
         <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Todavía no hay secuencias guardadas para este diagrama.</p>
       ) : diagramProcedures.map(p => (
-        <button key={p.id} onClick={() => { setActiveProcedure(p); setCheckedSteps({}); }} className="w-full text-left rounded-lg border p-3 mb-2 flex items-center justify-between" style={{ borderColor: p.color, background: C.panel }}>
+        <button key={p.id} onClick={() => { setActiveProcedure(p); setVerifiedSteps({}); }} className="w-full text-left rounded-lg border p-3 mb-2 flex items-center justify-between" style={{ borderColor: p.color, background: activeProcedure?.id === p.id ? `${p.color}18` : C.panel }}>
           <div>
             <div className="text-sm font-semibold" style={{ color: p.color }}>{p.nombre}</div>
-            <div className="text-xs" style={{ color: C.gray }}>{p.pasos.length} paso{p.pasos.length === 1 ? "" : "s"}</div>
+            <div className="text-xs" style={{ color: C.gray }}>{p.pasos.length} componente{p.pasos.length === 1 ? "" : "s"} involucrado{p.pasos.length === 1 ? "" : "s"}</div>
           </div>
           <ChevronRight size={16} color={C.gray} />
         </button>
       ))}
 
-      {tappedComponent && (
+      {/* Panel lateral: instrucción operativa agrupada por estado + verificación en vivo */}
+      {activeProcedure && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => {}}>
+          <div className="w-full sm:w-[380px] max-h-[85vh] sm:max-h-none sm:h-full overflow-y-auto p-4" style={{ background: C.panel }}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-base font-bold" style={{ color: activeProcedure.color }}>{activeProcedure.nombre}</div>
+              <button onClick={() => { setActiveProcedure(null); setVerifiedSteps({}); }}><X size={18} color={C.gray} /></button>
+            </div>
+            <div className="text-xs mb-3" style={{ color: C.gray }}>
+              {verifiedCount}/{activeProcedure.pasos.length} verificadas en campo
+              <div className="w-full rounded-full mt-1" style={{ height: 5, background: C.bg }}>
+                <div className="h-full rounded-full" style={{ width: `${(verifiedCount / activeProcedure.pasos.length) * 100}%`, background: allVerified ? C.green : activeProcedure.color, transition: "width 200ms" }} />
+              </div>
+            </div>
+            {isAdmin && (
+              <button onClick={() => { if (confirm("¿Borrar esta secuencia?")) { onDeleteProcedure(activeProcedure.id); setActiveProcedure(null); } }} className="text-xs font-semibold mb-3" style={{ color: C.red }}>Borrar esta secuencia</button>
+            )}
+
+            {DIAGRAM_ESTADOS.map(grupo => {
+              const items = activeProcedure.pasos.map((s, i) => ({ ...s, _i: i })).filter(s => s.estado === grupo.value);
+              if (items.length === 0) return null;
+              return (
+                <div key={grupo.value} className="mb-4">
+                  <div className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: grupo.color }}>
+                    {grupo.value === "abierta" ? "Deben quedar ABIERTAS" : grupo.value === "cerrada" ? "Deben quedar CERRADAS" : "No afectan a esta maniobra"}
+                  </div>
+                  <div className="space-y-1.5">
+                    {items.map(s => {
+                      const comp = selected.componentes.find(c => c.codigo === s.codigo);
+                      const done = !!verifiedSteps[s._i];
+                      return (
+                        <button key={s._i} onClick={() => setVerifiedSteps(vs => ({ ...vs, [s._i]: !vs[s._i] }))}
+                          className="w-full text-left rounded-lg p-2.5 flex items-start gap-2.5" style={{ background: done ? "#f0fdf4" : C.bg, opacity: done ? 0.65 : 1 }}>
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 font-bold text-[10px] mt-0.5" style={{ background: done ? C.green : grupo.color, color: "#fff" }}>
+                            {done ? "✓" : ""}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium" style={{ color: C.ink, textDecoration: done ? "line-through" : "none" }}>{s.codigo} — {comp?.nombre || ""}</div>
+                            {s.nota && <div className="text-xs mt-0.5" style={{ color: C.gray }}>{s.nota}</div>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {allVerified && (
+              <div className="rounded-lg p-2.5 text-xs font-semibold text-center" style={{ background: "#dff5e3", color: C.green }}>
+                ✓ Maniobra verificada por completo en campo
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tappedComponent && !activeProcedure && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setTappedComponent(null)}>
           <div className="w-full sm:w-96 max-h-[80vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
@@ -10243,47 +14660,13 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
               return related.length === 0 ? (
                 <p className="text-sm" style={{ color: C.gray }}>Todavía no hay ninguna secuencia guardada para este componente.</p>
               ) : related.map(p => (
-                <button key={p.id} onClick={() => { setTappedComponent(null); setActiveProcedure(p); setCheckedSteps({}); }}
+                <button key={p.id} onClick={() => { setTappedComponent(null); setActiveProcedure(p); setVerifiedSteps({}); }}
                   className="w-full text-left rounded-lg border p-3 mb-2" style={{ borderColor: p.color, background: C.panel }}>
                   <div className="text-sm font-semibold" style={{ color: p.color }}>{p.nombre}</div>
-                  <div className="text-xs" style={{ color: C.gray }}>{p.pasos.length} paso{p.pasos.length === 1 ? "" : "s"}</div>
+                  <div className="text-xs" style={{ color: C.gray }}>{p.pasos.length} componente{p.pasos.length === 1 ? "" : "s"}</div>
                 </button>
               ));
             })()}
-          </div>
-        </div>
-      )}
-
-      {activeProcedure && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setActiveProcedure(null)}>
-          <div className="w-full sm:w-[420px] max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-base font-bold" style={{ color: activeProcedure.color }}>{activeProcedure.nombre}</div>
-              <button onClick={() => setActiveProcedure(null)}><X size={18} color={C.gray} /></button>
-            </div>
-            {isAdmin && (
-              <button onClick={() => { if (confirm("¿Borrar esta secuencia?")) { onDeleteProcedure(activeProcedure.id); setActiveProcedure(null); } }} className="text-xs font-semibold mb-2" style={{ color: C.red }}>Borrar esta secuencia</button>
-            )}
-            <div className="space-y-2">
-              {activeProcedure.pasos.map((s, i) => {
-                const comp = selected.componentes.find(c => c.codigo === s.codigo);
-                const done = !!checkedSteps[i];
-                return (
-                  <button key={i} onClick={() => setCheckedSteps(cs => ({ ...cs, [i]: !cs[i] }))}
-                    className="w-full text-left rounded-lg p-3 flex items-start gap-2.5" style={{ background: done ? "#f0fdf4" : C.bg, opacity: done ? 0.6 : 1 }}>
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 font-bold text-xs" style={{ background: done ? C.green : activeProcedure.color, color: "#fff" }}>
-                      {done ? "✓" : i + 1}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium" style={{ color: C.ink, textDecoration: done ? "line-through" : "none" }}>
-                        {s.accion} {s.codigo} {comp ? `— ${comp.nombre}` : ""}
-                      </div>
-                      {s.nota && <div className="text-xs mt-0.5" style={{ color: C.gray }}>{s.nota}</div>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
       )}
@@ -13229,7 +17612,9 @@ export default function App() {
       const existingDiagramIds = new Set((sd || []).map(d => d.id));
       const missingDiagramSeed = DEFAULT_SYSTEM_DIAGRAMS_SEED.filter(d => !existingDiagramIds.has(d.id));
       setSystemDiagrams([...(sd || []), ...missingDiagramSeed]);
-      setSystemProcedures(sp || []);
+      const existingProcIds = new Set((sp || []).map(p => p.id));
+      const missingProcSeed = DEFAULT_SYSTEM_PROCEDURES_SEED.filter(p => !existingProcIds.has(p.id));
+      setSystemProcedures([...(sp || []), ...missingProcSeed]);
       setLoading(false);
     } catch (e) {
       console.error("Error cargando datos iniciales:", e);

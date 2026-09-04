@@ -14364,7 +14364,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   /** Para el diagrama activo, un mapa código → paso — así el plano se puede pintar solo
    *  mientras se sigue una maniobra, sin tocar nada más del componente. */
   const stepByCodigo = {};
-  if (activeProcedure) activeProcedure.pasos.forEach(s => { stepByCodigo[s.codigo] = s; });
+  if (activeProcedure) activeProcedure.pasos.forEach((s, i) => { stepByCodigo[s.codigo] = { ...s, _i: i }; });
   const estadoInfo = (val) => DIAGRAM_ESTADOS.find(e => e.value === val) || DIAGRAM_ESTADOS[2];
 
   const verifiedCount = activeProcedure ? activeProcedure.pasos.filter((s, i) => verifiedSteps[i]).length : 0;
@@ -14486,20 +14486,24 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
             {selected.componentes.filter(c => c.x != null && c.y != null).map(c => {
               const step = stepByCodigo[c.codigo];
               const est = step ? estadoInfo(step.estado) : null;
-              const isDefault = !activeProcedure;
               const bg = est ? est.color : C.amber;
               return (
-                <button key={c.codigo} onClick={e => { e.stopPropagation(); if (!positioningMode) setTappedComponent(c); }}
+                <button key={c.codigo} onClick={e => {
+                    e.stopPropagation();
+                    if (positioningMode) return;
+                    if (activeProcedure && step) setVerifiedSteps(vs => ({ ...vs, [step._i]: !vs[step._i] }));
+                    else setTappedComponent(c);
+                  }}
                   className="absolute rounded-full flex items-center justify-center font-bold shadow"
                   style={{
                     left: `${c.x}%`, top: `${c.y}%`, width: activeProcedure && step ? 30 : 24, height: activeProcedure && step ? 30 : 24,
-                    transform: "translate(-50%, -50%)", background: bg, color: "#fff", fontSize: 9, border: "2px solid #fff",
+                    transform: "translate(-50%, -50%)", background: verifiedSteps[step?._i] ? C.green : bg, color: "#fff", fontSize: 9, border: "2px solid #fff",
                     opacity: activeProcedure && !step ? 0.35 : 1,
-                    animation: step?.estado === "abierta" ? "pmPulseGreen 1.4s infinite" : "none",
+                    animation: step?.estado === "abierta" && !verifiedSteps[step?._i] ? "pmPulseGreen 1.4s infinite" : "none",
                     transition: "all 150ms",
                   }}
-                  title={`${c.codigo} — ${c.nombre}${step ? ` · ${estadoInfo(step.estado).label}` : ""}`}>
-                  {c.codigo.slice(0, 3)}
+                  title={`${c.codigo} — ${c.nombre}${step ? ` · ${estadoInfo(step.estado).label}${verifiedSteps[step._i] ? " · ✓ verificada" : " · toca para verificar"}` : ""}`}>
+                  {verifiedSteps[step?._i] ? "✓" : c.codigo.slice(0, 3)}
                 </button>
               );
             })}

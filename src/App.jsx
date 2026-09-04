@@ -14473,7 +14473,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
                   setZoomImage(selected.imagenUrl);
                 }
               }}
-              className="w-full block" style={{ maxHeight: 420, objectFit: "contain", cursor: positioningMode ? "crosshair" : "zoom-in" }} />
+              className="w-full block" style={{ height: "auto", cursor: positioningMode ? "crosshair" : "zoom-in" }} />
 
             {/* Animación del recorrido del agua: une los puntos "abierta" de la maniobra activa */}
             {flowPath && (

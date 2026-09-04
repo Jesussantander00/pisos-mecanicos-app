@@ -14588,29 +14588,28 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
         </button>
       ))}
 
-      {/* Panel lateral: instrucción operativa agrupada por estado + verificación en vivo */}
+      {/* Lista de válvulas de la maniobra activa — debajo del plano, ya no como panel flotante */}
       {activeProcedure && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => {}}>
-          <div className="w-full sm:w-[380px] max-h-[85vh] sm:max-h-none sm:h-full overflow-y-auto p-4" style={{ background: C.panel }}>
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-base font-bold" style={{ color: activeProcedure.color }}>{activeProcedure.nombre}</div>
-              <button onClick={() => { setActiveProcedure(null); setVerifiedSteps({}); }}><X size={18} color={C.gray} /></button>
+        <div className="rounded-lg border p-4 mb-4" style={{ borderColor: activeProcedure.color, background: C.panel }}>
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-base font-bold" style={{ color: activeProcedure.color }}>{activeProcedure.nombre}</div>
+          </div>
+          <div className="text-xs mb-3" style={{ color: C.gray }}>
+            {verifiedCount}/{activeProcedure.pasos.length} verificadas en campo
+            <div className="w-full rounded-full mt-1" style={{ height: 5, background: C.bg }}>
+              <div className="h-full rounded-full" style={{ width: `${(verifiedCount / activeProcedure.pasos.length) * 100}%`, background: allVerified ? C.green : activeProcedure.color, transition: "width 200ms" }} />
             </div>
-            <div className="text-xs mb-3" style={{ color: C.gray }}>
-              {verifiedCount}/{activeProcedure.pasos.length} verificadas en campo
-              <div className="w-full rounded-full mt-1" style={{ height: 5, background: C.bg }}>
-                <div className="h-full rounded-full" style={{ width: `${(verifiedCount / activeProcedure.pasos.length) * 100}%`, background: allVerified ? C.green : activeProcedure.color, transition: "width 200ms" }} />
-              </div>
-            </div>
-            {isAdmin && (
-              <button onClick={() => { if (confirm("¿Borrar esta secuencia?")) { onDeleteProcedure(activeProcedure.id); setActiveProcedure(null); } }} className="text-xs font-semibold mb-3" style={{ color: C.red }}>Borrar esta secuencia</button>
-            )}
+          </div>
+          {isAdmin && (
+            <button onClick={() => { if (confirm("¿Borrar esta secuencia?")) { onDeleteProcedure(activeProcedure.id); setActiveProcedure(null); } }} className="text-xs font-semibold mb-3" style={{ color: C.red }}>Borrar esta secuencia</button>
+          )}
 
+          <div className="grid sm:grid-cols-3 gap-4">
             {DIAGRAM_ESTADOS.map(grupo => {
               const items = activeProcedure.pasos.map((s, i) => ({ ...s, _i: i })).filter(s => s.estado === grupo.value);
               if (items.length === 0) return null;
               return (
-                <div key={grupo.value} className="mb-4">
+                <div key={grupo.value}>
                   <div className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: grupo.color }}>
                     {grupo.value === "abierta" ? "Deben quedar ABIERTAS" : grupo.value === "cerrada" ? "Deben quedar CERRADAS" : "No afectan a esta maniobra"}
                   </div>
@@ -14635,13 +14634,13 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
                 </div>
               );
             })}
-
-            {allVerified && (
-              <div className="rounded-lg p-2.5 text-xs font-semibold text-center" style={{ background: "#dff5e3", color: C.green }}>
-                ✓ Maniobra verificada por completo en campo
-              </div>
-            )}
           </div>
+
+          {allVerified && (
+            <div className="rounded-lg p-2.5 text-xs font-semibold text-center mt-3" style={{ background: "#dff5e3", color: C.green }}>
+              ✓ Maniobra verificada por completo en campo
+            </div>
+          )}
         </div>
       )}
 

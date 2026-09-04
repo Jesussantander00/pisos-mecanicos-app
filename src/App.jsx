@@ -8050,8 +8050,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM y gas, calderas y planta eléctrica", access: true },
     { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true },
     { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos con motivo y tipos de habitación", access: true },
-    { id: "diagrams", label: "Diagramas de sistemas", icon: Layers, desc: "Chillers, torres y bombas — secuencias paso a paso", access: true },
-    { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA para procedimientos paso a paso", access: true },
+    { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos paso a paso", access: true },
     { id: "hotsos-import", label: "Importar HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
     { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
@@ -9084,6 +9083,38 @@ function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onRetur
  * procedimiento paso a paso — apoyándose en el historial real de ese equipo (qué se le ha hecho
  * antes, qué piezas se le han cambiado), no en un manual genérico de internet.
  */
+/**
+ * Procedimientos — un solo lugar con dos formas de llegar a "qué hacer": preguntarle a la IA
+ * (Copiloto), o tocar el componente directo en el plano interactivo del sistema.
+ */
+function ProcedimientosHubView(props) {
+  const [tab, setTab] = useState(() => (props.pendingDiagramId ? "diagramas" : "copiloto"));
+  useEffect(() => { if (props.pendingDiagramId) setTab("diagramas"); }, [props.pendingDiagramId]);
+
+  return (
+    <div>
+      <div className="flex rounded-md border overflow-hidden text-xs mb-4 w-fit" style={{ borderColor: C.line }}>
+        <button onClick={() => setTab("copiloto")} className="px-3 font-semibold flex items-center gap-1.5" style={{ background: tab === "copiloto" ? C.steelDark : C.panel, color: tab === "copiloto" ? "#fff" : C.inkSoft, minHeight: 36 }}>
+          <Sparkles size={13} /> Copiloto IA
+        </button>
+        <button onClick={() => setTab("diagramas")} className="px-3 font-semibold flex items-center gap-1.5" style={{ background: tab === "diagramas" ? C.steelDark : C.panel, color: tab === "diagramas" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>
+          <Layers size={13} /> Diagramas interactivos
+        </button>
+      </div>
+
+      {tab === "copiloto" ? (
+        <ProcedureCopilotView equipos={props.equipos} mttoLog={props.mttoLog} />
+      ) : (
+        <DiagramsView diagrams={props.diagrams} procedures={props.procedures} isAdmin={props.isAdmin}
+          initialDiagramId={props.pendingDiagramId} onConsumedInitialDiagram={props.onConsumedInitialDiagram}
+          onCreateDiagram={props.onCreateDiagram} onDeleteDiagram={props.onDeleteDiagram}
+          onCreateProcedure={props.onCreateProcedure} onDeleteProcedure={props.onDeleteProcedure}
+          onSetComponentPosition={props.onSetComponentPosition} />
+      )}
+    </div>
+  );
+}
+
 function ProcedureCopilotView({ equipos, mttoLog }) {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -9528,7 +9559,7 @@ function HabitacionesView({ roomTypes, roomBlocks, isAdmin, onCreateRoomType, on
  * primero, en qué orden) las tiene que armar un admin que conozca el sistema real — no se
  * inventan aquí, porque un orden equivocado puede dañar un equipo de verdad.
  */
-function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsumedInitialDiagram, onCreateDiagram, onDeleteDiagram, onCreateProcedure, onDeleteProcedure }) {
+function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsumedInitialDiagram, onCreateDiagram, onDeleteDiagram, onCreateProcedure, onDeleteProcedure, onSetComponentPosition }) {
   const [selectedId, setSelectedId] = useState(initialDiagramId || null);
   useEffect(() => {
     if (initialDiagramId) { setSelectedId(initialDiagramId); onConsumedInitialDiagram(); }
@@ -9541,7 +9572,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const [savingDiagram, setSavingDiagram] = useState(false);
 
   const [showNewProcedure, setShowNewProcedure] = useState(false);
-  const [procForm, setProcForm] = useState({ nombre: "", color: PROCEDURE_COLORS[0].value });
+  const [procForm, setProcForm] = useState({ nombre: "", color: PROCEDURE_COLORS[0].value, componentePrincipal: "" });
   const [procSteps, setProcSteps] = useState([]);
   const [savingProc, setSavingProc] = useState(false);
 
@@ -9550,6 +9581,9 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const [checkedSteps, setCheckedSteps] = useState({});
   const [componentSearch, setComponentSearch] = useState("");
   const [zoomImage, setZoomImage] = useState(null);
+  const [positioningMode, setPositioningMode] = useState(false);
+  const [positioningCodigo, setPositioningCodigo] = useState("");
+  const [tappedComponent, setTappedComponent] = useState(null); // componente tocado en el diagrama interactivo
 
   const selected = diagrams.find(d => d.id === selectedId);
   const diagramProcedures = procedures.filter(p => p.diagramId === selectedId);
@@ -9582,8 +9616,8 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const doCreateProcedure = async () => {
     if (!procForm.nombre.trim() || procSteps.length === 0) return;
     setSavingProc(true);
-    await onCreateProcedure({ diagramId: selected.id, nombre: procForm.nombre.trim(), color: procForm.color, pasos: procSteps.map((s, i) => ({ ...s, orden: i + 1 })) });
-    setProcForm({ nombre: "", color: PROCEDURE_COLORS[0].value });
+    await onCreateProcedure({ diagramId: selected.id, nombre: procForm.nombre.trim(), color: procForm.color, componentePrincipal: procForm.componentePrincipal, pasos: procSteps.map((s, i) => ({ ...s, orden: i + 1 })) });
+    setProcForm({ nombre: "", color: PROCEDURE_COLORS[0].value, componentePrincipal: "" });
     setProcSteps([]);
     setShowNewProcedure(false);
     setSavingProc(false);
@@ -9647,8 +9681,52 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
       </div>
 
       {selected.imagenUrl && (
-        <img src={selected.imagenUrl} alt={selected.nombre} onClick={() => setZoomImage(selected.imagenUrl)}
-          className="w-full rounded-lg border mb-4 cursor-zoom-in" style={{ borderColor: C.line, maxHeight: 320, objectFit: "contain", background: C.bg }} />
+        <div className="mb-4">
+          {isAdmin && (
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <button onClick={() => { setPositioningMode(v => !v); setPositioningCodigo(""); }} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={{ background: positioningMode ? C.amberSoft : C.bg, color: positioningMode ? "#7a5405" : C.inkSoft }}>
+                {positioningMode ? "✓ Saliendo de posicionar" : "Posicionar componentes en el plano"}
+              </button>
+              {positioningMode && (
+                <select value={positioningCodigo} onChange={e => setPositioningCodigo(e.target.value)} className={inputCls} style={inputStyle}>
+                  <option value="">Elige qué componente vas a ubicar…</option>
+                  {selected.componentes.map(c => <option key={c.codigo} value={c.codigo}>{c.codigo} — {c.nombre}{c.x != null ? " (ya ubicado)" : ""}</option>)}
+                </select>
+              )}
+            </div>
+          )}
+          {positioningMode && positioningCodigo && (
+            <div className="text-xs rounded-md p-2 mb-2" style={{ background: C.blueSoft, color: "#274c6e" }}>Toca en el plano exactamente dónde está "{positioningCodigo}".</div>
+          )}
+          <div className="relative rounded-lg border overflow-hidden" style={{ borderColor: C.line, background: C.bg }}>
+            <img src={selected.imagenUrl} alt={selected.nombre}
+              onClick={e => {
+                if (positioningMode && positioningCodigo) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+                  const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+                  onSetComponentPosition(selected.id, positioningCodigo, x, y);
+                  setPositioningCodigo("");
+                } else if (!positioningMode) {
+                  setZoomImage(selected.imagenUrl);
+                }
+              }}
+              className="w-full block" style={{ maxHeight: 420, objectFit: "contain", cursor: positioningMode ? "crosshair" : "zoom-in" }} />
+            {selected.componentes.filter(c => c.x != null && c.y != null).map(c => (
+              <button key={c.codigo} onClick={e => { e.stopPropagation(); if (!positioningMode) setTappedComponent(c); }}
+                className="absolute rounded-full flex items-center justify-center font-bold shadow"
+                style={{ left: `${c.x}%`, top: `${c.y}%`, width: 24, height: 24, transform: "translate(-50%, -50%)", background: C.amber, color: "#fff", fontSize: 9, border: "2px solid #fff" }}
+                title={`${c.codigo} — ${c.nombre}`}>
+                {c.codigo.slice(0, 3)}
+              </button>
+            ))}
+          </div>
+          {isAdmin && !positioningMode && (
+            <div className="text-xs mt-1" style={{ color: C.gray }}>
+              {selected.componentes.filter(c => c.x != null).length} de {selected.componentes.length} componentes ya ubicados en el plano.
+            </div>
+          )}
+        </div>
       )}
 
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
@@ -9687,6 +9765,10 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
               {PROCEDURE_COLORS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
+          <select value={procForm.componentePrincipal} onChange={e => setProcForm(f => ({ ...f, componentePrincipal: e.target.value }))} className={`${inputCls} w-full mb-2`} style={inputStyle}>
+            <option value="">¿De qué componente es esta secuencia? (opcional, para que aparezca al tocarlo en el plano)</option>
+            {selected.componentes.map(c => <option key={c.codigo} value={c.codigo}>{c.codigo} — {c.nombre}</option>)}
+          </select>
           {procSteps.map((s, i) => (
             <div key={i} className="flex items-center gap-1.5 mb-1.5 flex-wrap">
               <span className="text-xs font-bold w-5 text-center" style={{ color: procForm.color }}>{i + 1}</span>
@@ -9718,6 +9800,32 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
           <ChevronRight size={16} color={C.gray} />
         </button>
       ))}
+
+      {tappedComponent && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setTappedComponent(null)}>
+          <div className="w-full sm:w-96 max-h-[80vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <Badge tone="blue">{tappedComponent.codigo}</Badge>
+                <div className="text-base font-bold mt-1" style={{ color: C.ink }}>{tappedComponent.nombre}</div>
+              </div>
+              <button onClick={() => setTappedComponent(null)}><X size={18} color={C.gray} /></button>
+            </div>
+            {(() => {
+              const related = diagramProcedures.filter(p => p.componentePrincipal === tappedComponent.codigo);
+              return related.length === 0 ? (
+                <p className="text-sm" style={{ color: C.gray }}>Todavía no hay ninguna secuencia guardada para este componente.</p>
+              ) : related.map(p => (
+                <button key={p.id} onClick={() => { setTappedComponent(null); setActiveProcedure(p); setCheckedSteps({}); }}
+                  className="w-full text-left rounded-lg border p-3 mb-2" style={{ borderColor: p.color, background: C.panel }}>
+                  <div className="text-sm font-semibold" style={{ color: p.color }}>{p.nombre}</div>
+                  <div className="text-xs" style={{ color: C.gray }}>{p.pasos.length} paso{p.pasos.length === 1 ? "" : "s"}</div>
+                </button>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
 
       {activeProcedure && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setActiveProcedure(null)}>
@@ -13835,6 +13943,16 @@ export default function App() {
     await sSet("system-procedures", next, true);
   };
 
+  /** Guarda dónde está un componente dentro de la imagen del plano (en % del ancho/alto), para
+   *  poder dibujar su marcador tocable encima del diagrama. */
+  const setComponentPosition = async (diagramId, codigo, x, y) => {
+    const next = systemDiagrams.map(d => d.id !== diagramId ? d : {
+      ...d, componentes: d.componentes.map(c => c.codigo === codigo ? { ...c, x, y } : c),
+    });
+    setSystemDiagrams(next);
+    await sSet("system-diagrams", next, true);
+  };
+
   const deleteTask = async (id) => {
     const item = tasks.find(t => t.id === id);
     if (item) {
@@ -14282,7 +14400,7 @@ export default function App() {
   }, [currentUser, pendingEquipoId]);
 
   useEffect(() => {
-    if (currentUser && pendingDiagramId) setView("diagrams");
+    if (currentUser && pendingDiagramId) setView("procedures");
   }, [currentUser, pendingDiagramId]);
 
   if (loading) return (
@@ -14354,7 +14472,6 @@ export default function App() {
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
         { id: "tools", label: "Herramientas", icon: Wrench },
         { id: "rooms", label: "Habitaciones", icon: Building2 },
-        { id: "diagrams", label: "Diagramas de sistemas", icon: Layers },
         { id: "procedures", label: "Procedimientos", icon: Sparkles },
         ...(isAdmin ? [{ id: "hotsos-import", label: "Importar HotSOS", icon: Upload }] : []),
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
@@ -14655,13 +14772,14 @@ export default function App() {
           {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
           {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
           {view === "rooms" && <HabitacionesView roomTypes={roomTypes} roomBlocks={roomBlocks} isAdmin={isAdmin} onCreateRoomType={createRoomType} onBlockRoom={blockRoom} onUnblockRoom={unblockRoom} />}
-          {view === "diagrams" && (
-            <DiagramsView diagrams={systemDiagrams} procedures={systemProcedures} isAdmin={isAdmin}
-              initialDiagramId={pendingDiagramId} onConsumedInitialDiagram={() => setPendingDiagramId(null)}
+          {view === "procedures" && (
+            <ProcedimientosHubView equipos={mttoEquipos} mttoLog={mttoLog}
+              diagrams={systemDiagrams} procedures={systemProcedures} isAdmin={isAdmin}
+              pendingDiagramId={pendingDiagramId} onConsumedInitialDiagram={() => setPendingDiagramId(null)}
               onCreateDiagram={createSystemDiagram} onDeleteDiagram={deleteSystemDiagram}
-              onCreateProcedure={createSystemProcedure} onDeleteProcedure={deleteSystemProcedure} />
+              onCreateProcedure={createSystemProcedure} onDeleteProcedure={deleteSystemProcedure}
+              onSetComponentPosition={setComponentPosition} />
           )}
-          {view === "procedures" && <ProcedureCopilotView equipos={mttoEquipos} mttoLog={mttoLog} />}
           {view === "hotsos-import" && isAdmin && (
             <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />

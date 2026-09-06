@@ -17612,9 +17612,13 @@ export default function App() {
       setRoomBlocks(rbk || []);
       // Igual que con el changelog: fusiona los diagramas "de fábrica" con los que ya haya
       // guardados, sin duplicar (por id) — así llegan aunque ya exista data guardada.
-      const existingDiagramIds = new Set((sd || []).map(d => d.id));
-      const missingDiagramSeed = DEFAULT_SYSTEM_DIAGRAMS_SEED.filter(d => !existingDiagramIds.has(d.id));
-      setSystemDiagrams([...(sd || []), ...missingDiagramSeed]);
+      // Los diagramas "de fábrica" (Condensación/Evaporación) siempre se actualizan a la última
+      // versión del código — así una corrección nueva sí llega, en vez de quedarse pegada a la
+      // primera vez que se guardaron en Supabase. Los diagramas que el usuario haya creado por su
+      // cuenta (con otro id) se respetan tal cual están.
+      const seedDiagramIds = new Set(DEFAULT_SYSTEM_DIAGRAMS_SEED.map(d => d.id));
+      const customDiagrams = (sd || []).filter(d => !seedDiagramIds.has(d.id));
+      setSystemDiagrams([...DEFAULT_SYSTEM_DIAGRAMS_SEED, ...customDiagrams]);
       const existingProcIds = new Set((sp || []).map(p => p.id));
       const missingProcSeed = DEFAULT_SYSTEM_PROCEDURES_SEED.filter(p => !existingProcIds.has(p.id));
       setSystemProcedures([...(sp || []), ...missingProcSeed]);

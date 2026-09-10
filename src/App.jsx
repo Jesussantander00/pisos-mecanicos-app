@@ -31,7 +31,7 @@ const LIGHT_COLORS = {
   redSoft: "#fbe6e0",
   blue: "#3b6fa0",
   blueSoft: "#e4edf5",
-  gray: "#8a97a3",
+  gray: "#707d8a",
   cardAlt: "#fafbfc",
   white: "#ffffff",
 };
@@ -12000,6 +12000,10 @@ function computeStaleIssues(activeIssues, thresholdDays = 15) {
  */
 function AiAssistantWidget({ contextSummary }) {
   const [open, setOpen] = useState(false);
+  const [hasOpenedBefore, setHasOpenedBeforeState] = useState(() => {
+    try { return localStorage.getItem("pm-local:ai-fab-opened") === "1"; } catch { return false; }
+  });
+  const setHasOpenedBefore = (v) => { setHasOpenedBeforeState(v); try { localStorage.setItem("pm-local:ai-fab-opened", v ? "1" : "0"); } catch { /* noop */ } };
   const [messages, setMessages] = useState([]); // [{ role: "user" | "assistant", text }]
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -12029,7 +12033,12 @@ function AiAssistantWidget({ contextSummary }) {
 
   return (
     <>
-      <button onClick={() => setOpen(v => !v)} title="Pregúntale a la IA sobre la operación del hotel"
+      {!open && !hasOpenedBefore && (
+        <div className="fixed bottom-8 right-[68px] rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg" style={{ background: C.steelDark, color: "#fff", zIndex: 45 }}>
+          Asistente IA
+        </div>
+      )}
+      <button onClick={() => { setOpen(v => !v); setHasOpenedBefore(true); }} title="Pregúntale a la IA sobre la operación del hotel"
         className="fixed bottom-5 right-5 rounded-full shadow-lg flex items-center justify-center"
         style={{ width: 52, height: 52, background: C.steelDark, color: "#fff", zIndex: 45 }}>
         {open ? <X size={22} /> : <Sparkles size={22} />}
@@ -12754,43 +12763,54 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     try { return JSON.parse(localStorage.getItem(`pm-local:favorites:${currentUser}`) || "[]"); } catch { return []; }
   });
   const [favMsg, setFavMsg] = useState(null);
+  const [recent, setRecent] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`pm-local:recent:${currentUser}`) || "[]"); } catch { return []; }
+  });
+  const [showAllModules, setShowAllModules] = useState(false);
+  const goTo = (id) => {
+    setRecent(prev => {
+      const next = [id, ...prev.filter(x => x !== id)].slice(0, 6);
+      try { localStorage.setItem(`pm-local:recent:${currentUser}`, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+    onNavigate(id);
+  };
   const canManageInv = isAdmin || isAlmacenista;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
   const modules = [
-    { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los 12 pisos mecánicos", access: true },
-    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange },
-    { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
-    { id: "meters", label: "Lecturas de Medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies },
-    { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays, desc: "Semana a semana, con envío", access: true },
-    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock, urgentBadge: false },
-    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock, urgentBadge: counts.criticalLowStock > 0, pulse: counts.criticalLowStock > 0 },
-    { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv },
-    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true },
-    { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia },
-    { id: "executive", label: "Panel Ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia },
-    { id: "maintenance-log", label: "Mantenimientos Realizados", icon: History, desc: "Auditoría de lo registrado", access: isAdmin },
-    { id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin },
-    { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true },
-    { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true },
-    { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true },
-    { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true },
-    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false },
-    { id: "profile", label: "Mi Perfil", icon: User, desc: "Tu firma para la entrega de turno", access: true },
-    { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true },
-    { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0, pulse: true },
-    { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues, pulse: true },
-    { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true },
-    { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true },
-    { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM y gas, calderas y planta eléctrica", access: true },
-    { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true },
-    { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos con motivo y tipos de habitación", access: true },
-    { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos paso a paso", access: true },
-    { id: "hotsos-import", label: "Importar HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin },
-    { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia },
-    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true },
-    { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin },
-    { id: "general-history", label: "Historial de cambios", icon: History, desc: "Auditoría: empleados, inventario y tareas", access: isAdmin },
-    { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido y quién no", access: isAdmin },
+    { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los pisos mecánicos", access: true, group: "Operación en Campo" },
+    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange, group: "Operación en Campo" },
+    { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays, desc: "Semana a semana, con envío", access: true, group: "Reportes y Análisis" },
+    { id: "meters", label: "Lecturas de Medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies, group: "Operación en Campo" },
+    { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays, desc: "Semana a semana, con envío", access: true, group: "Reportes y Análisis" },
+    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock, urgentBadge: false, group: "Gestión e Inventario" },
+    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock, urgentBadge: counts.criticalLowStock > 0, pulse: counts.criticalLowStock > 0, group: "Gestión e Inventario" },
+    { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv, group: "Gestión e Inventario" },
+    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true, group: "Operación en Campo" },
+    { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
+    { id: "executive", label: "Panel Ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
+    { id: "maintenance-log", label: "Mantenimientos Realizados", icon: History, desc: "Auditoría de lo registrado", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin, group: "Gestión e Inventario" },
+    { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true, group: "Operación en Campo" },
+    { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true, group: "Operación en Campo" },
+    { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true, group: "Operación en Campo" },
+    { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true, group: "Gestión e Inventario" },
+    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false, group: "Operación en Campo" },
+    { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true, group: "Reportes y Análisis" },
+    { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0, pulse: true, group: "Operación en Campo" },
+    { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues, pulse: true, group: "Operación en Campo" },
+    { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true, group: "Reportes y Análisis" },
+    { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true, group: "Operación en Campo" },
+    { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM, gas, calderas y planta eléctrica", access: true, group: "Operación en Campo" },
+    { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true, group: "Gestión e Inventario" },
+    { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos y tipos de habitación", access: true, group: "Gestión e Inventario" },
+    { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
+    { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
+    { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
+    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true, group: "Administración" },
+    { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin, group: "Administración" },
+    { id: "general-history", label: "Historial de cambios", icon: History, desc: "Auditoría: empleados, inventario y tareas", access: isAdmin, group: "Administración" },
+    { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido", access: isAdmin, group: "Administración" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
   const toggleFavorite = (id) => {
@@ -12811,8 +12831,12 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     });
   };
   const favModules = modules.filter(m => favorites.includes(m.id) && m.access);
+  const recentModules = recent.map(id => modules.find(m => m.id === id)).filter(m => m && m.access && !favorites.includes(m.id)).slice(0, 4);
   const searchNorm = normalizeSearchText(search.trim());
   const visibleModules = (searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules).filter(m => m.access);
+  const GROUP_COLORS = { "Operación en Campo": C.amber, "Gestión e Inventario": "#0ea5e9", "Reportes y Análisis": "#2563eb", "Administración": "#64748b" };
+  const groupOrder = ["Operación en Campo", "Gestión e Inventario", "Reportes y Análisis", "Administración"];
+  const groupedModules = groupOrder.map(g => ({ group: g, items: visibleModules.filter(m => m.group === g) })).filter(g => g.items.length > 0);
 
   const oldestIssue = activeIssuesList.length
     ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
@@ -12959,6 +12983,23 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       )}
 
+      {/* Usados recientemente — lo último que se abrió, para no tener que buscarlo si no está en favoritos */}
+      {!gerenciaLocked && !searchNorm && recentModules.length > 0 && (
+        <div className="mb-4">
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Usados recientemente</div>
+          <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
+            {recentModules.map((m, i) => (
+              <button key={m.id} onClick={() => goTo(m.id)}
+                className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06]"
+                style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 48 }}>
+                <m.icon size={18} color={GROUP_COLORS[m.group] || C.gray} />
+                <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }}>{m.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados */}
       {!gerenciaLocked && !searchNorm && (
         <div className="mb-4">
@@ -12981,48 +13022,64 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       )}
 
-      <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
-        {searchNorm
-          ? `${visibleModules.length} resultado${visibleModules.length === 1 ? "" : "s"} para "${search.trim()}"`
-          : gerenciaLocked
-            ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
-            : "Esto es lo que puedes usar con tu cuenta. Lo que aparece atenuado necesita más permisos — pídeselo a un administrador si lo necesitas."}
-      </p>
+      {!searchNorm && (
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm" style={{ color: C.inkSoft }}>
+            {gerenciaLocked
+              ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
+              : "Arriba tienes tus favoritos y lo más reciente. Si necesitas algo más, está en el menú lateral o aquí abajo."}
+          </p>
+          {!gerenciaLocked && (
+            <button onClick={() => setShowAllModules(v => !v)} className="text-xs font-semibold shrink-0 ml-2" style={{ color: C.amber }}>
+              {showAllModules ? "Ocultar todos los módulos" : "Ver todos los módulos"}
+            </button>
+          )}
+        </div>
+      )}
+      {searchNorm && (
+        <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
+          {visibleModules.length} resultado{visibleModules.length === 1 ? "" : "s"} para "{search.trim()}"
+        </p>
+      )}
 
       {visibleModules.length === 0 ? (
         <div className="text-sm text-center py-10" style={{ color: C.gray }}>
           No encontré nada para "{search.trim()}". Intenta con otra palabra.
         </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-          {visibleModules.map(m => (
-            <button key={m.id} disabled={!m.access} onClick={() => m.access && onNavigate(m.id)}
-              className={`text-left rounded-lg border p-3 transition duration-150 ease-out relative ${m.access ? "hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]" : ""}`}
-              style={{
-                borderColor: C.line, background: m.access ? C.panel : C.bg,
-                opacity: m.access ? 1 : 0.55, cursor: m.access ? "pointer" : "not-allowed",
-                minHeight: 48,
-              }}>
-              {m.access && !gerenciaLocked && (
-                <span role="button" tabIndex={0} title={favorites.includes(m.id) ? "Quitar de favoritos" : "Fijar en favoritos"}
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); toggleFavorite(m.id); } }}
-                  className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center"
-                  style={{ background: C.panel, border: `1px solid ${C.line}`, minWidth: 24, minHeight: 24 }}>
-                  <Sparkles size={12} color={favorites.includes(m.id) ? C.amber : C.gray} fill={favorites.includes(m.id) ? C.amber : "none"} />
-                </span>
-              )}
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <m.icon size={16} className="shrink-0" style={{ color: m.access ? C.amber : C.gray }} />
-                  <div className="text-sm font-semibold truncate" style={{ color: C.ink }}>{m.label}</div>
-                </div>
-                <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
+      ) : (searchNorm || showAllModules || gerenciaLocked) && (
+        <div className="space-y-5">
+          {groupedModules.map(({ group, items }) => (
+            <div key={group}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: GROUP_COLORS[group] || C.inkSoft }}>{group}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                {items.map(m => (
+                  <button key={m.id} onClick={() => goTo(m.id)}
+                    className="group text-left rounded-lg border p-3 transition duration-150 ease-out relative hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]"
+                    style={{
+                      borderColor: m.highlight ? C.amber : C.line, background: C.panel, minHeight: 60,
+                      boxShadow: m.highlight ? `0 0 0 1px ${C.amber}` : "none",
+                    }}>
+                    {!gerenciaLocked && (
+                      <span role="button" tabIndex={0} title={favorites.includes(m.id) ? "Quitar de favoritos" : "Fijar en favoritos"}
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); toggleFavorite(m.id); } }}
+                        className={`absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center transition-opacity ${favorites.includes(m.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
+                        style={{ background: C.panel, border: `1px solid ${C.line}`, minWidth: 24, minHeight: 24 }}>
+                        <Sparkles size={12} color={favorites.includes(m.id) ? C.amber : C.gray} fill={favorites.includes(m.id) ? C.amber : "none"} />
+                      </span>
+                    )}
+                    <div className="flex items-center gap-2 mb-1">
+                      <m.icon size={16} className="shrink-0" style={{ color: GROUP_COLORS[m.group] || C.amber }} />
+                      <div className="text-sm font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{m.label}</div>
+                      <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
+                    </div>
+                    <div className="text-xs" style={{ color: C.inkSoft, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={m.desc}>
+                      {m.desc}
+                    </div>
+                  </button>
+                ))}
               </div>
-              <div className="text-xs truncate" style={{ color: C.gray }}>
-                {m.access ? m.desc : gerenciaLocked ? "No disponible para gerencia" : "Solo administradores" + (m.id.startsWith("inventory") ? " o almacenista" : "")}
-              </div>
-            </button>
+            </div>
           ))}
         </div>
       )}

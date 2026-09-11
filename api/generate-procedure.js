@@ -3,33 +3,42 @@
 // Copiloto de Procedimientos: recibe el nombre de un equipo, su sistema, la tarea que alguien
 // necesita hacer, y su historial reciente de mantenimiento — y le pide a Gemini que arme un
 // procedimiento paso a paso, apoyándose en ese historial real en vez de un manual genérico.
-// Mismo patrón de seguridad y de llamada a Gemini que api/ai-assistant.js.
+// Mismo patrón que api/ai-assistant.js.
 //
-// Variables de entorno necesarias (ya deberían existir si las otras funciones de IA funcionan):
+// Variables de entorno necesarias (ya deberías tenerlas si la lectura de medidores funciona):
 //   GEMINI_API_KEY     — tu clave de la API de Gemini
 //   APP_SHARED_SECRET  — opcional, la misma que ya usan las otras funciones de IA
+//
+// Nota sobre el modelo: igual que en ai-assistant.js, "gemini-2.0-flash" ya no existe (Google lo
+// apagó en junio de 2026). Usa "gemini-3.7-flash".
+
+const GEMINI_MODEL = "gemini-3.7-flash";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Método no permitido." });
+    res.status(405).json({ ok: false, message: "Método no permitido." });
+    return;
   }
 
   const expectedSecret = process.env.APP_SHARED_SECRET;
   if (expectedSecret) {
     const provided = req.headers["x-app-secret"];
     if (provided !== expectedSecret) {
-      return res.status(401).json({ message: "No autorizado." });
+      res.status(401).json({ ok: false, message: "No autorizado." });
+      return;
     }
   }
 
   const { equipoNombre, sistema, tarea, historial } = req.body || {};
   if (!equipoNombre || !tarea || typeof tarea !== "string" || !tarea.trim()) {
-    return res.status(400).json({ message: "Falta el equipo o la tarea a realizar." });
+    res.status(400).json({ ok: false, message: "Falta el equipo o la tarea a realizar." });
+    return;
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ message: "El servidor no tiene configurada la clave de Gemini (GEMINI_API_KEY)." });
+    res.status(500).json({ ok: false, message: "El servidor no tiene configurada la clave de Gemini (GEMINI_API_KEY)." });
+    return;
   }
 
   const systemInstruction = [
@@ -54,7 +63,7 @@ export default async function handler(req, res) {
 
   try {
     const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -68,18 +77,20 @@ export default async function handler(req, res) {
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      return res.status(502).json({ message: `Gemini no pudo responder (${resp.status}). ${errText.slice(0, 200)}` });
+      res.status(502).json({ ok: false, message: `Gemini no pudo responder (${resp.status}). ${errText.slice(0, 200)}` });
+      return;
     }
 
     const data = await resp.json();
     const procedure = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || null;
 
     if (!procedure) {
-      return res.status(502).json({ message: "Gemini no devolvió un procedimiento utilizable." });
+      res.status(502).json({ ok: false, message: "Gemini no devolvió un procedimiento utilizable." });
+      return;
     }
 
-    return res.status(200).json({ procedure: procedure.trim() });
+    res.status(200).json({ procedure: procedure.trim() });
   } catch (err) {
-    return res.status(500).json({ message: "No se pudo contactar a Gemini. Intenta de nuevo." });
+    res.status(500).json({ ok: false, message: "No se pudo contactar a Gemini. Intenta de nuevo." });
   }
 }

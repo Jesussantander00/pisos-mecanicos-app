@@ -18080,21 +18080,32 @@ export default function App() {
   const [justFinished, setJustFinished] = useState(false);
   const [roundSaveMsg, setRoundSaveMsg] = useState(null); // aviso si intentan "cerrar" el recorrido sin haber pasado por todos los pisos
   const [autoSendResult, setAutoSendResult] = useState(null);
-  const tourBufferRef = useRef((() => {
-    // Si el recorrido se interrumpió a mitad de camino (se cerró la sesión sola, se recargó la
-    // página sin querer, etc.), esto lo recupera — así no toca empezar de cero ni se pierde la
-    // entrega de turno por un corte que no tuvo nada que ver con lo que ya se había guardado.
-    try {
-      const saved = localStorage.getItem("pm-local:tour-buffer");
-      if (!saved) return {};
-      const parsed = JSON.parse(saved);
-      return parsed.date === todayStr() && parsed.shift === shift ? parsed.buffer : {};
-    } catch { return {}; }
-  })()); // acumula lo guardado piso por piso durante el recorrido en curso
+  const tourBufferRef = useRef({}); // acumula lo guardado piso por piso durante el recorrido en curso
   // Van de la mano con tourBufferRef, pero SÍ disparan un re-render (un useRef solo no lo hace) —
   // para poder mostrar en pantalla "X de 11 pisos" y el aviso de "recorrido en curso, sigues donde ibas".
-  const [tourProgressCount, setTourProgressCount] = useState(() => Object.keys(tourBufferRef.current).length);
-  const [resumedTour, setResumedTour] = useState(() => Object.keys(tourBufferRef.current).length > 0);
+  const [tourProgressCount, setTourProgressCount] = useState(0);
+  const [resumedTour, setResumedTour] = useState(false);
+
+  // Si el recorrido se interrumpió a mitad de camino (se cerró la sesión sola, se cambió de
+  // celular a mitad de turno, etc.), esto lo recupera — guardado en la nube (no solo en este
+  // celular), así que se puede seguir el MISMO recorrido desde cualquier otro dispositivo.
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = await sGet(`tour-buffer-${currentUser}`, true);
+        if (cancelled || !saved) return;
+        if (saved.date === todayStr() && saved.shift === shift) {
+          tourBufferRef.current = saved.buffer || {};
+          const count = Object.keys(tourBufferRef.current).length;
+          setTourProgressCount(count);
+          setResumedTour(count > 0);
+        }
+      } catch { /* sin conexión: se sigue como si no hubiera nada guardado, no es grave */ }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser, shift]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -19503,9 +19514,9 @@ export default function App() {
         return acc;
       }, []),
     };
-    // Se guarda en este celular por si algo interrumpe la sesión antes de terminar el recorrido
-    // completo (ver la restauración al inicio de tourBufferRef) — así no se pierde lo ya hecho.
-    try { localStorage.setItem("pm-local:tour-buffer", JSON.stringify({ date: todayStr(), shift, buffer: tourBufferRef.current })); } catch { /* noop */ }
+    // Se guarda en la nube (por usuario) por si algo interrumpe la sesión antes de terminar el
+    // recorrido completo, o si la persona sigue el mismo recorrido desde otro dispositivo.
+    sSet(`tour-buffer-${currentUser}`, { date: todayStr(), shift, buffer: tourBufferRef.current }, true).catch(() => {});
     setTourProgressCount(Object.keys(tourBufferRef.current).length);
 
     // Si se guardó el último piso, el recorrido quedó completo — PERO solo si de verdad se
@@ -19539,7 +19550,7 @@ export default function App() {
         sSet("tour-history", newTourHistory, true),
       ]);
       tourBufferRef.current = {};
-      try { localStorage.removeItem("pm-local:tour-buffer"); } catch { /* noop */ }
+      sSet(`tour-buffer-${currentUser}`, null, true).catch(() => {});
       setTourProgressCount(0);
       setResumedTour(false);
       // El recorrido quedó completo — se regresa al primer piso, en vez de dejarlo parado en el

@@ -20164,6 +20164,16 @@ export default function App() {
                           {opt.badge > 0 && <NavBadge count={opt.badge} pulse />}
                         </button>
                       ))}
+                      <div className="my-1 border-t" style={{ borderColor: C.line }} />
+                      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Uso de la plataforma</div>
+                      <a href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer" onClick={() => setShowSettingsMenu(false)}
+                        className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
+                        <Cloud size={14} color={C.gray} /> Panel de Supabase
+                      </a>
+                      <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer" onClick={() => setShowSettingsMenu(false)}
+                        className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
+                        <Gauge size={14} color={C.gray} /> Panel de Vercel
+                      </a>
                     </div>
                   </>
                 )}

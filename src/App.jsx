@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
-import { sGet, sSet, uploadPhoto, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount } from "./lib/storage";
+import { sGet, sSet, uploadPhoto, uploadVideo, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount } from "./lib/storage";
 import { supabase } from "./lib/supabaseClient";
 
 /* ============================================================
@@ -9813,6 +9813,8 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
   const [editingVideo, setEditingVideo] = useState(false);
   const [videoDraft, setVideoDraft] = useState(equipo.videoUrl || "");
   const [savingVideo, setSavingVideo] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoUploadError, setVideoUploadError] = useState(null);
   const [tipo, setTipo] = useState("preventivo");
   const [descripcion, setDescripcion] = useState("");
   const [estado, setEstado] = useState("funcionando");
@@ -9889,13 +9891,36 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
           )}
         </div>
         {editingVideo ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <input value={videoDraft} onChange={e => setVideoDraft(e.target.value)} placeholder="Pega el enlace del video (YouTube, Drive, etc.)"
-              className="flex-1 min-w-[200px] text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-            <Button size="sm" disabled={savingVideo} onClick={async () => { setSavingVideo(true); await onSetVideoUrl(equipo.id, videoDraft); setSavingVideo(false); setEditingVideo(false); }}>
-              {savingVideo ? "Guardando…" : "Guardar"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditingVideo(false)}>Cancelar</Button>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <input value={videoDraft} onChange={e => setVideoDraft(e.target.value)} placeholder="Pega el enlace del video (YouTube, Drive, etc.)"
+                className="flex-1 min-w-[200px] text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <Button size="sm" disabled={savingVideo || !videoDraft.trim()} onClick={async () => { setSavingVideo(true); await onSetVideoUrl(equipo.id, videoDraft); setSavingVideo(false); setEditingVideo(false); }}>
+                {savingVideo ? "Guardando…" : "Guardar enlace"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setEditingVideo(false); setVideoUploadError(null); }}>Cancelar</Button>
+            </div>
+            <div className="text-xs mb-1.5" style={{ color: C.gray }}>— o subir el video directo desde el celular —</div>
+            <label className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md cursor-pointer" style={{ background: C.bg, color: C.inkSoft }}>
+              <Upload size={13} />
+              {uploadingVideo ? "Subiendo…" : "Elegir video del celular"}
+              <input type="file" accept="video/*" className="hidden" disabled={uploadingVideo} onChange={async e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadingVideo(true);
+                setVideoUploadError(null);
+                try {
+                  const url = await uploadVideo(file, `equipo-${equipo.id}`);
+                  await onSetVideoUrl(equipo.id, url);
+                  setEditingVideo(false);
+                } catch (err) {
+                  setVideoUploadError(err.message || "No se pudo subir el video.");
+                } finally {
+                  setUploadingVideo(false);
+                }
+              }} />
+            </label>
+            {videoUploadError && <p className="text-xs mt-1.5" style={{ color: C.red }}>{videoUploadError}</p>}
           </div>
         ) : equipo.videoUrl ? (
           <VideoEmbed url={equipo.videoUrl} />

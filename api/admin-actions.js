@@ -76,6 +76,9 @@ export default async function handler(req, res) {
     } else if (action === "toggle-gerencia") {
       const { data: t } = await supabaseAdmin.from("profiles").select("is_gerencia").eq("id", targetUserId).maybeSingle();
       await supabaseAdmin.from("profiles").update({ is_gerencia: !t?.is_gerencia }).eq("id", targetUserId);
+    } else if (action === "toggle-schedule-manager") {
+      const { data: t } = await supabaseAdmin.from("profiles").select("can_manage_schedule").eq("id", targetUserId).maybeSingle();
+      await supabaseAdmin.from("profiles").update({ can_manage_schedule: !t?.can_manage_schedule }).eq("id", targetUserId);
     } else if (action === "reset-password") {
       if (!newPassword || newPassword.length < 4) {
         res.status(400).json({ ok: false, message: "La contraseña debe tener al menos 4 caracteres." });

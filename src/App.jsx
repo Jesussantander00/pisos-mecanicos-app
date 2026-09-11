@@ -10078,6 +10078,9 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -10094,6 +10097,10 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
     if (!search.trim()) return true;
     return `${r.equipoNombre} ${r.sistema} ${r.tecnico} ${r.descripcion}`.toLowerCase().includes(search.toLowerCase());
   }), sort), [rows, filterTipo, search, sort]);
+
+  const selected = filtered.find(r => r.id === selectedId) || rows.find(r => r.id === selectedId);
+  const selectedIndex = mttoLog.findIndex(r => r.id === selectedId);
+  const shortId = (id) => "#MT-" + (id || "").replace(/[^0-9]/g, "").slice(-4).padStart(4, "0");
 
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
@@ -10136,6 +10143,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
       const data = await resp.json().catch(() => ({}));
       setMsg({ ok: resp.ok, text: data?.message || (resp.ok ? "Enviado." : "El servidor rechazó el envío.") });
       onLogSent?.({ to: emailTo.trim(), method: "Mantenimientos realizados (correo con Excel)", ok: resp.ok, message: data?.message, sentBy: currentUser, sentAt: nowIso() });
+      if (resp.ok) setShowExportModal(false);
     } catch {
       setMsg({ ok: false, text: "No se pudo enviar. Revisa la conexión." });
     }
@@ -10144,23 +10152,12 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mantenimientos Realizados</h2>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
-        Todo lo que los técnicos han registrado, en un solo lugar — para revisar y verificar la información y las fotos que suben.
-      </p>
-
-      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar en Excel</div>
-        <div className="flex items-center gap-2 flex-wrap mb-2">
-          <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
-            className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
-          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
-        </div>
-        {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      <div className="flex items-start justify-between gap-2 flex-wrap mb-1">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Historial de mantenimientos</h2>
       </div>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Todo lo que los técnicos han registrado, en un solo lugar — toca cualquiera para ver el detalle completo.
+      </p>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por equipo, sistema, técnico o descripción…"
@@ -10169,6 +10166,9 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
           <option value="">Todos los tipos</option>
           {MTTO_TIPOS.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
         </select>
+        <button onClick={() => setShowExportModal(true)} title="Descargar o enviar en Excel" className="p-2 rounded-md shrink-0" style={{ background: C.bg }}>
+          <Download size={16} color={C.ink} />
+        </button>
       </div>
 
       <SortBar sort={sort} onSort={onSort} options={[
@@ -10181,28 +10181,140 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
       {filtered.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin mantenimientos registrados todavía.</p>
       ) : filtered.slice(0, 200).map(r => (
-        <div key={r.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-sm font-medium" style={{ color: C.ink }}>{r.equipoNombre} <span style={{ color: C.gray, fontWeight: 400 }}>· {r.sistema}</span></div>
-            <Pill tone={r.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
-          </div>
-          <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: C.inkSoft }}>
-            <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo}</Badge>
-            {fmtDT(r.fecha)} · <Avatar name={r.tecnico} size={16} /> {r.tecnico}{r.costo ? ` · $${Number(r.costo).toLocaleString("es-CO")}` : ""}
-          </div>
-          <div className="text-sm mt-1" style={{ color: C.ink }}>{r.descripcion}</div>
-          {r.fotos && r.fotos.length > 0 && (
-            <div className="flex items-center gap-2 mt-2">
-              {r.fotos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                </a>
-              ))}
+        <button key={r.id} onClick={() => setSelectedId(r.id)}
+          className="w-full text-left rounded-lg border p-3 mb-2 flex items-center gap-3 transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
+          style={{ borderColor: r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
+          {r.fotos && r.fotos.length > 0 ? (
+            <img src={r.fotos[0]} alt="" className="w-14 h-14 object-cover rounded-lg border shrink-0" style={{ borderColor: C.line }} />
+          ) : (
+            <div className="w-14 h-14 rounded-lg border flex items-center justify-center shrink-0" style={{ borderColor: C.line, background: C.bg }}>
+              <Wrench size={18} color={C.gray} />
             </div>
           )}
-        </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium truncate" style={{ color: C.ink }}>{r.equipoNombre}</div>
+              <Pill tone={r.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
+            </div>
+            <div className="text-xs truncate" style={{ color: C.gray }}>{r.sistema}</div>
+            <div className="text-xs mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: C.inkSoft }}>
+              <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo}</Badge>
+              <Avatar name={r.tecnico} size={16} /> {r.tecnico} · {fmtDT(r.fecha)}
+            </div>
+          </div>
+          <ChevronRight size={16} color={C.gray} className="shrink-0" />
+        </button>
       ))}
       {filtered.length > 200 && <div className="text-xs mt-2" style={{ color: C.gray }}>Mostrando los 200 más recientes — descarga el Excel para ver todos ({filtered.length}).</div>}
+
+      {/* Modal de exportación — antes era un bloque gigante siempre visible, ahora vive detrás del ícono de descarga */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setShowExportModal(false)}>
+          <div className="w-full sm:w-96 rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-base font-bold" style={{ color: C.ink }}>Descargar / enviar en Excel</div>
+              <button onClick={() => setShowExportModal(false)}><X size={18} color={C.gray} /></button>
+            </div>
+            <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
+            <div className="flex items-center gap-2 flex-wrap mt-3">
+              <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
+                className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
+              <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar"}</Button>
+            </div>
+            {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Panel de detalle — reporte tipo documento industrial, con lo que de verdad se registra hoy */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setSelectedId(null)}>
+          <div className="w-full sm:w-[440px] h-full overflow-y-auto p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setSelectedId(null)} className="flex items-center gap-1 text-sm mb-4" style={{ color: C.inkSoft }}>
+              <ArrowLeft size={15} /> Cerrar
+            </button>
+
+            {/* Encabezado ejecutivo */}
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-xs font-mono font-semibold" style={{ color: C.gray }}>{shortId(selected.id)}</div>
+              <Pill tone={selected.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === selected.estado)?.label || selected.estado}</Pill>
+            </div>
+            <h2 className="text-xl font-bold mb-0.5" style={{ color: C.ink }}>{selected.equipoNombre}</h2>
+            <div className="text-sm mb-4" style={{ color: C.inkSoft }}>{selected.sistema}</div>
+
+            {/* Sección 1: Datos de ejecución */}
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Datos de ejecución</div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <div className="text-xs" style={{ color: C.gray }}>Tipo</div>
+                <Badge tone={badgeToneFor("tipoMtto", selected.tipo)}>{MTTO_TIPOS.find(t => t.code === selected.tipo)?.label || selected.tipo}</Badge>
+              </div>
+              <div>
+                <div className="text-xs" style={{ color: C.gray }}>Técnico</div>
+                <div className="flex items-center gap-1.5 mt-0.5"><Avatar name={selected.tecnico} size={18} /> <span className="text-sm" style={{ color: C.ink }}>{selected.tecnico}</span></div>
+              </div>
+              <div className="col-span-2">
+                <div className="text-xs" style={{ color: C.gray }}>Fecha de registro</div>
+                <div className="text-sm" style={{ color: C.ink }}>{fmtDT(selected.fecha)}</div>
+              </div>
+            </div>
+
+            {/* Sección 2: Diagnóstico y trabajo realizado */}
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Diagnóstico y trabajo realizado</div>
+            <div className="text-sm rounded-lg p-3 mb-4" style={{ background: C.bg, color: C.ink, whiteSpace: "pre-wrap" }}>
+              {selected.descripcion || "(sin descripción)"}
+            </div>
+
+            {/* Sección 3: Evidencia fotográfica */}
+            {selected.fotos && selected.fotos.length > 0 && (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Evidencia fotográfica</div>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {selected.fotos.map((url, i) => (
+                    <button key={i} onClick={() => setLightboxUrl(url)}>
+                      <img src={url} alt="" className="w-full aspect-square object-cover rounded-md border" style={{ borderColor: C.line }} />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Sección 4: Insumos y repuestos utilizados */}
+            {selected.repuestos && selected.repuestos.length > 0 && (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Insumos y repuestos utilizados</div>
+                <div className="rounded-lg border overflow-hidden mb-4" style={{ borderColor: C.line }}>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ background: C.bg }}>
+                      <th className="text-left px-2.5 py-1.5 font-semibold" style={{ color: C.inkSoft }}>Cant.</th>
+                      <th className="text-left px-2.5 py-1.5 font-semibold" style={{ color: C.inkSoft }}>Repuesto</th>
+                    </tr></thead>
+                    <tbody>
+                      {selected.repuestos.map((rp, i) => (
+                        <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
+                          <td className="px-2.5 py-1.5" style={{ color: C.ink }}>{rp.cantidad}</td>
+                          <td className="px-2.5 py-1.5" style={{ color: C.ink }}>{rp.nombre}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {selected.costo > 0 && (
+              <div className="text-sm mb-4" style={{ color: C.ink }}>Costo total: <b>${Number(selected.costo).toLocaleString("es-CO")}</b></div>
+            )}
+
+            {/* Sección 5: Trazabilidad */}
+            <div className="text-xs pt-3 mt-2 border-t" style={{ color: C.gray, borderColor: C.line }}>
+              Registrado por <b>{selected.createdBy}</b> el {fmtDT(selected.createdAt)}
+              {selectedIndex >= 0 && <> · registro {selectedIndex + 1} de {mttoLog.length}</>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   );
 }

@@ -1349,7 +1349,7 @@ const TASK_PRIORITIES = [
   { code: "media", label: "Media" },
   { code: "baja", label: "Baja" },
 ];
-const TASK_PRIORITY_COLORS = { alta: "D93025", media: "D97706", baja: "5C6B7A" };
+const TASK_PRIORITY_COLORS = { alta: "#D93025", media: "#D97706", baja: "#5C6B7A" };
 const TASK_RECURRENCES = [
   { code: "", label: "No se repite" },
   { code: "semanal", label: "Cada semana" },
@@ -8414,6 +8414,9 @@ const KANBAN_COLUMNS = [
   { code: "pausada", label: "En espera de repuesto" },
   { code: "finalizada", label: "Hecho" },
 ];
+/** Si "Pendiente" pasa de esta cantidad, la columna se resalta — es una señal de que se están
+ *  generando más tickets de los que el equipo puede empezar a atender. */
+const KANBAN_WIP_LIMIT = 20;
 
 /** Tarjeta compacta de una columna del Kanban — se puede arrastrar y soltar en otra columna
  * (escritorio) o tocar "Mover a…" para un menú rápido de un solo toque (más confiable en
@@ -8426,19 +8429,42 @@ function cargoForUsername(username, accounts, employees) {
   return employees.find(e => e.id === empId)?.cargo || null;
 }
 
-function TaskKanbanCard({ task, accounts, employees, canAct, onOpenDrawer, onMove, onZoom }) {
+function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDrawer, onMove, onZoom }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const estado = normalizeTaskState(task.estado);
   const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : null;
+  const linkedEquipo = task.equipoId && equipos ? equipos.find(e => e.id === task.equipoId) : null;
   return (
     <div draggable={canAct} onDragStart={e => e.dataTransfer.setData("text/plain", task.id)}
-      className="rounded-lg border p-2.5 mb-2 cursor-pointer" style={{ borderColor: C.line, background: C.panel, minHeight: 48 }}
+      className="rounded-lg border p-2.5 mb-2 cursor-pointer relative" style={{ borderColor: C.line, borderLeftWidth: 3, borderLeftColor: TASK_PRIORITY_COLORS[task.prioridad] || C.line, background: C.panel, minHeight: 48 }}
       onClick={() => onOpenDrawer(task.id)}>
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <span className="text-[10px] font-bold shrink-0" style={{ color: TASK_PRIORITY_COLORS[task.prioridad] }}>●</span>
+      {canAct && estado !== "finalizada" && (
+        <div className="absolute top-1.5 right-1.5" onClick={e => e.stopPropagation()}>
+          <button onClick={() => setMenuOpen(v => !v)} className="w-6 h-6 rounded-md flex items-center justify-center" style={{ color: C.gray }}>
+            <MoreVertical size={14} />
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 z-20 mt-1 w-36 rounded-md border shadow-lg overflow-hidden" style={{ background: C.panel, borderColor: C.line }}>
+                {KANBAN_COLUMNS.filter(c => c.code !== estado).map(c => (
+                  <button key={c.code} onClick={() => { onMove(task, c.code); setMenuOpen(false); }}
+                    className="block w-full text-left text-xs px-2.5 hover:bg-black/5" style={{ color: C.ink, minHeight: 36 }}>
+                    Mover a {c.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 mb-1 pr-6">
         <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
         <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={20} />
       </div>
+      {linkedEquipo?.sistema && (
+        <div className="mb-1.5"><Badge tone={badgeToneFor("sistema", linkedEquipo.sistema)}>{linkedEquipo.sistema}</Badge></div>
+      )}
       <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
       {task.fotosAntes && task.fotosAntes.length > 0 && (
         <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
@@ -8447,26 +8473,6 @@ function TaskKanbanCard({ task, accounts, employees, canAct, onOpenDrawer, onMov
               <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
             </button>
           ))}
-        </div>
-      )}
-      {canAct && estado !== "finalizada" && (
-        <div className="relative mt-1.5" onClick={e => e.stopPropagation()}>
-          <button onClick={() => setMenuOpen(v => !v)} className="text-[10px] font-semibold px-1.5 rounded-md w-full text-center" style={{ background: C.bg, color: C.inkSoft, minHeight: 26 }}>
-            Mover a…
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute z-20 mt-1 w-full rounded-md border shadow-lg overflow-hidden" style={{ background: C.panel, borderColor: C.line }}>
-                {KANBAN_COLUMNS.filter(c => c.code !== estado).map(c => (
-                  <button key={c.code} onClick={() => { onMove(task, c.code); setMenuOpen(false); }}
-                    className="block w-full text-left text-xs px-2.5 hover:bg-black/5" style={{ color: C.ink, minHeight: 36 }}>
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </div>
       )}
     </div>
@@ -8780,6 +8786,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [dateTo, setDateTo] = useState("");
   const [filterTurno, setFilterTurno] = useState("");
   const [filterOperario, setFilterOperario] = useState("");
+  const [showAdvFilters, setShowAdvFilters] = useState(false);
   const [filterPrioridad, setFilterPrioridad] = useState("");
 
   const turnoOf = (fecha) => {
@@ -8833,6 +8840,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     return hoursBetween(t.assignedAt, nowIso()) > 24;
   }).length;
   const cumplimientoPct = totalTareas > 0 ? Math.round((cerradas.length / totalTareas) * 100) : 100;
+  const misTareasAbiertas = tasks.filter(t => t.asignadoA === currentUsername && normalizeTaskState(t.estado) !== "finalizada").length;
 
   /** Si alguien tiene notablemente más tareas abiertas que el promedio del equipo esta semana
    *  (al menos 1.5x el promedio, y al menos 2 de diferencia), lo señala — para repartir mejor,
@@ -8925,15 +8933,18 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <StatCard label="Tuyas, abiertas ahora" value={misTareasAbiertas} valueColor={misTareasAbiertas > 0 ? C.amber : C.ink}
+          tooltip="Tareas asignadas a ti que todavía no has marcado como Finalizada."
+          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: misTareasAbiertas > 0 ? C.amberSoft : C.greenSoft }}><User size={18} color={misTareasAbiertas > 0 ? C.amber : C.green} /></div>} />
         <StatCard label="Tareas totales" value={totalTareas}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><ClipboardCheck size={18} color={C.blue} /></div>} />
-        <StatCard label="Tiempo prom. de cierre" value={tiempoCierrePromedio != null ? fmtHours(tiempoCierrePromedio) : "—"}
+        <StatCard label="Tiempo prom. de cierre" value={tiempoCierrePromedio != null ? fmtHours(tiempoCierrePromedio) : "Sin cierres"}
           tooltip="Promedio de horas desde que una tarea se asigna hasta que se marca Finalizada, contando solo las tareas ya cerradas."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
         <StatCard label="Críticas vencidas (>24h)" value={criticasVencidas} valueColor={criticasVencidas ? C.red : C.ink}
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: criticasVencidas ? C.redSoft : C.greenSoft }}><AlertTriangle size={18} color={criticasVencidas ? C.red : C.green} /></div>} />
-        <StatCard label="Cumplimiento" value={`${cumplimientoPct}%`} valueColor={cumplimientoPct >= 80 ? C.green : C.amber}
+        <StatCard label="Cumplimiento" value={totalTareas > 0 ? `${cumplimientoPct}%` : "Sin datos"} valueColor={cumplimientoPct >= 80 ? C.green : C.amber}
           leading={<MiniGauge value={cumplimientoPct} max={100} size={40} stroke={5} color={cumplimientoPct >= 80 ? C.green : C.amber} />} />
       </div>
 
@@ -9090,23 +9101,6 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
 
       <div className="rounded-xl border p-3 mb-4 flex items-end gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Desde</div>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
-        </div>
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Hasta</div>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
-        </div>
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Turno</div>
-          <select value={filterTurno} onChange={e => setFilterTurno(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
-            <option value="">Todos</option>
-            <option value="Mañana">Mañana</option>
-            <option value="Tarde">Tarde</option>
-            <option value="Noche">Noche</option>
-          </select>
-        </div>
-        <div>
           <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Operario</div>
           <select value={filterOperario} onChange={e => setFilterOperario(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
             <option value="">Todos</option>
@@ -9120,6 +9114,32 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
           </select>
         </div>
+        {(showAdvFilters || hasAdvancedFilters) && (
+          <>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Desde</div>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Hasta</div>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Turno</div>
+              <select value={filterTurno} onChange={e => setFilterTurno(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+                <option value="">Todos</option>
+                <option value="Mañana">Mañana</option>
+                <option value="Tarde">Tarde</option>
+                <option value="Noche">Noche</option>
+              </select>
+            </div>
+          </>
+        )}
+        {!showAdvFilters && !hasAdvancedFilters && (
+          <button onClick={() => setShowAdvFilters(true)} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={{ color: C.amber }}>
+            Filtros avanzados
+          </button>
+        )}
         {hasAdvancedFilters && (
           <button onClick={clearAdvancedFilters} className="text-xs font-semibold px-2.5 py-1.5 rounded-md flex items-center gap-1" style={{ color: C.red }}>
             <X size={13} /> Limpiar filtros
@@ -9131,8 +9151,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {KANBAN_COLUMNS.map(col => {
             const colTasks = filtered.filter(t => normalizeTaskState(t.estado) === col.code);
+            const overWip = col.code === "asignada" && colTasks.length > KANBAN_WIP_LIMIT;
             return (
-              <div key={col.code} className="rounded-xl border p-2.5" style={{ borderColor: C.line, background: C.bg, minHeight: 140 }}
+              <div key={col.code} className="rounded-xl border p-2.5" style={{ borderColor: overWip ? C.red : C.line, background: overWip ? C.redSoft : C.bg, minHeight: 140 }}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => {
                   const taskId = e.dataTransfer.getData("text/plain");
@@ -9143,13 +9164,18 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   else transitionTask(task, col.code);
                 }}>
                 <div className="flex items-center justify-between mb-2 px-0.5">
-                  <div className="text-xs font-bold uppercase tracking-wide" style={{ color: C.inkSoft }}>{col.label}</div>
-                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.panel, color: C.gray }}>{colTasks.length}</span>
+                  <div className="text-xs font-bold uppercase tracking-wide flex items-center gap-1" style={{ color: overWip ? C.red : C.inkSoft }}>
+                    {col.label} {overWip && <AlertTriangle size={12} />}
+                  </div>
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: overWip ? "#fff" : C.panel, color: overWip ? C.red : C.gray }}>{colTasks.length}</span>
                 </div>
+                {overWip && (
+                  <div className="text-[10px] mb-2 px-0.5" style={{ color: C.red }}>Muchas tareas pendientes sin empezar — puede valer la pena repartir antes de seguir creando más.</div>
+                )}
                 {colTasks.length === 0 ? (
                   <div className="text-[11px] text-center py-4" style={{ color: C.gray }}>Vacío</div>
                 ) : colTasks.map(t => (
-                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} canAct={isAdmin || t.asignadoA === currentUsername}
+                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} equipos={equipos} canAct={isAdmin || t.asignadoA === currentUsername}
                     onOpenDrawer={setDrawerTaskId}
                     onMove={(task, code) => code === "finalizada" ? setDrawerTaskId(task.id) : transitionTask(task, code)}
                     onZoom={setLightboxUrl} />
@@ -10408,6 +10434,13 @@ function badgeToneFor(kind, value) {
   }
   if (kind === "cronograma") return value === "ejecutado" ? "green" : value === "atrasado" ? "red" : "amber";
   if (kind === "prioridad") return value === "alta" ? "red" : value === "media" ? "amber" : "blue";
+  if (kind === "sistema") {
+    const v = (value || "").toLowerCase();
+    if (v.includes("eléctric") || v.includes("electric")) return "amber";
+    if (v.includes("hvac") || v.includes("clima") || v.includes("aire")) return "blue";
+    if (v.includes("hidráulic") || v.includes("plomería") || v.includes("agua")) return "green";
+    return "gray";
+  }
   return "gray";
 }
 

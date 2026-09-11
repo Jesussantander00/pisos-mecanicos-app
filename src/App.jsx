@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -12242,17 +12242,17 @@ function AiAssistantWidget({ contextSummary }) {
   return (
     <>
       {!open && !hasOpenedBefore && (
-        <div className="fixed bottom-8 right-[68px] rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg" style={{ background: C.steelDark, color: "#fff", zIndex: 45 }}>
+        <div className="fixed bottom-24 sm:bottom-8 right-[68px] rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg" style={{ background: C.steelDark, color: "#fff", zIndex: 45 }}>
           Asistente IA
         </div>
       )}
       <button onClick={() => { setOpen(v => !v); setHasOpenedBefore(true); }} title="Pregúntale a la IA sobre la operación del hotel"
-        className="fixed bottom-5 right-5 rounded-full shadow-lg flex items-center justify-center"
+        className="fixed bottom-20 sm:bottom-5 right-5 rounded-full shadow-lg flex items-center justify-center"
         style={{ width: 52, height: 52, background: C.steelDark, color: "#fff", zIndex: 45 }}>
         {open ? <X size={22} /> : <Sparkles size={22} />}
       </button>
       {open && (
-        <div className="fixed bottom-20 right-3 left-3 sm:left-auto sm:w-96 rounded-xl border shadow-2xl flex flex-col"
+        <div className="fixed bottom-36 sm:bottom-20 right-3 left-3 sm:left-auto sm:w-96 rounded-xl border shadow-2xl flex flex-col"
           style={{ height: "62vh", maxHeight: 520, background: C.panel, borderColor: C.line, zIndex: 45 }}>
           <div className="flex items-center justify-between p-3 border-b shrink-0" style={{ borderColor: C.line }}>
             <div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: C.ink }}>
@@ -17931,6 +17931,8 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const closeOnboarding = () => {
     setShowOnboarding(false);
     try { localStorage.setItem("pm-local:onboarded", "1"); } catch { /* noop */ }
@@ -19968,7 +19970,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui" }}>
+    <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
       {(isAdmin || isGerencia) && account?.approved && <AiAssistantWidget contextSummary={aiContextSummary} />}
       {showQrScanner && (
@@ -20085,11 +20087,11 @@ export default function App() {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="flex items-center justify-between px-4 py-3 border-b gap-2 flex-wrap" style={{ background: C.panel, borderColor: C.line }}>
+        <header className="pm-safe-top flex items-center justify-between px-4 py-3 border-b gap-2 flex-wrap" style={{ background: C.panel, borderColor: C.line }}>
           <button className="lg:hidden" onClick={() => setSidebarOpen(v => !v)}>
             <ChevronDown size={20} color={C.ink} style={{ transform: sidebarOpen ? "rotate(180deg)" : "none" }} />
           </button>
-          <div className="flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
+          <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
             <Clock size={14} /> {todayStr()}
             {["ronda", "meters", "coldrooms", "fichas-tecnicas"].includes(view) ? (
               <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -20099,6 +20101,12 @@ export default function App() {
               <span className="ml-2">{nowClock.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
             )}
           </div>
+          {/* En móvil, el turno SÍ hace falta verlo (afecta lo que se registra) aunque se oculte la fecha/hora */}
+          {["ronda", "meters", "coldrooms", "fichas-tecnicas"].includes(view) && (
+            <select value={shift} onChange={e => setShift(e.target.value)} className="sm:hidden text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           {isAdmin && (
             <>
               <GlobalSearch currentView={view} mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
@@ -20141,14 +20149,46 @@ export default function App() {
                 <CheckCircle2 size={12} /> Fotos sincronizadas
               </span>
             )}
-            <button onClick={() => setShowOnboarding(true)} title="Ver guía de bienvenida" className="p-1.5 rounded-md" style={{ background: C.bg }}>
+            <button onClick={() => setShowOnboarding(true)} title="Ver guía de bienvenida" className="hidden sm:block p-1.5 rounded-md" style={{ background: C.bg }}>
               <span className="text-xs font-bold w-4 h-4 flex items-center justify-center" style={{ color: C.ink }}>?</span>
             </button>
-            <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} className="p-1.5 rounded-md" style={{ background: C.bg }}>
+            <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} className="hidden sm:block p-1.5 rounded-md" style={{ background: C.bg }}>
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
-            {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
-            {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} />}
+            {isAdmin && <span className="hidden sm:inline-flex"><PushEnableButton onEnable={enablePushNotifications} /></span>}
+            {isAdmin && <span className="hidden sm:inline-flex"><NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} /></span>}
+            {/* En móvil: ayuda + modo oscuro + notificaciones (si es admin) quedan detrás de este botón, para no saturar el header */}
+            <div className="relative sm:hidden">
+              <button onClick={() => setShowMoreMenu(v => !v)} title="Más opciones" className="p-1.5 rounded-md relative" style={{ background: showMoreMenu ? C.amberSoft : C.bg }}>
+                <MoreVertical size={16} color={C.ink} />
+                {isAdmin && (shiftAlerts?.length > 0 || staleIssues?.length > 0 || criticalFuelTanks?.length > 0 || maintenanceDue?.items?.length > 0) && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full" style={{ background: C.red }} />
+                )}
+              </button>
+              {showMoreMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border shadow-lg z-50 py-1" style={{ background: C.panel, borderColor: C.line }}>
+                    <button onClick={() => { setShowOnboarding(true); setShowMoreMenu(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
+                      <span className="text-xs font-bold w-4 text-center">?</span> Guía de bienvenida
+                    </button>
+                    <button onClick={() => { toggleTheme(); setShowMoreMenu(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
+                      {darkMode ? <Sun size={14} color={C.amber} /> : <Moon size={14} color={C.gray} />} {darkMode ? "Modo claro" : "Modo oscuro"}
+                    </button>
+                    {isAdmin && (
+                      <div className="px-3 py-2" onClick={() => setShowMoreMenu(false)}>
+                        <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} />
+                      </div>
+                    )}
+                    {isAdmin && (
+                      <div className="px-3 py-2" onClick={() => setShowMoreMenu(false)}>
+                        <PushEnableButton onEnable={enablePushNotifications} />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
             {isAdmin && (
               <div className="relative">
                 <button onClick={() => setShowSettingsMenu(v => !v)} title="Configuración del sistema" className="p-1.5 rounded-md relative" style={{ background: showSettingsMenu ? C.amberSoft : C.bg }}>
@@ -20190,12 +20230,44 @@ export default function App() {
                 )}
               </div>
             )}
-            {isAdmin && <Pill tone="amber">Admin</Pill>}
-            <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
-            <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
+            {isAdmin && <span className="hidden sm:inline-flex"><Pill tone="amber">Admin</Pill></span>}
+            <span className="hidden sm:flex text-sm font-medium items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
+            <span className="hidden sm:inline-flex"><Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button></span>
+            {/* En móvil: solo el avatar — toca para ver el nombre completo y salir, sin ocupar espacio del header todo el tiempo */}
+            <div className="relative sm:hidden">
+              <button onClick={() => setShowProfileMenu(v => !v)} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg }}>
+                <User size={16} color={isAdmin ? "#7a5405" : C.ink} />
+              </button>
+              {showProfileMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border shadow-lg z-50 py-2 px-3" style={{ background: C.panel, borderColor: C.line }}>
+                    <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}>{displayName}</div>
+                    {isAdmin && <div className="mb-2"><Pill tone="amber">Admin</Pill></div>}
+                    <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </header>
-        <main className="flex-1 p-4 max-w-5xl w-full mx-auto overflow-x-hidden">
+        {/* Barra de navegación inferior — solo en móvil. Pensada para usar con una sola mano:
+            los 4 destinos más comunes, sin tener que estirar el pulgar hasta arriba. */}
+        <nav className="pm-safe-bottom sm:hidden fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t" style={{ background: C.panel, borderColor: C.line }}>
+          {[
+            { id: "home", label: "Inicio", icon: Home, onClick: () => setView("home") },
+            { id: "tasks", label: "Tareas", icon: ClipboardCheck, onClick: () => setView("tasks") },
+            { id: "qr", label: "Escanear", icon: QrCode, onClick: () => setShowQrScanner(true) },
+            { id: "profile", label: "Perfil", icon: User, onClick: () => setShowProfileMenu(v => !v) },
+          ].map(item => (
+            <button key={item.id} onClick={item.onClick} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
+              style={{ color: (item.id === "home" ? view === "home" : item.id === "tasks" && view === "tasks") ? C.amber : C.inkSoft, minHeight: 52 }}>
+              <item.icon size={20} />
+              <span className="text-[10px] font-medium">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <main className="flex-1 p-4 pb-24 sm:pb-8 max-w-5xl w-full mx-auto overflow-x-hidden">
           {view !== "home" && (
             <button onClick={() => setView("home")}
               className="flex items-center gap-1 text-sm mb-3 px-2 py-1 rounded-md lg:hidden"

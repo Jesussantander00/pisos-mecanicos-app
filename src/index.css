@@ -65,3 +65,30 @@ input:focus, select:focus, textarea:focus {
 @media (prefers-reduced-motion: reduce) {
   .pm-pulse { animation: none; }
 }
+
+/* ---------------------------------------------------------------------------------------
+ * Ajustes para que la PWA se comporte como una app nativa en el celular, no como una página
+ * web dentro del navegador: respeta la franja de la barra de estado (hora/batería/señal),
+ * evita que la pantalla "baile" hacia los lados, y deja espacio para la barra de navegación
+ * inferior y el botón flotante de IA.
+ * --------------------------------------------------------------------------------------- */
+
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+  overscroll-behavior-x: none; /* evita el "rebote" lateral del navegador en iOS/Android */
+}
+
+/* Empuja el contenido hacia abajo lo justo para no quedar debajo de la barra de estado nativa
+   (hora, batería, señal) en celulares con notch/isla dinámica, cuando la PWA corre en modo
+   standalone (instalada). En navegador normal, env(safe-area-inset-top) es 0px, así que no
+   cambia nada ahí. */
+.pm-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Espacio para el "home indicator" de iPhone y similares, para que la barra de navegación
+   inferior no quede pegada al borde físico de la pantalla. */
+.pm-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

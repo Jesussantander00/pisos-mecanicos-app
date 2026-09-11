@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -658,7 +658,14 @@ async function requestAiAssistant(question, contextSummary, history) {
     headers: aiRequestHeaders(),
     body: JSON.stringify({ question, contextSummary, history }),
   });
-  return resp.json();
+  let data = null;
+  try { data = await resp.json(); } catch { /* la respuesta no era JSON válido — se maneja abajo */ }
+  if (!resp.ok) {
+    console.error("requestAiAssistant HTTP error:", resp.status, data);
+    throw new Error(data?.message || `El servidor respondió con error ${resp.status}`);
+  }
+  if (!data) throw new Error("El servidor respondió algo que no pude leer");
+  return data;
 }
 
 /** Le pide a la IA un procedimiento paso a paso para una tarea específica en un equipo, usando
@@ -669,7 +676,14 @@ async function requestProcedure({ equipoNombre, sistema, tarea, historial }) {
     headers: aiRequestHeaders(),
     body: JSON.stringify({ equipoNombre, sistema, tarea, historial }),
   });
-  return resp.json();
+  let data = null;
+  try { data = await resp.json(); } catch { /* la respuesta no era JSON válido — se maneja abajo */ }
+  if (!resp.ok) {
+    console.error("requestProcedure HTTP error:", resp.status, data);
+    throw new Error(data?.message || `El servidor respondió con error ${resp.status}`);
+  }
+  if (!data) throw new Error("El servidor respondió algo que no pude leer");
+  return data;
 }
 
 /**
@@ -6843,6 +6857,38 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 /* ============================================================
    VISTA: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
    ============================================================ */
+/** Envuelve la vista diaria y el historial semanal en pestañas, para no tener 2 tarjetas separadas en Inicio. */
+function TabbedColdRoomsView(props) {
+  const [tab, setTab] = useState("diario");
+  return (
+    <div>
+      <div className="flex rounded-md border overflow-hidden text-xs mb-4 w-fit" style={{ borderColor: C.line }}>
+        <button onClick={() => setTab("diario")} className="px-3 font-semibold" style={{ background: tab === "diario" ? C.steelDark : C.panel, color: tab === "diario" ? "#fff" : C.inkSoft, minHeight: 36 }}>Diario</button>
+        <button onClick={() => setTab("historial")} className="px-3 font-semibold" style={{ background: tab === "historial" ? C.steelDark : C.panel, color: tab === "historial" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>Historial semanal</button>
+      </div>
+      {tab === "diario"
+        ? <ColdRoomsView {...props} />
+        : <ColdRoomsWeeklyView coldHistory={props.coldHistory} reportEmail={props.reportEmail} onLogSent={props.onLogSent} currentUser={props.currentUser} mySignature={props.mySignature} />}
+    </div>
+  );
+}
+
+/** Igual que arriba, pero para medidores. */
+function TabbedMetersView(props) {
+  const [tab, setTab] = useState("diario");
+  return (
+    <div>
+      <div className="flex rounded-md border overflow-hidden text-xs mb-4 w-fit" style={{ borderColor: C.line }}>
+        <button onClick={() => setTab("diario")} className="px-3 font-semibold" style={{ background: tab === "diario" ? C.steelDark : C.panel, color: tab === "diario" ? "#fff" : C.inkSoft, minHeight: 36 }}>Diario</button>
+        <button onClick={() => setTab("historial")} className="px-3 font-semibold" style={{ background: tab === "historial" ? C.steelDark : C.panel, color: tab === "historial" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>Historial semanal</button>
+      </div>
+      {tab === "diario"
+        ? <MetersView {...props} />
+        : <MetersWeeklyView meterHistory={props.meterHistory} reportEmail={props.reportEmail} onLogSent={props.onLogSent} currentUser={props.currentUser} mySignature={props.mySignature} />}
+    </div>
+  );
+}
+
 function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onResolveIssue, onSaveColdRound, reportEmail, onLogSent, lastColdRound, coldHistory, mySignature }) {
   const [entries, setEntries] = useState({});
   const [search, setSearch] = useState("");
@@ -7220,6 +7266,47 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
 /* ============================================================
    VISTA: CHECKLIST DE ÁREA (Lavandería / Gimnasio — mismo patrón)
    ============================================================ */
+/** Une Lavandería, Gimnasio y Caldera bajo un solo módulo, en vez de 3 tarjetas sueltas en Inicio. */
+function FichasTecnicasHubView(props) {
+  const [tab, setTab] = useState("laundry");
+  const tabs = [
+    { id: "laundry", label: "Lavandería" },
+    { id: "gym", label: "Gimnasio" },
+    { id: "boiler", label: "Caldera" },
+  ];
+  return (
+    <div>
+      <div className="flex rounded-md border overflow-hidden text-xs mb-4 w-fit" style={{ borderColor: C.line }}>
+        {tabs.map((t, i) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="px-3 font-semibold"
+            style={{ background: tab === t.id ? C.steelDark : C.panel, color: tab === t.id ? "#fff" : C.inkSoft, borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 36 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "laundry" && (
+        <AreaChecklistView title="Equipos de Lavandería" subtitle="Piso 4"
+          sections={[{ title: null, items: LAVANDERIA_ITEMS }]} statusOptions={LAVANDERIA_STATUS_OPTS}
+          currentUser={props.currentUser} shift={props.shift} activeIssues={props.activeIssues} latestValues={props.latestLavanderiaValues}
+          onResolveIssue={props.onResolveIssue} onSaveRound={props.onSaveLavanderiaRound} />
+      )}
+      {tab === "gym" && (
+        <AreaChecklistView title="Equipos de Gimnasio" subtitle="Piso 14"
+          sections={[
+            { title: "Equipos de Cardio", items: GYM_CARDIO_ITEMS },
+            { title: "Máquinas de Fuerza", items: GYM_FUERZA_ITEMS },
+            { title: "Equipo / Área", items: GYM_AREA_ITEMS },
+          ]} statusOptions={GYM_STATUS_OPTS}
+          currentUser={props.currentUser} shift={props.shift} activeIssues={props.activeIssues} latestValues={props.latestGymValues}
+          onResolveIssue={props.onResolveIssue} onSaveRound={props.onSaveGymRound} />
+      )}
+      {tab === "boiler" && (
+        <CalderaView currentUser={props.currentUser} shift={props.shift} onSaveCaldera={props.onSaveCalderaRound} lastCalderaRound={props.lastCalderaRound} />
+      )}
+    </div>
+  );
+}
+
 function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUser, shift, activeIssues, latestValues, onResolveIssue, onSaveRound }) {
   const allItems = useMemo(() => sections.flatMap(s => s.items), [sections]);
   const [entries, setEntries] = useState({});
@@ -7999,6 +8086,48 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Une Inventario, Alertas de Stock, Movimientos y Herramientas en un solo módulo con pestañas. */
+function InventoryHubView(props) {
+  const [tab, setTab] = useState("inventario");
+  const tabs = [
+    { id: "inventario", label: "Inventario" },
+    { id: "alertas", label: "Alertas de Stock", badge: computeLowStock(props.invItems).length },
+    { id: "movimientos", label: "Movimientos" },
+    { id: "herramientas", label: "Herramientas" },
+  ];
+  return (
+    <div>
+      <div className="flex rounded-md border overflow-hidden text-xs mb-4 w-fit flex-wrap" style={{ borderColor: C.line }}>
+        {tabs.map((t, i) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="px-3 font-semibold flex items-center gap-1.5"
+            style={{ background: tab === t.id ? C.steelDark : C.panel, color: tab === t.id ? "#fff" : C.inkSoft, borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 36 }}>
+            {t.label}
+            {t.badge > 0 && <NavBadge count={t.badge} pulse={false} />}
+          </button>
+        ))}
+      </div>
+      {tab === "inventario" && (
+        <InventoryView bodegas={props.bodegas} shelves={props.shelves} invItems={props.invItems} isAdmin={props.isAdmin} isAlmacenista={props.isAlmacenista}
+          onCreateBodega={props.onCreateBodega} onCreateShelf={props.onCreateShelf} onCreateItem={props.onCreateItem}
+          onRetiro={props.onRetiro} onEntrada={props.onEntrada} onEditItem={props.onEditItem} onImportInventory={props.onImportInventory}
+          onDeleteBodega={props.onDeleteBodega} onDeleteShelf={props.onDeleteShelf}
+          initialShelfId={props.initialShelfId} onConsumedInitialShelf={props.onConsumedInitialShelf} />
+      )}
+      {tab === "alertas" && (
+        <StockAlertsView invItems={props.invItems} invMovements={props.invMovements} bodegas={props.bodegas} shelves={props.shelves}
+          reportEmail={props.reportEmail} onLogSent={props.onLogSent} currentUser={props.currentUser} />
+      )}
+      {tab === "movimientos" && (
+        <InventoryMovementsView invMovements={props.invMovements} invItems={props.invItems} bodegas={props.bodegas} shelves={props.shelves}
+          reportEmail={props.reportEmail} onLogSent={props.onLogSent} currentUser={props.currentUser} />
+      )}
+      {tab === "herramientas" && (
+        <ToolsView tools={props.tools} accounts={props.accounts} isAdmin={props.isAdmin} onCreateTool={props.onCreateTool} onLendTool={props.onLendTool} onReturnTool={props.onReturnTool} />
+      )}
     </div>
   );
 }
@@ -9657,7 +9786,33 @@ function EquipoHistorySuggestions({ equipoId, mttoLog, onPick }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance }) {
+/** Convierte un enlace pegado (YouTube, Drive, o un .mp4 directo) en un reproductor embebido. */
+function VideoEmbed({ url }) {
+  let embedSrc = null;
+  const yt = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/);
+  const drive = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+  if (yt) embedSrc = `https://www.youtube.com/embed/${yt[1]}`;
+  else if (drive) embedSrc = `https://drive.google.com/file/d/${drive[1]}/preview`;
+
+  if (embedSrc) {
+    return (
+      <div className="rounded-md overflow-hidden" style={{ aspectRatio: "16/9", background: "#000" }}>
+        <iframe src={embedSrc} className="w-full h-full" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="Video de referencia" />
+      </div>
+    );
+  }
+  if (/\.(mp4|webm|mov)(\?|$)/i.test(url)) {
+    return <video src={url} controls className="w-full rounded-md" style={{ maxHeight: 260, background: "#000" }} />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="text-sm underline break-all" style={{ color: C.blue }}>{url}</a>
+  );
+}
+
+function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl }) {
+  const [editingVideo, setEditingVideo] = useState(false);
+  const [videoDraft, setVideoDraft] = useState(equipo.videoUrl || "");
+  const [savingVideo, setSavingVideo] = useState(false);
   const [tipo, setTipo] = useState("preventivo");
   const [descripcion, setDescripcion] = useState("");
   const [estado, setEstado] = useState("funcionando");
@@ -9721,6 +9876,33 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
         {status.outOfService && <Pill tone="red">Fuera de servicio desde {fmtDT(status.since)}</Pill>}
       </div>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: C.inkSoft }}>
+            <Video size={13} /> Video de referencia
+          </div>
+          {isAdmin && !editingVideo && (
+            <button onClick={() => { setVideoDraft(equipo.videoUrl || ""); setEditingVideo(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>
+              {equipo.videoUrl ? "Cambiar" : "Agregar"}
+            </button>
+          )}
+        </div>
+        {editingVideo ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={videoDraft} onChange={e => setVideoDraft(e.target.value)} placeholder="Pega el enlace del video (YouTube, Drive, etc.)"
+              className="flex-1 min-w-[200px] text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <Button size="sm" disabled={savingVideo} onClick={async () => { setSavingVideo(true); await onSetVideoUrl(equipo.id, videoDraft); setSavingVideo(false); setEditingVideo(false); }}>
+              {savingVideo ? "Guardando…" : "Guardar"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditingVideo(false)}>Cancelar</Button>
+          </div>
+        ) : equipo.videoUrl ? (
+          <VideoEmbed url={equipo.videoUrl} />
+        ) : (
+          <p className="text-xs" style={{ color: C.gray }}>Sin video guardado — {isAdmin ? "agrega el enlace de un video corto mostrando cómo se hace el mantenimiento." : "no hay ninguno cargado todavía."}</p>
+        )}
+      </div>
 
       <div className="flex items-start gap-3 flex-wrap mb-4">
         <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -9831,7 +10013,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance 
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, initialEquipoId, onConsumedInitialEquipo }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -9848,7 +10030,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} />;
+    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} />;
   }
 
   if (selectedSistema) {
@@ -11917,9 +12099,9 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
       meters: () => ALL_METERS.filter(i => i.n.toLowerCase().includes(query))
         .map(i => ({ tipo: "Medidores", label: i.n, sub: "", action: () => onNavigate("meters") })),
       laundry: () => LAVANDERIA_ITEMS.filter(i => i.n.toLowerCase().includes(query))
-        .map(i => ({ tipo: "Lavandería", label: i.n, sub: "", action: () => onNavigate("laundry") })),
+        .map(i => ({ tipo: "Lavandería", label: i.n, sub: "", action: () => onNavigate("fichas-tecnicas") })),
       gym: () => GYM_ALL_ITEMS.filter(i => i.n.toLowerCase().includes(query))
-        .map(i => ({ tipo: "Gimnasio", label: i.n, sub: "", action: () => onNavigate("gym") })),
+        .map(i => ({ tipo: "Gimnasio", label: i.n, sub: "", action: () => onNavigate("fichas-tecnicas") })),
       maintenance: () => (mttoEquipos || []).filter(e => e.active !== false && (e.nombre.toLowerCase().includes(query) || e.sistema.toLowerCase().includes(query)))
         .map(e => ({ tipo: "Mantenimiento", label: e.nombre, sub: e.sistema, action: () => onOpenEquipo(e.id) })),
       inventory: () => (invItems || []).filter(it => it.name.toLowerCase().includes(query) || (it.sku || "").toLowerCase().includes(query))
@@ -12025,8 +12207,9 @@ function AiAssistantWidget({ contextSummary }) {
       const res = await requestAiAssistant(q, contextSummary, history);
       setMessages(m => [...m, { role: "assistant", text: res.answer || res.message || "No pude responder eso — intenta preguntarlo de otra forma." }]);
       bumpAiUsage("assistantQueries");
-    } catch {
-      setMessages(m => [...m, { role: "assistant", text: "No me pude conectar. Revisa tu conexión e intenta de nuevo." }]);
+    } catch (err) {
+      console.error("AiAssistantWidget send error:", err);
+      setMessages(m => [...m, { role: "assistant", text: `No me pude conectar (${err.message || "error de conexión"}). Revisa tu conexión e intenta de nuevo.` }]);
     }
     setSending(false);
   };
@@ -12077,7 +12260,7 @@ function AiAssistantWidget({ contextSummary }) {
   );
 }
 
-function NetworkStatusIndicator() {
+function NetworkStatusIndicator({ pendingCount = 0 }) {
   const [online, setOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
     const goOnline = () => setOnline(true);
@@ -12086,12 +12269,15 @@ function NetworkStatusIndicator() {
     window.addEventListener("offline", goOffline);
     return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
   }, []);
+  const hasPending = pendingCount > 0;
+  const label = !online ? "Guardando localmente" : hasPending ? `Subiendo ${pendingCount}…` : "En línea";
+  const tone = !online ? { bg: C.amberSoft, fg: "#7a5405" } : hasPending ? { bg: C.blueSoft, fg: C.blue } : { bg: C.greenSoft, fg: C.green };
   return (
-    <div title={online ? "Conectado — todo se guarda en la nube al instante." : "Sin señal — lo que registres se guarda en este celular y se sube solo apenas vuelva la conexión."}
+    <div title={!online ? "Sin señal — lo que registres se guarda en este celular y se sube solo apenas vuelva la conexión." : hasPending ? `${pendingCount} registro${pendingCount === 1 ? "" : "s"} guardado${pendingCount === 1 ? "" : "s"} en este celular, subiendo a la nube ahora.` : "Conectado — todo se guarda en la nube al instante."}
       className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
-      style={{ background: online ? C.greenSoft : C.amberSoft, color: online ? C.green : "#7a5405" }}>
-      {online ? <Cloud size={13} /> : <CloudOff size={13} />}
-      <span className="hidden sm:inline">{online ? "En línea" : "Guardando localmente"}</span>
+      style={{ background: tone.bg, color: tone.fg }}>
+      {!online ? <CloudOff size={13} /> : hasPending ? <Cloud size={13} className="animate-pulse" /> : <Cloud size={13} />}
+      <span className="hidden sm:inline">{label}</span>
     </div>
   );
 }
@@ -12099,8 +12285,8 @@ function NetworkStatusIndicator() {
 function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
   const shortcuts = {
-    "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "gym",
-    "Check List Caldera": "boiler", "Equipos de Lavandería": "laundry",
+    "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "fichas-tecnicas",
+    "Check List Caldera": "fichas-tecnicas", "Equipos de Lavandería": "fichas-tecnicas",
   };
   const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (fuelAlerts?.length || 0);
   return (
@@ -12409,7 +12595,7 @@ function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatValue, m
         return (
           <div key={i}>
             <div className="flex items-center justify-between text-sm mb-1.5 gap-3">
-              <span style={{ color: C.ink }} className="truncate">{d[labelKey]}</span>
+              <span style={{ color: C.ink }} className="truncate" title={d[labelKey]}>{d[labelKey]}</span>
               <span className="font-bold shrink-0 tabular-nums" style={{ color, fontSize: 15 }}>{formatValue ? formatValue(val, d) : val}</span>
             </div>
             <div className="w-full rounded-full overflow-hidden" style={{ background: C.bg, height: 10 }}>
@@ -12767,6 +12953,10 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     try { return JSON.parse(localStorage.getItem(`pm-local:recent:${currentUser}`) || "[]"); } catch { return []; }
   });
   const [showAllModules, setShowAllModules] = useState(false);
+  const [moduleViewMode, setModuleViewMode] = useState(() => {
+    try { return localStorage.getItem("pm-local:module-view") || "cards"; } catch { return "cards"; }
+  });
+  const setModuleView = (mode) => { setModuleViewMode(mode); try { localStorage.setItem("pm-local:module-view", mode); } catch { /* noop */ } };
   const goTo = (id) => {
     setRecent(prev => {
       const next = [id, ...prev.filter(x => x !== id)].slice(0, 6);
@@ -12779,38 +12969,29 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
   const modules = [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los pisos mecánicos", access: true, group: "Operación en Campo" },
-    { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange, group: "Operación en Campo" },
-    { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays, desc: "Semana a semana, con envío", access: true, group: "Reportes y Análisis" },
-    { id: "meters", label: "Lecturas de Medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies, group: "Operación en Campo" },
-    { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays, desc: "Semana a semana, con envío", access: true, group: "Reportes y Análisis" },
-    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías y repuestos", access: true, badge: counts.lowStock, urgentBadge: false, group: "Gestión e Inventario" },
-    { id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, desc: "Lista de compras automática", access: canManageInv, badge: counts.lowStock, urgentBadge: counts.criticalLowStock > 0, pulse: counts.criticalLowStock > 0, group: "Gestión e Inventario" },
-    { id: "inventory-movements", label: "Movimientos de Inventario", icon: History, desc: "Quién retiró qué, y cuándo", access: canManageInv, group: "Gestión e Inventario" },
+    { id: "coldrooms", label: "Cuartos fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange, group: "Operación en Campo" },
+    { id: "meters", label: "Lecturas de medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies, group: "Operación en Campo" },
+    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías, alertas, movimientos y herramientas", access: true, badge: counts.lowStock, urgentBadge: false, group: "Gestión e Inventario" },
     { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true, group: "Operación en Campo" },
-    { id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
-    { id: "executive", label: "Panel Ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
-    { id: "maintenance-log", label: "Mantenimientos Realizados", icon: History, desc: "Auditoría de lo registrado", access: isAdmin, group: "Reportes y Análisis" },
-    { id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin, group: "Gestión e Inventario" },
-    { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList, desc: "Revisión diaria, Piso 4", access: true, group: "Operación en Campo" },
-    { id: "boiler", label: "Check List Caldera", icon: Gauge, desc: "Purgas y presión por turno", access: true, group: "Operación en Campo" },
-    { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList, desc: "Revisión diaria, Piso 14", access: true, group: "Operación en Campo" },
-    { id: "schedules", label: "Horario Mensual", icon: Users, desc: "Turnos del personal", access: true, group: "Gestión e Inventario" },
-    { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false, group: "Operación en Campo" },
+    { id: "maintenance-analytics", label: "Análisis de mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
+    { id: "executive", label: "Panel ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
+    { id: "maintenance-log", label: "Historial de mantenimientos", icon: History, desc: "Auditoría de lo registrado", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin, group: "Gestión e Inventario" },
+    { id: "fichas-tecnicas", label: "Fichas técnicas", icon: ClipboardList, desc: "Lavandería, gimnasio y caldera", access: true, group: "Operación en Campo" },
+    { id: "schedules", label: "Horario mensual", icon: Users, desc: "Turnos del personal", access: true, group: "Gestión e Inventario" },
+    { id: "tasks", label: "Tareas", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false, group: "Operación en Campo" },
     { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true, group: "Reportes y Análisis" },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0, pulse: true, group: "Operación en Campo" },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues, pulse: true, group: "Operación en Campo" },
     { id: "reports", label: "Reportes", icon: History, desc: "Informe completo en PDF", access: true, group: "Reportes y Análisis" },
-    { id: "tanks", label: "Tanques agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true, group: "Operación en Campo" },
+    { id: "tanks", label: "Tanques de agua potable", icon: Droplets, desc: "Niveles, con edición manual", access: true, group: "Operación en Campo" },
     { id: "fuel", label: "Combustibles y gas", icon: Gauge, desc: "ACPM, gas, calderas y planta eléctrica", access: true, group: "Operación en Campo" },
-    { id: "tools", label: "Herramientas", icon: Wrench, desc: "Quién tiene qué prestado ahora", access: true, group: "Gestión e Inventario" },
+    { id: "contractor-visits", label: "Visitas de contratistas", icon: Users, desc: "Bitácora de entrada y salida, con firma", access: true, group: "Operación en Campo" },
+    { id: "wiki", label: "Wiki interna", icon: BookOpen, desc: "Protocolos generales — emergencias, qué hacer si...", access: true, group: "Reportes y Análisis" },
     { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos y tipos de habitación", access: true, group: "Gestión e Inventario" },
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
-    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, desc: "Usuarios, correo, permisos", access: isAdmin, badge: counts.pendingAccounts, pulse: true, group: "Administración" },
-    { id: "trash", label: "Papelera", icon: Trash2, desc: "Restaurar lo que se borró por error", access: isAdmin, group: "Administración" },
-    { id: "general-history", label: "Historial de cambios", icon: History, desc: "Auditoría: empleados, inventario y tareas", access: isAdmin, group: "Administración" },
-    { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck, desc: "Quién completó su recorrido", access: isAdmin, group: "Administración" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
 
   const toggleFavorite = (id) => {
@@ -12938,7 +13119,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
             </div>
           </button>
 
-          <button onClick={() => onNavigate(canManageInv ? "inventory-alerts" : "inventory")} title="Artículos de inventario en o por debajo de su cantidad mínima definida" className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <button onClick={() => onNavigate("inventory")} title="Artículos de inventario en o por debajo de su cantidad mínima definida" className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.inkSoft }}>Stock más crítico</div>
             {lowStockDetail.length === 0 ? (
               <div className="text-xs flex items-center gap-1" style={{ color: C.green }}><CheckCircle2 size={13} /> Todo por encima del mínimo</div>
@@ -12974,7 +13155,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                   className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06] relative"
                   style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 48 }}>
                   <m.icon size={18} color={C.amber} />
-                  <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }}>{m.label}</span>
+                  <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }} title={m.label}>{m.label}</span>
                   <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
                 </button>
               ))}
@@ -12993,18 +13174,19 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                 className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06]"
                 style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 48 }}>
                 <m.icon size={18} color={GROUP_COLORS[m.group] || C.gray} />
-                <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }}>{m.label}</span>
+                <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }} title={m.label}>{m.label}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados */}
+      {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados.
+          Queda pegada arriba al hacer scroll, para poder crear algo sin tener que subir hasta el tope. */}
       {!gerenciaLocked && !searchNorm && (
-        <div className="mb-4">
+        <div className="mb-4 sticky top-0 z-30 -mx-4 px-4 pt-2 pb-1" style={{ background: C.bg }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
-          <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="flex items-stretch rounded-xl border overflow-hidden shadow-sm" style={{ borderColor: C.line, background: C.panel }}>
             {[
               { id: "ronda", label: "Nueva ronda", icon: ClipboardList, color: C.amber },
               { id: "issues", label: "Fuera de servicio", icon: Wrench, color: C.red },
@@ -13023,17 +13205,29 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       )}
 
       {!searchNorm && (
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2">
           <p className="text-sm" style={{ color: C.inkSoft }}>
             {gerenciaLocked
               ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
               : "Arriba tienes tus favoritos y lo más reciente. Si necesitas algo más, está en el menú lateral o aquí abajo."}
           </p>
-          {!gerenciaLocked && (
-            <button onClick={() => setShowAllModules(v => !v)} className="text-xs font-semibold shrink-0 ml-2" style={{ color: C.amber }}>
-              {showAllModules ? "Ocultar todos los módulos" : "Ver todos los módulos"}
-            </button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {(showAllModules || gerenciaLocked) && (
+              <div className="flex rounded-md border overflow-hidden" style={{ borderColor: C.line }}>
+                <button onClick={() => setModuleView("cards")} title="Vista de tarjetas" className="p-1.5" style={{ background: moduleViewMode === "cards" ? C.amberSoft : C.panel }}>
+                  <LayoutGrid size={14} color={moduleViewMode === "cards" ? "#7a5405" : C.gray} />
+                </button>
+                <button onClick={() => setModuleView("list")} title="Vista de lista" className="p-1.5" style={{ background: moduleViewMode === "list" ? C.amberSoft : C.panel, borderLeft: `1px solid ${C.line}` }}>
+                  <List size={14} color={moduleViewMode === "list" ? "#7a5405" : C.gray} />
+                </button>
+              </div>
+            )}
+            {!gerenciaLocked && (
+              <button onClick={() => setShowAllModules(v => !v)} className="text-xs font-semibold whitespace-nowrap" style={{ color: C.amber }}>
+                {showAllModules ? "Ocultar todos los módulos" : "Ver todos los módulos"}
+              </button>
+            )}
+          </div>
         </div>
       )}
       {searchNorm && (
@@ -13051,6 +13245,20 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           {groupedModules.map(({ group, items }) => (
             <div key={group}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: GROUP_COLORS[group] || C.inkSoft }}>{group}</div>
+              {moduleViewMode === "list" ? (
+                <div className="rounded-lg border overflow-hidden" style={{ borderColor: C.line }}>
+                  {items.map((m, i) => (
+                    <button key={m.id} onClick={() => goTo(m.id)}
+                      className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 hover:bg-black/[0.03]"
+                      style={{ background: C.panel, borderTop: i > 0 ? `1px solid ${C.line}` : "none" }}>
+                      <m.icon size={15} className="shrink-0" style={{ color: GROUP_COLORS[m.group] || C.amber }} />
+                      <span className="text-sm font-medium flex-1 min-w-0 truncate" style={{ color: C.ink }} title={m.label}>{m.label}</span>
+                      {!gerenciaLocked && favorites.includes(m.id) && <Sparkles size={12} color={C.amber} fill={C.amber} />}
+                      <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
+                    </button>
+                  ))}
+                </div>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
                 {items.map(m => (
                   <button key={m.id} onClick={() => goTo(m.id)}
@@ -13070,7 +13278,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                     )}
                     <div className="flex items-center gap-2 mb-1">
                       <m.icon size={16} className="shrink-0" style={{ color: GROUP_COLORS[m.group] || C.amber }} />
-                      <div className="text-sm font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{m.label}</div>
+                      <div className="text-sm font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }} title={m.label}>{m.label}</div>
                       <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
                     </div>
                     <div className="text-xs" style={{ color: C.inkSoft, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={m.desc}>
@@ -13079,6 +13287,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                   </button>
                 ))}
               </div>
+              )}
             </div>
           ))}
         </div>
@@ -13870,10 +14079,282 @@ function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onRetur
 }
 
 /**
- * Copiloto de Procedimientos: eliges un equipo, describes qué necesitas hacer, y la IA arma un
- * procedimiento paso a paso — apoyándose en el historial real de ese equipo (qué se le ha hecho
- * antes, qué piezas se le han cambiado), no en un manual genérico de internet.
+ * Registro de visitas de contratistas — como una bitácora de portería: el técnico del hotel
+ * abre "Registrar visita" y le entrega el celular/tablet al contratista para que llene sus
+ * datos y firme él mismo. Al terminar su trabajo, vuelve a marcar salida y firma de nuevo.
  */
+const CONTRACTOR_MOTIVOS = ["Mantenimiento preventivo", "Reparación / correctivo", "Instalación", "Inspección / auditoría", "Entrega de material", "Otro"];
+
+function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onCheckOut, onDeleteVisit }) {
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ empresa: "", contacto: "", telefono: "", motivo: CONTRACTOR_MOTIVOS[0], equipoNota: "", autorizadoPor: "", placaVehiculo: "" });
+  const [firma, setFirma] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [checkingOutId, setCheckingOutId] = useState(null);
+  const [firmaSalida, setFirmaSalida] = useState(null);
+  const [search, setSearch] = useState("");
+
+  const inputCls = "text-sm border rounded-md px-3 py-2.5 outline-none w-full";
+  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+
+  const doCreate = async () => {
+    if (!form.empresa.trim() || !form.contacto.trim() || !firma) return;
+    setSaving(true);
+    await onCreateVisit({ ...form, firma });
+    setForm({ empresa: "", contacto: "", telefono: "", motivo: CONTRACTOR_MOTIVOS[0], equipoNota: "", autorizadoPor: "", placaVehiculo: "" });
+    setFirma(null);
+    setShowNew(false);
+    setSaving(false);
+  };
+
+  const doCheckOut = async () => {
+    if (!firmaSalida) return;
+    await onCheckOut(checkingOutId, firmaSalida);
+    setCheckingOutId(null);
+    setFirmaSalida(null);
+  };
+
+  const searchNorm = normalizeSearchText(search.trim());
+  const filtered = visits.filter(v => !searchNorm || normalizeSearchText(`${v.empresa} ${v.contacto}`).includes(searchNorm));
+  const activas = filtered.filter(v => !v.horaSalida);
+  const historial = filtered.filter(v => v.horaSalida).slice(0, 40);
+
+  if (showNew) {
+    // Pantalla tipo "bitácora de portería" — grande y simple, pensada para que la llene el contratista mismo.
+    return (
+      <div>
+        <button onClick={() => { setShowNew(false); setFirma(null); }} className="flex items-center gap-1 text-sm mb-3" style={{ color: C.inkSoft }}>
+          <ArrowLeft size={15} /> Cancelar
+        </button>
+        <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Registro de visita</h2>
+        <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Por favor llena tus datos y firma abajo para registrar tu entrada.</p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>Empresa *</label>
+            <input value={form.empresa} onChange={e => setForm(f => ({ ...f, empresa: e.target.value }))} className={inputCls} style={inputStyle} placeholder="Nombre de la empresa" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>Tu nombre *</label>
+            <input value={form.contacto} onChange={e => setForm(f => ({ ...f, contacto: e.target.value }))} className={inputCls} style={inputStyle} placeholder="Nombre completo" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>Teléfono</label>
+            <input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} className={inputCls} style={inputStyle} placeholder="Opcional" inputMode="tel" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>Motivo de la visita</label>
+            <select value={form.motivo} onChange={e => setForm(f => ({ ...f, motivo: e.target.value }))} className={inputCls} style={inputStyle}>
+              {CONTRACTOR_MOTIVOS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>¿A qué equipo o área viene?</label>
+            <input value={form.equipoNota} onChange={e => setForm(f => ({ ...f, equipoNota: e.target.value }))} className={inputCls} style={inputStyle} placeholder="Ej: Chiller 1, cuarto de máquinas" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>Placa del vehículo</label>
+            <input value={form.placaVehiculo} onChange={e => setForm(f => ({ ...f, placaVehiculo: e.target.value }))} className={inputCls} style={inputStyle} placeholder="Opcional" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>¿Quién de mantenimiento te espera?</label>
+            <select value={form.autorizadoPor} onChange={e => setForm(f => ({ ...f, autorizadoPor: e.target.value }))} className={inputCls} style={inputStyle}>
+              <option value="">Opcional — elige un nombre</option>
+              {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>Firma *</label>
+            <SignaturePad onChange={setFirma} />
+          </div>
+          <div className="w-full [&>button]:w-full [&>button]:justify-center">
+            <Button disabled={saving || !form.empresa.trim() || !form.contacto.trim() || !firma} onClick={doCreate}>
+              {saving ? "Registrando…" : "Registrar entrada"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Visitas de contratistas</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>El contratista llena sus datos y firma él mismo, como una bitácora de portería.</p>
+        </div>
+        <Button icon={PlusCircle} onClick={() => setShowNew(true)}>Registrar visita</Button>
+      </div>
+
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por empresa o nombre…" className={`${inputCls} mb-4`} style={inputStyle} />
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
+        Adentro ahora ({activas.length})
+      </div>
+      {activas.length === 0 ? (
+        <p className="text-sm py-4 text-center mb-4" style={{ color: C.gray }}>No hay contratistas adentro en este momento.</p>
+      ) : activas.map(v => (
+        <div key={v.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: C.green, background: C.greenSoft }}>
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold" style={{ color: C.ink }}>{v.empresa} — {v.contacto}</div>
+              <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{v.motivo}{v.equipoNota ? ` · ${v.equipoNota}` : ""}</div>
+              <div className="text-xs mt-0.5" style={{ color: C.gray }}>
+                Entró hace {elapsed(v.horaEntrada)} · {v.autorizadoPor ? `Autorizado por ${v.autorizadoPor}` : "Sin autorización específica"}{v.telefono ? ` · ${v.telefono}` : ""}
+              </div>
+            </div>
+            <Button size="sm" onClick={() => setCheckingOutId(v.id)}>Registrar salida</Button>
+          </div>
+        </div>
+      ))}
+
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.inkSoft }}>
+        Historial reciente
+      </div>
+      {historial.length === 0 ? (
+        <p className="text-sm py-4 text-center" style={{ color: C.gray }}>Todavía no hay visitas completadas.</p>
+      ) : historial.map(v => (
+        <div key={v.id} className="rounded-lg border p-3 mb-2 flex items-start justify-between gap-2" style={{ borderColor: C.line, background: C.panel }}>
+          <div>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>{v.empresa} — {v.contacto}</div>
+            <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{v.motivo}{v.equipoNota ? ` · ${v.equipoNota}` : ""}</div>
+            <div className="text-xs mt-0.5" style={{ color: C.gray }}>
+              {fmtDT(v.horaEntrada)} → {fmtDT(v.horaSalida)}
+            </div>
+          </div>
+          {isAdmin && (
+            <button onClick={() => { if (confirm("¿Borrar este registro de visita?")) onDeleteVisit(v.id); }} title="Borrar">
+              <Trash2 size={14} color={C.gray} />
+            </button>
+          )}
+        </div>
+      ))}
+
+      {checkingOutId && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setCheckingOutId(null)}>
+          <div className="w-full sm:w-96 rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-1" style={{ color: C.ink }}>Firma de salida</div>
+            <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Por favor firma para confirmar tu salida.</p>
+            <SignaturePad onChange={setFirmaSalida} />
+            <div className="flex items-center gap-2 mt-3">
+              <div className="flex-1 [&>button]:w-full [&>button]:justify-center">
+                <Button disabled={!firmaSalida} onClick={doCheckOut}>Confirmar salida</Button>
+              </div>
+              <Button variant="ghost" onClick={() => { setCheckingOutId(null); setFirmaSalida(null); }}>Cancelar</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WIKI_CATEGORIAS = ["General", "Emergencias", "Eléctrico", "Plomería / Agua", "Clima (A/C y chillers)", "Procedimientos administrativos"];
+
+/**
+ * Wiki interna — páginas de consulta rápida tipo "qué hacer si..." que no son maniobras técnicas
+ * paso a paso (esas viven en Procedimientos), sino procedimientos generales: protocolo de
+ * huracán, qué hacer si se va la luz, etc. Cualquiera puede leer; solo admin crea/edita.
+ */
+function WikiView({ pages, isAdmin, onSave, onDelete }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const [editing, setEditing] = useState(null); // null | "new" | id
+  const [form, setForm] = useState({ titulo: "", categoria: WIKI_CATEGORIAS[0], contenido: "" });
+  const [saving, setSaving] = useState(false);
+
+  const searchNorm = normalizeSearchText(search.trim());
+  const filtered = pages.filter(p => !searchNorm || normalizeSearchText(`${p.titulo} ${p.contenido}`).includes(searchNorm));
+  const selected = pages.find(p => p.id === selectedId);
+
+  const inputCls = "text-sm border rounded-md px-3 py-2 outline-none w-full";
+  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+
+  const startEdit = (page) => {
+    if (page) setForm({ titulo: page.titulo, categoria: page.categoria || WIKI_CATEGORIAS[0], contenido: page.contenido });
+    else setForm({ titulo: "", categoria: WIKI_CATEGORIAS[0], contenido: "" });
+    setEditing(page ? page.id : "new");
+  };
+
+  const doSave = async () => {
+    if (!form.titulo.trim() || !form.contenido.trim()) return;
+    setSaving(true);
+    await onSave(form, editing === "new" ? null : editing);
+    setSaving(false);
+    setEditing(null);
+  };
+
+  if (editing) {
+    return (
+      <div>
+        <button onClick={() => setEditing(null)} className="flex items-center gap-1 text-sm mb-3" style={{ color: C.inkSoft }}>
+          <ArrowLeft size={15} /> Cancelar
+        </button>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: C.ink }}>{editing === "new" ? "Nueva página" : "Editar página"}</h2>
+        <div className="space-y-3">
+          <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="Título (ej: Qué hacer si se va la luz)" className={inputCls} style={inputStyle} />
+          <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} className={inputCls} style={inputStyle}>
+            {WIKI_CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <textarea value={form.contenido} onChange={e => setForm(f => ({ ...f, contenido: e.target.value }))} rows={14}
+            placeholder="Escribe el procedimiento paso a paso, con todo el detalle que necesite quien lo lea sin haberlo hecho antes…"
+            className={`${inputCls} resize-y font-mono`} style={inputStyle} />
+          <Button disabled={saving || !form.titulo.trim() || !form.contenido.trim()} onClick={doSave}>{saving ? "Guardando…" : "Guardar página"}</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (selected) {
+    return (
+      <div>
+        <button onClick={() => setSelectedId(null)} className="flex items-center gap-1 text-sm mb-3" style={{ color: C.inkSoft }}>
+          <ArrowLeft size={15} /> Todas las páginas
+        </button>
+        <div className="flex items-start justify-between gap-2 flex-wrap mb-1">
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{selected.titulo}</h2>
+          {isAdmin && (
+            <div className="flex items-center gap-3 shrink-0">
+              <button onClick={() => startEdit(selected)} className="text-xs font-semibold" style={{ color: C.amber }}>Editar</button>
+              <button onClick={() => { if (confirm("¿Borrar esta página de la wiki?")) { onDelete(selected.id); setSelectedId(null); } }} className="text-xs font-semibold" style={{ color: C.red }}>Borrar</button>
+            </div>
+          )}
+        </div>
+        <Badge tone="blue">{selected.categoria || "General"}</Badge>
+        <div className="text-sm mt-4 whitespace-pre-wrap" style={{ color: C.ink, lineHeight: 1.6 }}>{selected.contenido}</div>
+        <div className="text-xs mt-6 pt-3 border-t" style={{ color: C.gray, borderColor: C.line }}>
+          Última edición: {fmtDT(selected.updatedAt)} · {selected.updatedBy}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Wiki interna</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Procedimientos generales de consulta — protocolo de emergencias, qué hacer si..., etc.</p>
+        </div>
+        {isAdmin && <Button icon={PlusCircle} onClick={() => startEdit(null)}>Nueva página</Button>}
+      </div>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar en la wiki…" className={`${inputCls} mb-4`} style={inputStyle} />
+      {filtered.length === 0 ? (
+        <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
+          {pages.length === 0 ? "Todavía no hay páginas en la wiki." : `No encontré nada para "${search.trim()}".`}
+        </p>
+      ) : filtered.map(p => (
+        <button key={p.id} onClick={() => setSelectedId(p.id)} className="w-full text-left rounded-lg border p-3 mb-2" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-sm font-semibold" style={{ color: C.ink }}>{p.titulo}</div>
+          <div className="text-xs mt-1" style={{ color: C.inkSoft, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.contenido}</div>
+          <Badge tone="blue">{p.categoria || "General"}</Badge>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Procedimientos — un solo lugar con dos formas de llegar a "qué hacer": preguntarle a la IA
  * (Copiloto), o tocar el componente directo en el plano interactivo del sistema.
@@ -13929,8 +14410,9 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
       const res = await requestProcedure({ equipoNombre: selected.nombre, sistema: selected.sistema, tarea: task.trim(), historial });
       if (res.procedure) { setResult(res.procedure); bumpAiUsage("procedureRequests"); }
       else setError(res.message || "No se pudo generar el procedimiento.");
-    } catch {
-      setError("No me pude conectar. Revisa tu conexión e intenta de nuevo.");
+    } catch (err) {
+      console.error("ProcedureCopilot doGenerate error:", err);
+      setError(`No me pude conectar (${err.message || "error de conexión"}). Revisa tu conexión e intenta de nuevo.`);
     }
     setLoading(false);
   };
@@ -17423,6 +17905,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => themeOverride === "dark" ? true : themeOverride === "light" ? false : isNightHour());
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const closeOnboarding = () => {
     setShowOnboarding(false);
     try { localStorage.setItem("pm-local:onboarded", "1"); } catch { /* noop */ }
@@ -17520,6 +18003,8 @@ export default function App() {
   const [tankHistory, setTankHistory] = useState({});
   const [fuelHistory, setFuelHistory] = useState({});
   const [tools, setTools] = useState([]);
+  const [contractorVisits, setContractorVisits] = useState([]);
+  const [wikiPages, setWikiPages] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
   const [systemDiagrams, setSystemDiagrams] = useState([]);
   const [systemProcedures, setSystemProcedures] = useState([]);
@@ -17590,7 +18075,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls, rtp, rbk, sd, sp] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls, rtp, rbk, sd, sp, cvis, wiki] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -17618,6 +18103,8 @@ export default function App() {
         sGet("room-blocks", true),
         sGet("system-diagrams", true),
         sGet("system-procedures", true),
+        sGet("contractor-visits", true),
+        sGet("wiki-pages", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -17665,6 +18152,8 @@ export default function App() {
       setGeneralEditLog(gel || []);
       setFuelHistory(fh || {});
       setTools(tls || []);
+      setContractorVisits(cvis || []);
+      setWikiPages(wiki || []);
       setRoomTypes(rtp || []);
       setRoomBlocks(rbk || []);
       // Igual que con el changelog: fusiona los diagramas "de fábrica" con los que ya haya
@@ -18251,6 +18740,12 @@ export default function App() {
     await sSet("mtto-equipos", next, true);
   };
 
+  const setEquipoVideoUrl = async (id, videoUrl) => {
+    const next = mttoEquipos.map(e => e.id === id ? { ...e, videoUrl: videoUrl.trim() || null } : e);
+    setMttoEquipos(next);
+    await sSet("mtto-equipos", next, true);
+  };
+
   /** Registra un mantenimiento y, si se marcaron repuestos usados, los descuenta del inventario
    *  solo — sin tener que ir aparte a Inventario a hacer el retiro a mano. Guarda una copia del
    *  nombre/cantidad en el propio registro (no solo el id), para que la hoja de vida del equipo
@@ -18754,6 +19249,51 @@ export default function App() {
     const next = tools.map(t => t.id === toolId ? { ...t, estado: "disponible", prestadaA: null, prestadaDesde: null } : t);
     setTools(next);
     await sSet("tools", next, true);
+  };
+
+  /* ---- Visitas de contratistas: el contratista firma solo, como una bitácora de portería ---- */
+  const createContractorVisit = async (form) => {
+    const rec = {
+      id: uid("visita"), empresa: form.empresa.trim(), contacto: form.contacto.trim(),
+      telefono: (form.telefono || "").trim(), motivo: form.motivo, equipoNota: (form.equipoNota || "").trim(),
+      autorizadoPor: form.autorizadoPor || "", placaVehiculo: (form.placaVehiculo || "").trim(),
+      firmaEntrada: form.firma, horaEntrada: nowIso(), horaSalida: null, firmaSalida: null,
+    };
+    const next = [rec, ...contractorVisits];
+    setContractorVisits(next);
+    await sSet("contractor-visits", next, true);
+    return rec;
+  };
+
+  const checkOutContractorVisit = async (visitId, firmaSalida) => {
+    const next = contractorVisits.map(v => v.id === visitId ? { ...v, horaSalida: nowIso(), firmaSalida } : v);
+    setContractorVisits(next);
+    await sSet("contractor-visits", next, true);
+  };
+
+  const deleteContractorVisit = async (visitId) => {
+    const next = contractorVisits.filter(v => v.id !== visitId);
+    setContractorVisits(next);
+    await sSet("contractor-visits", next, true);
+  };
+
+  /* ---- Wiki interna: páginas de consulta rápida, cualquiera lee, solo admin edita ---- */
+  const saveWikiPage = async (form, existingId) => {
+    let next;
+    if (existingId) {
+      next = wikiPages.map(p => p.id === existingId ? { ...p, titulo: form.titulo.trim(), categoria: form.categoria.trim(), contenido: form.contenido, updatedAt: nowIso(), updatedBy: displayName } : p);
+    } else {
+      const rec = { id: uid("wiki"), titulo: form.titulo.trim(), categoria: form.categoria.trim(), contenido: form.contenido, createdBy: displayName, createdAt: nowIso(), updatedAt: nowIso(), updatedBy: displayName };
+      next = [rec, ...wikiPages];
+    }
+    setWikiPages(next);
+    await sSet("wiki-pages", next, true);
+  };
+
+  const deleteWikiPage = async (pageId) => {
+    const next = wikiPages.filter(p => p.id !== pageId);
+    setWikiPages(next);
+    await sSet("wiki-pages", next, true);
   };
 
   /* ---- Habitaciones: tipos (con sus accesorios) y bloqueos con motivo ---- */
@@ -19329,28 +19869,25 @@ export default function App() {
     {
       id: "operacion", label: "Operación", items: [
         { id: "ronda", label: "Ronda de revisión", icon: ClipboardList },
-        { id: "coldrooms", label: "Cuartos Fríos", icon: Snowflake, badge: coldOutOfRange.length },
-        { id: "meters", label: "Lecturas de Medidores", icon: Zap, badge: meterAnomalies.length },
-        { id: "laundry", label: "Equipos de Lavandería", icon: ClipboardList },
-        { id: "boiler", label: "Check List Caldera", icon: Gauge },
-        { id: "gym", label: "Equipos de Gimnasio", icon: ClipboardList },
+        { id: "coldrooms", label: "Cuartos fríos", icon: Snowflake, badge: coldOutOfRange.length },
+        { id: "meters", label: "Lecturas de medidores", icon: Zap, badge: meterAnomalies.length },
+        { id: "fichas-tecnicas", label: "Fichas técnicas", icon: ClipboardList },
         { id: "maintenance", label: "Mantenimiento", icon: Wrench },
         { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false },
-        { id: "tasks", label: "Tareas / Pendientes", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, urgentBadge: false },
+        { id: "tasks", label: "Tareas", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, urgentBadge: false },
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
       ],
     },
     {
       id: "historial", label: "Historial y reportes", items: [
-        { id: "coldrooms-history", label: "Historial de Cuartos Fríos", icon: CalendarDays },
-        { id: "meters-history", label: "Historial de Medidores", icon: CalendarDays },
-        ...(isAdmin ? [{ id: "maintenance-log", label: "Mantenimientos Realizados", icon: History }] : []),
-        ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma Anual", icon: CalendarDays }] : []),
+        ...(isAdmin ? [{ id: "maintenance-log", label: "Historial de mantenimientos", icon: History }] : []),
+        ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays }] : []),
         { id: "reports", label: "Reportes", icon: History },
-        { id: "tanks", label: "Tanques agua potable", icon: Droplets },
+        { id: "tanks", label: "Tanques de agua potable", icon: Droplets },
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
-        { id: "tools", label: "Herramientas", icon: Wrench },
+        { id: "contractor-visits", label: "Visitas de contratistas", icon: Users },
+        { id: "wiki", label: "Wiki interna", icon: BookOpen },
         { id: "rooms", label: "Habitaciones", icon: Building2 },
         { id: "procedures", label: "Procedimientos", icon: Sparkles },
         ...(isAdmin ? [{ id: "hotsos-import", label: "Importar HotSOS", icon: Upload }] : []),
@@ -19362,8 +19899,6 @@ export default function App() {
         ...((isAdmin || isGerencia) ? [{ id: "maintenance-analytics", label: "Análisis de Mantenimiento", icon: TrendingUp }] : []),
         ...((isAdmin || isGerencia) ? [{ id: "executive", label: "Panel Ejecutivo", icon: Gauge }] : []),
         ...((isAdmin || isGerencia) ? [{ id: "analytics", label: "Análisis de fallas", icon: TrendingUp }] : []),
-        ...((isAdmin || isAlmacenista) ? [{ id: "inventory-alerts", label: "Alertas de Stock", icon: AlertTriangle, badge: lowStockItems.length, urgentBadge: criticalStockItems.length > 0, pulse: criticalStockItems.length > 0 }] : []),
-        ...((isAdmin || isAlmacenista) ? [{ id: "inventory-movements", label: "Movimientos de Inventario", icon: History }] : []),
       ],
     },
     {
@@ -19520,7 +20055,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
             <Clock size={14} /> {todayStr()}
-            {["ronda", "meters", "coldrooms", "laundry", "boiler", "gym"].includes(view) ? (
+            {["ronda", "meters", "coldrooms", "fichas-tecnicas"].includes(view) ? (
               <select value={shift} onChange={e => setShift(e.target.value)} className="ml-2 text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -19541,7 +20076,7 @@ export default function App() {
             </>
           )}
           <div className="flex items-center gap-2">
-            <NetworkStatusIndicator />
+            <NetworkStatusIndicator pendingCount={pendingSync + pendingPhotoRecords} />
             {pendingSync > 0 && (
               <span className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: "#7a5405" }}>
                 <AlertTriangle size={12} /> {pendingSync} sin subir
@@ -19578,6 +20113,37 @@ export default function App() {
             </button>
             {isAdmin && <PushEnableButton onEnable={enablePushNotifications} />}
             {isAdmin && <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} />}
+            {isAdmin && (
+              <div className="relative">
+                <button onClick={() => setShowSettingsMenu(v => !v)} title="Configuración del sistema" className="p-1.5 rounded-md relative" style={{ background: showSettingsMenu ? C.amberSoft : C.bg }}>
+                  <SettingsIcon size={16} color={C.ink} />
+                  {pendingAccountsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold text-white animate-pulse" style={{ background: C.red }}>
+                      {pendingAccountsCount > 9 ? "9+" : pendingAccountsCount}
+                    </span>
+                  )}
+                </button>
+                {showSettingsMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowSettingsMenu(false)} />
+                    <div className="absolute right-0 top-full mt-1 w-56 rounded-lg border shadow-lg z-50 py-1" style={{ background: C.panel, borderColor: C.line }}>
+                      {[
+                        { id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount },
+                        { id: "trash", label: "Papelera", icon: Trash2 },
+                        { id: "general-history", label: "Historial de cambios", icon: History },
+                        { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck },
+                      ].map(opt => (
+                        <button key={opt.id} onClick={() => { setView(opt.id); setShowSettingsMenu(false); }}
+                          className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
+                          <opt.icon size={14} color={C.gray} /> {opt.label}
+                          {opt.badge > 0 && <NavBadge count={opt.badge} pulse />}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {isAdmin && <Pill tone="amber">Admin</Pill>}
             <span className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
@@ -19610,19 +20176,14 @@ export default function App() {
               tourProgressCount={tourProgressCount} resumedTour={resumedTour} onDismissResumed={() => setResumedTour(false)} />
           )}
           {view === "coldrooms" && (
-            <ColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
+            <TabbedColdRoomsView currentUser={displayName} shift={shift} activeIssues={activeIssues}
               latestColdValues={latestColdValues} onResolveIssue={resolveIssue} onSaveColdRound={saveColdRound}
               reportEmail={reportEmail} onLogSent={logSentReport} lastColdRound={lastColdRound} coldHistory={coldHistory} mySignature={account.signature} />
           )}
-          {view === "coldrooms-history" && (
-            <ColdRoomsWeeklyView coldHistory={coldHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} mySignature={account.signature} />
-          )}
           {view === "meters" && (
-            <MetersView currentUser={displayName} shift={shift}
-              latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} meterHistory={meterHistory} />
-          )}
-          {view === "meters-history" && (
-            <MetersWeeklyView meterHistory={meterHistory} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} mySignature={account.signature} />
+            <TabbedMetersView currentUser={displayName} shift={shift}
+              latestMeterValues={latestMeterValues} onSaveMetersRound={saveMetersRound} meterHistory={meterHistory}
+              reportEmail={reportEmail} onLogSent={logSentReport} mySignature={account.signature} />
           )}
           {view === "profile" && (
             <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature}
@@ -19651,6 +20212,8 @@ export default function App() {
           {view === "tanks" && <TanksView latestValues={latestValues} tankHistory={tankHistory} onSaveTankReading={saveTankReading} currentUser={displayName} />}
           {view === "fuel" && <FuelTanksView latestValues={latestValues} fuelHistory={fuelHistory} onManualUpdate={saveFuelReading} onNavigate={setView} />}
           {view === "tools" && <ToolsView tools={tools} accounts={profiles} isAdmin={isAdmin} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />}
+          {view === "contractor-visits" && <ContractorVisitsView visits={contractorVisits} employees={employees} isAdmin={isAdmin} onCreateVisit={createContractorVisit} onCheckOut={checkOutContractorVisit} onDeleteVisit={deleteContractorVisit} />}
+          {view === "wiki" && <WikiView pages={wikiPages} isAdmin={isAdmin} onSave={saveWikiPage} onDelete={deleteWikiPage} />}
           {view === "rooms" && <HabitacionesView roomTypes={roomTypes} roomBlocks={roomBlocks} isAdmin={isAdmin} onCreateRoomType={createRoomType} onBlockRoom={blockRoom} onUnblockRoom={unblockRoom} />}
           {view === "procedures" && (
             <ProcedimientosHubView equipos={mttoEquipos} mttoLog={mttoLog}
@@ -19669,23 +20232,18 @@ export default function App() {
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "inventory" && (
-            <InventoryView bodegas={bodegas} shelves={shelves} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
+            <InventoryHubView bodegas={bodegas} shelves={shelves} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateBodega={createBodega} onCreateShelf={createShelf} onCreateItem={createInvItem}
               onRetiro={doInvRetiro} onEntrada={doInvEntrada} onEditItem={editInvItem} onImportInventory={importFullInventory}
               onDeleteBodega={deleteBodega} onDeleteShelf={deleteShelf}
-              initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)} />
-          )}
-          {view === "inventory-alerts" && (isAdmin || isAlmacenista) && (
-            <StockAlertsView invItems={invItems} invMovements={invMovements} bodegas={bodegas} shelves={shelves}
-              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
-          )}
-          {view === "inventory-movements" && (isAdmin || isAlmacenista) && (
-            <InventoryMovementsView invMovements={invMovements} invItems={invItems} bodegas={bodegas} shelves={shelves}
-              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+              initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)}
+              invMovements={invMovements} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName}
+              tools={tools} accounts={profiles} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />
           )}
           {view === "maintenance" && (
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
+              onSetVideoUrl={setEquipoVideoUrl}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (
@@ -19705,24 +20263,11 @@ export default function App() {
               onLogMaintenance={logMaintenance} onUpdateCronograma={updateCronogramaEntry}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
-          {view === "laundry" && (
-            <AreaChecklistView title="Equipos de Lavandería" subtitle="Piso 4"
-              sections={[{ title: null, items: LAVANDERIA_ITEMS }]} statusOptions={LAVANDERIA_STATUS_OPTS}
-              currentUser={displayName} shift={shift} activeIssues={activeIssues} latestValues={latestLavanderiaValues}
-              onResolveIssue={resolveIssue} onSaveRound={saveLavanderiaRound} />
-          )}
-          {view === "boiler" && (
-            <CalderaView currentUser={displayName} shift={shift} onSaveCaldera={saveCalderaRound} lastCalderaRound={lastCalderaRound} />
-          )}
-          {view === "gym" && (
-            <AreaChecklistView title="Equipos de Gimnasio" subtitle="Piso 14"
-              sections={[
-                { title: "Equipos de Cardio", items: GYM_CARDIO_ITEMS },
-                { title: "Máquinas de Fuerza", items: GYM_FUERZA_ITEMS },
-                { title: "Equipo / Área", items: GYM_AREA_ITEMS },
-              ]} statusOptions={GYM_STATUS_OPTS}
-              currentUser={displayName} shift={shift} activeIssues={activeIssues} latestValues={latestGymValues}
-              onResolveIssue={resolveIssue} onSaveRound={saveGymRound} />
+          {view === "fichas-tecnicas" && (
+            <FichasTecnicasHubView currentUser={displayName} shift={shift} activeIssues={activeIssues}
+              latestLavanderiaValues={latestLavanderiaValues} onSaveLavanderiaRound={saveLavanderiaRound}
+              latestGymValues={latestGymValues} onSaveGymRound={saveGymRound}
+              onResolveIssue={resolveIssue} onSaveCalderaRound={saveCalderaRound} lastCalderaRound={lastCalderaRound} />
           )}
           {view === "schedules" && (
             <SchedulesView employees={employees} scheduleEntries={scheduleEntries} scheduleEditLog={scheduleEditLog} isAdmin={isAdmin} canManageSchedule={canManageSchedule} currentUser={displayName}

@@ -12253,6 +12253,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
 function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf, onOpenFloor }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -12295,32 +12296,67 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
   };
 
   return (
-    <div className="relative flex-1" style={{ maxWidth: 280 }}>
-      <div className="relative">
-        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
-        <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
-          placeholder={scopedLabels[currentView] || "Buscar cualquier equipo, repuesto, empleado…"}
-          className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+    <>
+      {/* Escritorio: barra de búsqueda inline, como siempre */}
+      <div className="relative flex-1 hidden sm:block" style={{ maxWidth: 280 }}>
+        <div className="relative">
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+          <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+            placeholder={scopedLabels[currentView] || "Buscar cualquier equipo, repuesto, empleado…"}
+            className="text-sm border rounded-md pl-7 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+        </div>
+        {open && q.trim().length >= 2 && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div className="pm-animate-in absolute left-0 mt-1 w-96 rounded-lg border shadow-lg z-50 max-h-[65vh] overflow-y-auto"
+              style={{ background: C.panel, borderColor: C.line }}>
+              {results.length === 0 ? (
+                <div className="p-3 text-xs" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
+              ) : results.map((r, i) => (
+                <button key={i} onClick={() => { r.action(); setOpen(false); setQ(""); }}
+                  className="pm-stagger-in block w-full text-left px-3 py-2 border-b last:border-0" style={{ borderColor: C.line, animationDelay: `${Math.min(i, 10) * 25}ms` }}>
+                  <div className="text-xs font-semibold" style={{ color: C.amber }}>{r.tipo}</div>
+                  <div className="text-sm" style={{ color: C.ink }}>{r.label}</div>
+                  {r.sub && <div className="text-xs" style={{ color: C.gray }}>{r.sub}</div>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
-      {open && q.trim().length >= 2 && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="pm-animate-in fixed left-2 right-2 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-auto sm:mt-1 sm:w-96 rounded-lg border shadow-lg z-50 max-h-[65vh] overflow-y-auto"
-            style={{ background: C.panel, borderColor: C.line }}>
-            {results.length === 0 ? (
-              <div className="p-3 text-xs" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
+
+      {/* Móvil: solo el ícono — al tocarlo, abre la búsqueda a pantalla completa */}
+      <button onClick={() => setMobileOpen(true)} className="sm:hidden p-1.5 rounded-md shrink-0" style={{ background: C.bg }} title="Buscar">
+        <Search size={16} color={C.ink} />
+      </button>
+      {mobileOpen && (
+        <div className="sm:hidden fixed inset-0 z-50 flex flex-col" style={{ background: C.panel }}>
+          <div className="pm-safe-top flex items-center gap-2 p-3 border-b" style={{ borderColor: C.line }}>
+            <button onClick={() => { setMobileOpen(false); setQ(""); }}><ArrowLeft size={20} color={C.ink} /></button>
+            <div className="relative flex-1">
+              <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+                placeholder={scopedLabels[currentView] || "Buscar cualquier equipo, repuesto, empleado…"}
+                className="text-sm border rounded-md pl-7 pr-2 py-2 outline-none w-full" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {q.trim().length < 2 ? (
+              <div className="p-4 text-sm text-center" style={{ color: C.gray }}>Escribe al menos 2 letras para buscar.</div>
+            ) : results.length === 0 ? (
+              <div className="p-4 text-sm text-center" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
             ) : results.map((r, i) => (
-              <button key={i} onClick={() => { r.action(); setOpen(false); setQ(""); }}
-                className="pm-stagger-in block w-full text-left px-3 py-2 border-b last:border-0" style={{ borderColor: C.line, animationDelay: `${Math.min(i, 10) * 25}ms` }}>
+              <button key={i} onClick={() => { r.action(); setMobileOpen(false); setQ(""); }}
+                className="block w-full text-left px-4 py-3 border-b" style={{ borderColor: C.line }}>
                 <div className="text-xs font-semibold" style={{ color: C.amber }}>{r.tipo}</div>
                 <div className="text-sm" style={{ color: C.ink }}>{r.label}</div>
                 {r.sub && <div className="text-xs" style={{ color: C.gray }}>{r.sub}</div>}
               </button>
             ))}
           </div>
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -12397,8 +12433,10 @@ function AiAssistantWidget({ contextSummary }) {
         {open ? <X size={22} /> : <Sparkles size={22} />}
       </button>
       {open && (
-        <div className="fixed bottom-36 sm:bottom-20 right-3 left-3 sm:left-auto sm:w-96 rounded-xl border shadow-2xl flex flex-col"
-          style={{ height: "62vh", maxHeight: 520, background: C.panel, borderColor: C.line, zIndex: 45 }}>
+        <>
+          <div className="fixed inset-0 z-[44]" style={{ background: "rgba(0,0,0,0.35)" }} onClick={() => setOpen(false)} />
+          <div className="fixed bottom-36 sm:bottom-20 right-3 left-3 sm:left-auto sm:w-96 rounded-xl border shadow-2xl flex flex-col"
+            style={{ height: "62vh", maxHeight: 520, background: C.panel, backgroundColor: C.panel, borderColor: C.line, zIndex: 45 }} onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between p-3 border-b shrink-0" style={{ borderColor: C.line }}>
             <div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: C.ink }}>
               <Sparkles size={15} color={C.amber} /> Pregúntale a la app
@@ -12424,7 +12462,8 @@ function AiAssistantWidget({ contextSummary }) {
               className="flex-1 text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }} />
             <Button size="sm" disabled={sending || !input.trim()} onClick={send}>Enviar</Button>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </>
   );
@@ -13198,9 +13237,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       <div className="rounded-xl p-3.5 mb-4" style={{ background: C.steelDark }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <div className="text-white text-lg font-semibold">Hola, {currentUser}</div>
+            <div className="text-white text-lg font-semibold">Hola, {(currentUser || "").trim().split(/\s+/)[0]}</div>
             <div className="text-sm" style={{ color: "#8fa3b8" }}>
-              {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"} · {todayStr()}
+              {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"}
             </div>
           </div>
           <Gauge size={28} color={C.amber} />
@@ -18076,7 +18115,6 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const closeOnboarding = () => {
     setShowOnboarding(false);
@@ -20259,7 +20297,7 @@ export default function App() {
                 onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
                 onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }}
                 onOpenFloor={(id) => { setFloorId(id); setView("ronda"); }} />
-              <button onClick={() => setShowQrScanner(true)} title="Escanear código QR" className="p-1.5 rounded-md shrink-0" style={{ background: C.bg }}>
+              <button onClick={() => setShowQrScanner(true)} title="Escanear código QR" className="hidden sm:block p-1.5 rounded-md shrink-0" style={{ background: C.bg }}>
                 <QrCode size={16} color={C.ink} />
               </button>
             </>
@@ -20302,40 +20340,8 @@ export default function App() {
             </button>
             {isAdmin && <span className="hidden sm:inline-flex"><PushEnableButton onEnable={enablePushNotifications} /></span>}
             {isAdmin && <span className="hidden sm:inline-flex"><NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} /></span>}
-            {/* En móvil: ayuda + modo oscuro + notificaciones (si es admin) quedan detrás de este botón, para no saturar el header */}
-            <div className="relative sm:hidden">
-              <button onClick={() => setShowMoreMenu(v => !v)} title="Más opciones" className="p-1.5 rounded-md relative" style={{ background: showMoreMenu ? C.amberSoft : C.bg }}>
-                <MoreVertical size={16} color={C.ink} />
-                {isAdmin && (shiftAlerts?.length > 0 || staleIssues?.length > 0 || criticalFuelTanks?.length > 0 || maintenanceDue?.items?.length > 0) && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full" style={{ background: C.red }} />
-                )}
-              </button>
-              {showMoreMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border shadow-lg z-50 py-1" style={{ background: C.panel, borderColor: C.line }}>
-                    <button onClick={() => { setShowOnboarding(true); setShowMoreMenu(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
-                      <span className="text-xs font-bold w-4 text-center">?</span> Guía de bienvenida
-                    </button>
-                    <button onClick={() => { toggleTheme(); setShowMoreMenu(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-black/[0.03]" style={{ color: C.ink }}>
-                      {darkMode ? <Sun size={14} color={C.amber} /> : <Moon size={14} color={C.gray} />} {darkMode ? "Modo claro" : "Modo oscuro"}
-                    </button>
-                    {isAdmin && (
-                      <div className="px-3 py-2" onClick={() => setShowMoreMenu(false)}>
-                        <NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} />
-                      </div>
-                    )}
-                    {isAdmin && (
-                      <div className="px-3 py-2" onClick={() => setShowMoreMenu(false)}>
-                        <PushEnableButton onEnable={enablePushNotifications} />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
             {isAdmin && (
-              <div className="relative">
+              <div className="relative hidden sm:block">
                 <button onClick={() => setShowSettingsMenu(v => !v)} title="Configuración del sistema" className="p-1.5 rounded-md relative" style={{ background: showSettingsMenu ? C.amberSoft : C.bg }}>
                   <SettingsIcon size={16} color={C.ink} />
                   {pendingAccountsCount > 0 && (
@@ -20378,24 +20384,77 @@ export default function App() {
             {isAdmin && <span className="hidden sm:inline-flex"><Pill tone="amber">Admin</Pill></span>}
             <span className="hidden sm:flex text-sm font-medium items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <span className="hidden sm:inline-flex"><Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button></span>
-            {/* En móvil: solo el avatar — toca para ver el nombre completo y salir, sin ocupar espacio del header todo el tiempo */}
-            <div className="relative sm:hidden">
-              <button onClick={() => setShowProfileMenu(v => !v)} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg }}>
-                <User size={16} color={isAdmin ? "#7a5405" : C.ink} />
-              </button>
-              {showProfileMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border shadow-lg z-50 py-2 px-3" style={{ background: C.panel, borderColor: C.line }}>
-                    <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}>{displayName}</div>
-                    {isAdmin && <div className="mb-2"><Pill tone="amber">Admin</Pill></div>}
-                    <Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
-                  </div>
-                </>
-              )}
-            </div>
+            {/* En móvil: solo el avatar — toca para abrir la pantalla de Perfil con todo consolidado */}
+            <button onClick={() => setShowProfileMenu(true)} className="sm:hidden w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg }}>
+              <User size={16} color={isAdmin ? "#7a5405" : C.ink} />
+            </button>
           </div>
         </header>
+        {/* Pantalla de Perfil (móvil) — todo lo que en escritorio vive suelto en el header
+            (ayuda, modo oscuro, notificaciones, configuración) se consolida aquí para no saturar
+            la barra superior en un celular. */}
+        {showProfileMenu && (
+          <div className="sm:hidden fixed inset-0 z-50 flex flex-col" style={{ background: C.panel }}>
+            <div className="pm-safe-top flex items-center gap-2 p-3 border-b" style={{ borderColor: C.line }}>
+              <button onClick={() => setShowProfileMenu(false)}><ArrowLeft size={20} color={C.ink} /></button>
+              <div className="text-base font-semibold" style={{ color: C.ink }}>Perfil</div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg }}>
+                  <User size={22} color={isAdmin ? "#7a5405" : C.ink} />
+                </div>
+                <div>
+                  <div className="text-base font-semibold" style={{ color: C.ink }}>{displayName}</div>
+                  {isAdmin && <Pill tone="amber">Admin</Pill>}
+                </div>
+              </div>
+
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.gray }}>General</div>
+              <button onClick={() => { setShowOnboarding(true); setShowProfileMenu(false); }} className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
+                <span className="text-xs font-bold w-4 text-center">?</span> Guía de bienvenida
+              </button>
+              <button onClick={toggleTheme} className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
+                {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.gray} />} {darkMode ? "Modo claro" : "Modo oscuro"}
+              </button>
+              {isAdmin && (
+                <div className="px-1 py-2"><PushEnableButton onEnable={enablePushNotifications} /></div>
+              )}
+              {isAdmin && (
+                <div className="px-1 py-2"><NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={(v) => { setView(v); setShowProfileMenu(false); }} /></div>
+              )}
+
+              {isAdmin && (
+                <>
+                  <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.gray }}>Administración</div>
+                  {[
+                    { id: "admin", label: "Panel de administrador", icon: ShieldCheck, badge: pendingAccountsCount },
+                    { id: "trash", label: "Papelera", icon: Trash2 },
+                    { id: "general-history", label: "Historial de cambios", icon: History },
+                    { id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck },
+                  ].map(opt => (
+                    <button key={opt.id} onClick={() => { setView(opt.id); setShowProfileMenu(false); }}
+                      className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
+                      <opt.icon size={16} color={C.gray} /> {opt.label}
+                      {opt.badge > 0 && <NavBadge count={opt.badge} pulse />}
+                    </button>
+                  ))}
+                  <div className="text-xs font-semibold uppercase tracking-wide mb-2 mt-5" style={{ color: C.gray }}>Uso de la plataforma</div>
+                  <a href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer" className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
+                    <Cloud size={16} color={C.gray} /> Panel de Supabase
+                  </a>
+                  <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer" className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
+                    <Gauge size={16} color={C.gray} /> Panel de Vercel
+                  </a>
+                </>
+              )}
+
+              <div className="mt-6 pt-4 border-t" style={{ borderColor: C.line }}>
+                <Button variant="ghost" icon={LogOut} onClick={logout}>Salir</Button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Barra de navegación inferior — solo en móvil. Pensada para usar con una sola mano:
             los 4 destinos más comunes, sin tener que estirar el pulgar hasta arriba. */}
         <nav className="pm-safe-bottom sm:hidden fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t" style={{ background: C.panel, borderColor: C.line }}>

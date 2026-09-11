@@ -9,12 +9,34 @@
 //   GEMINI_API_KEY     — tu clave de la API de Gemini
 //   APP_SHARED_SECRET  — opcional, la misma que ya usan las otras funciones de IA
 //
-// Nota sobre el modelo: "gemini-2.0-flash" fue descontinuado por Google en junio de 2026 (por
-// eso este endpoint dejó de responder). Usa "gemini-3.7-flash" — si en el futuro Google lo
-// descontinua también, cambia el nombre del modelo en la URL de abajo por el que indique
-// https://ai.google.dev/gemini-api/docs/changelog en ese momento.
+// Nota sobre el modelo (septiembre 2026): se usa "gemini-3.1-flash-lite" en vez de un modelo
+// "flash" normal — Google lo recomienda específicamente para preguntas simples que no necesitan
+// razonamiento profundo (justo este caso), y es notablemente más rápido para empezar a responder.
+// "gemini-3.7-flash" (el que se usaba antes) tiene reportes conocidos de lentitud/503 por alta
+// demanda, según la propia ficha de modelo de Google. Si en el futuro este modelo también se
+// descontinúa, revisa el nombre vigente en https://ai.google.dev/gemini-api/docs/changelog.
 
-const GEMINI_MODEL = "gemini-3.7-flash";
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Llama a Gemini, reintentando una vez si la respuesta es 503 (alta demanda temporal) —
+ *  el propio mensaje de error de Google recomienda reintentar, así que lo hacemos nosotros
+ *  antes de molestar al técnico con un error. */
+async function callGeminiWithRetry(url, body, attempts = 2) {
+  let lastResp = null;
+  for (let i = 0; i < attempts; i++) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (resp.ok || resp.status !== 503) return resp;
+    lastResp = resp;
+    if (i < attempts - 1) await sleep(600 * (i + 1)); // espera un poco más en cada intento
+  }
+  return lastResp;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -58,22 +80,21 @@ export default async function handler(req, res) {
   ].join("\n");
 
   try {
-    const resp = await fetch(
+    const resp = await callGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
-        }),
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
       }
     );
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      res.status(502).json({ ok: false, message: `Gemini no pudo responder (${resp.status}). ${errText.slice(0, 200)}` });
+      const friendly = resp.status === 503
+        ? "Gemini está saturado en este momento (alta demanda). Intenta de nuevo en unos segundos."
+        : `Gemini no pudo responder (${resp.status}). ${errText.slice(0, 200)}`;
+      res.status(502).json({ ok: false, message: friendly });
       return;
     }
 

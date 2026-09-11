@@ -9,10 +9,28 @@
 //   GEMINI_API_KEY     — tu clave de la API de Gemini
 //   APP_SHARED_SECRET  — opcional, la misma que ya usan las otras funciones de IA
 //
-// Nota sobre el modelo: igual que en ai-assistant.js, "gemini-2.0-flash" ya no existe (Google lo
-// apagó en junio de 2026). Usa "gemini-3.7-flash".
+// Nota sobre el modelo (septiembre 2026): "gemini-3.1-flash-lite" — mismo motivo que en
+// ai-assistant.js (más rápido y con menos reportes de saturación que "gemini-3.7-flash" para
+// este tipo de tarea).
 
-const GEMINI_MODEL = "gemini-3.7-flash";
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function callGeminiWithRetry(url, body, attempts = 2) {
+  let lastResp = null;
+  for (let i = 0; i < attempts; i++) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (resp.ok || resp.status !== 503) return resp;
+    lastResp = resp;
+    if (i < attempts - 1) await sleep(600 * (i + 1));
+  }
+  return lastResp;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -62,22 +80,21 @@ export default async function handler(req, res) {
   ].join("\n\n");
 
   try {
-    const resp = await fetch(
+    const resp = await callGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 700 },
-        }),
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 700 },
       }
     );
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      res.status(502).json({ ok: false, message: `Gemini no pudo responder (${resp.status}). ${errText.slice(0, 200)}` });
+      const friendly = resp.status === 503
+        ? "Gemini está saturado en este momento (alta demanda). Intenta de nuevo en unos segundos."
+        : `Gemini no pudo responder (${resp.status}). ${errText.slice(0, 200)}`;
+      res.status(502).json({ ok: false, message: friendly });
       return;
     }
 

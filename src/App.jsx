@@ -20159,6 +20159,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
+      {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin
+          importar si la app está en modo claro u oscuro, para que combine con el theme-color
+          del manifiesto y no se vea un bloque blanco cortado arriba en iOS. */}
+      <div className="fixed top-0 left-0 right-0 z-[200]" style={{ height: "env(safe-area-inset-top)", background: "#132030" }} />
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
       {(isAdmin || isGerencia) && account?.approved && <AiAssistantWidget contextSummary={aiContextSummary} />}
       {showQrScanner && (

@@ -8795,7 +8795,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     if (h >= 14 && h < 22) return "Tarde";
     return "Noche";
   };
-  const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterOperario || filterPrioridad;
+  const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterPrioridad;
   const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); };
 
   const [onlyMine, setOnlyMine] = useState(() => {
@@ -9107,15 +9107,15 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             {Object.keys(accounts || {}).map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
           </select>
         </div>
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Prioridad</div>
-          <select value={filterPrioridad} onChange={e => setFilterPrioridad(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
-            <option value="">Todas</option>
-            {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
-          </select>
-        </div>
         {(showAdvFilters || hasAdvancedFilters) && (
           <>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Prioridad</div>
+              <select value={filterPrioridad} onChange={e => setFilterPrioridad(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+                <option value="">Todas</option>
+                {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+              </select>
+            </div>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Desde</div>
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
@@ -9153,7 +9153,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             const colTasks = filtered.filter(t => normalizeTaskState(t.estado) === col.code);
             const overWip = col.code === "asignada" && colTasks.length > KANBAN_WIP_LIMIT;
             return (
-              <div key={col.code} className="rounded-xl border p-2.5" style={{ borderColor: overWip ? C.red : C.line, background: overWip ? C.redSoft : C.bg, minHeight: 140 }}
+              <div key={col.code} className="rounded-xl border p-2.5" style={{ borderColor: overWip ? C.amber : C.line, background: overWip ? C.amberSoft : C.bg, minHeight: 140 }}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => {
                   const taskId = e.dataTransfer.getData("text/plain");
@@ -9164,13 +9164,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   else transitionTask(task, col.code);
                 }}>
                 <div className="flex items-center justify-between mb-2 px-0.5">
-                  <div className="text-xs font-bold uppercase tracking-wide flex items-center gap-1" style={{ color: overWip ? C.red : C.inkSoft }}>
+                  <div className="text-xs font-bold uppercase tracking-wide flex items-center gap-1" style={{ color: overWip ? "#7a5405" : C.inkSoft }}>
                     {col.label} {overWip && <AlertTriangle size={12} />}
                   </div>
-                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: overWip ? "#fff" : C.panel, color: overWip ? C.red : C.gray }}>{colTasks.length}</span>
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: overWip ? "#fff" : C.panel, color: overWip ? "#7a5405" : C.gray }}>{colTasks.length}</span>
                 </div>
                 {overWip && (
-                  <div className="text-[10px] mb-2 px-0.5" style={{ color: C.red }}>Muchas tareas pendientes sin empezar — puede valer la pena repartir antes de seguir creando más.</div>
+                  <div className="text-[10px] mb-2 px-0.5" style={{ color: "#7a5405" }}>Muchas tareas pendientes sin empezar — puede valer la pena repartir antes de seguir creando más.</div>
                 )}
                 {colTasks.length === 0 ? (
                   <div className="text-[11px] text-center py-4" style={{ color: C.gray }}>Vacío</div>
@@ -12415,7 +12415,11 @@ function AiAssistantWidget({ contextSummary }) {
       bumpAiUsage("assistantQueries");
     } catch (err) {
       console.error("AiAssistantWidget send error:", err);
-      setMessages(m => [...m, { role: "assistant", text: `No me pude conectar (${err.message || "error de conexión"}). Revisa tu conexión e intenta de nuevo.` }]);
+      const isRawNetworkError = /load failed|failed to fetch|networkerror/i.test(err.message || "");
+      const friendlyText = isRawNetworkError
+        ? "Red inestable — intenta de nuevo en un momento."
+        : `No me pude conectar (${err.message || "error de conexión"}). Revisa tu conexión e intenta de nuevo.`;
+      setMessages(m => [...m, { role: "assistant", text: friendlyText }]);
     }
     setSending(false);
   };
@@ -13238,7 +13242,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="text-white text-lg font-semibold">Hola, {(currentUser || "").trim().split(/\s+/)[0]}</div>
-            <div className="text-sm" style={{ color: "#8fa3b8" }}>
+            <div className="text-sm hidden sm:block" style={{ color: "#8fa3b8" }}>
               {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"}
             </div>
           </div>
@@ -14621,7 +14625,8 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
       else setError(res.message || "No se pudo generar el procedimiento.");
     } catch (err) {
       console.error("ProcedureCopilot doGenerate error:", err);
-      setError(`No me pude conectar (${err.message || "error de conexión"}). Revisa tu conexión e intenta de nuevo.`);
+      const isRawNetworkError = /load failed|failed to fetch|networkerror/i.test(err.message || "");
+      setError(isRawNetworkError ? "Red inestable — intenta de nuevo en un momento." : `No me pude conectar (${err.message || "error de conexión"}). Revisa tu conexión e intenta de nuevo.`);
     }
     setLoading(false);
   };

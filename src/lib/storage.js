@@ -189,3 +189,103 @@ export async function uploadVideo(file, pathPrefix = "equipo") {
   const { data } = supabase.storage.from("maintenance-videos").getPublicUrl(path);
   return data.publicUrl;
 }
+
+/* ------------------------------------------------------------------------------------------
+ * Cola de registros con fotos pendientes (tareas, cierres de tareas, mantenimientos...).
+ * Es como la cola de sSet/flushOfflineQueue, pero para guardados que además traen fotos que
+ * subir — porque un archivo (File) no se puede meter tal cual en localStorage, hay que
+ * convertirlo a texto (base64) primero, y reconstruirlo como archivo al reintentar.
+ * ------------------------------------------------------------------------------------------ */
+
+const PHOTO_QUEUE_KEY = "pm-local:photo-record-queue";
+
+function readPhotoQueue() {
+  try {
+    const raw = localStorage.getItem(PHOTO_QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function writePhotoQueue(q) {
+  try { localStorage.setItem(PHOTO_QUEUE_KEY, JSON.stringify(q)); } catch { /* noop */ }
+  try { window.dispatchEvent(new CustomEvent("pm-photo-queue-changed")); } catch { /* noop */ }
+}
+/** Cuántos registros con fotos quedaron guardados solo en este celular, esperando poder subirse. */
+export function getPendingPhotoRecordsCount() {
+  return readPhotoQueue().length;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlToFile(dataUrl, filename) {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: mime });
+}
+
+/**
+ * Guarda un registro que trae fotos adjuntas (una tarea nueva, el cierre de una tarea, un
+ * mantenimiento...). Intenta subir las fotos y guardar de una — si hay señal, esto termina
+ * ahí mismo. Si no hay señal o algo falla en el camino, NO se pierde nada: deja todo guardado
+ * en este celular (fotos incluidas, convertidas a texto) y lo reintenta solo más adelante,
+ * igual que sSet/flushOfflineQueue.
+ *
+ * kind: una palabra que identifica el tipo de registro (ej: "task", "task-close", "maintenance").
+ * payload: los datos del registro, sin las fotos.
+ * photoFiles: arreglo de archivos (File) de las fotos, puede venir vacío.
+ * onSaved(payload, urls): función que de verdad guarda el registro ya con las URLs de las fotos.
+ */
+export async function saveRecordWithPhotos(kind, payload, photoFiles, onSaved) {
+  const files = (photoFiles || []).filter(Boolean);
+  try {
+    const urls = [];
+    for (const file of files) {
+      urls.push(await uploadPhoto(file, kind));
+    }
+    await onSaved(payload, urls);
+    return { queued: false };
+  } catch (e) {
+    console.warn(`Sin conexión guardando "${kind}" con fotos — se deja en espera local hasta que vuelva la señal.`, e);
+    const dataUrls = await Promise.all(files.map(f => fileToDataUrl(f)));
+    const q = readPhotoQueue();
+    q.push({ kind, payload, photos: dataUrls, at: new Date().toISOString() });
+    writePhotoQueue(q);
+    return { queued: true };
+  }
+}
+
+/**
+ * Reintenta subir todo lo que quedó pendiente por falta de señal. "handlers" es un objeto con
+ * una función por cada "kind" que puede llegar a esta cola, ej:
+ *   { maintenance: async (payload, urls) => { ... } }
+ */
+export async function flushPhotoRecordQueue(handlers) {
+  const q = readPhotoQueue();
+  if (q.length === 0) return { synced: 0, remaining: 0 };
+  let synced = 0;
+  const stillPending = [];
+  for (const item of q) {
+    try {
+      const files = item.photos.map((dataUrl, i) => dataUrlToFile(dataUrl, `foto-${i}.jpg`));
+      const urls = [];
+      for (const file of files) urls.push(await uploadPhoto(file, item.kind));
+      const handler = handlers[item.kind];
+      if (handler) await handler(item.payload, urls);
+      synced++;
+    } catch {
+      stillPending.push(item);
+    }
+  }
+  writePhotoQueue(stillPending);
+  return { synced, remaining: stillPending.length };
+}

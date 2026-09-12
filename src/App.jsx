@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical, Menu as MenuIcon
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -10245,7 +10245,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   );
 }
 
-function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, currentUser }) {
+function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEmail, onLogSent, currentUser }) {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
   const [sort, setSort] = useState({ key: "fecha", dir: "desc" });
@@ -10258,10 +10258,13 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
   const [selectedId, setSelectedId] = useState(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [visibleCount, setVisibleCount] = useState(20);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const sentinelRef = useRef(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setVisibleCount(20); }, [search, filterTipo, sort]); // si cambian los filtros, vuelve a empezar
+  useEffect(() => { setReviewComment(""); }, [selectedId]); // no arrastrar el comentario de un registro al siguiente
 
   // Scroll infinito: cuando el "centinela" invisible al final de la lista entra en pantalla,
   // se cargan 20 más — así nunca se descargan los cientos de reportes de una sola vez.
@@ -10390,6 +10393,8 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
             <div className="text-xs truncate" style={{ color: C.gray }}>{r.sistema}</div>
             <div className="text-xs mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: C.inkSoft }}>
               <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo}</Badge>
+              {r.revisionEstado === "pendiente" && <Badge tone="amber">Pendiente de revisión</Badge>}
+              {r.revisionEstado === "rechazado" && <Badge tone="red">Devuelto</Badge>}
               <Avatar name={r.tecnico} size={16} /> {r.tecnico} · {fmtDT(r.fecha)}
             </div>
           </div>
@@ -10505,6 +10510,33 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
               Registrado por <b>{selected.createdBy}</b> el {fmtDT(selected.createdAt)}
               {selectedIndex >= 0 && <> · registro {selectedIndex + 1} de {mttoLog.length}</>}
             </div>
+
+            {/* Auditoría — solo un supervisor puede cerrar el ciclo de este reporte */}
+            {selected.revisionEstado && selected.revisionEstado !== "pendiente" && (
+              <div className="text-xs mt-3 pt-3 border-t rounded-lg p-2.5" style={{ borderColor: C.line, background: selected.revisionEstado === "aprobado" ? C.greenSoft : C.redSoft, color: selected.revisionEstado === "aprobado" ? C.green : C.red }}>
+                {selected.revisionEstado === "aprobado" ? "✓ Aprobado" : "↩ Devuelto"} por <b>{selected.revisadoPor}</b> el {fmtDT(selected.revisadoAt)}
+                {selected.revisionComentario && <div className="mt-1" style={{ color: C.ink }}>"{selected.revisionComentario}"</div>}
+              </div>
+            )}
+            {isAdmin && selected.revisionEstado === "pendiente" && (
+              <div className="mt-3 pt-3 border-t" style={{ borderColor: C.line }}>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Auditoría — pendiente de tu revisión</div>
+                <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Comentario (opcional si apruebas, recomendado si devuelves)…"
+                  className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Button disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                      ✓ Aprobar y cerrar
+                    </Button>
+                  </div>
+                  <div className="flex-1">
+                    <Button variant="ghost" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                      ↩ Devolver
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -12868,7 +12900,7 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center" style={{ background: "#000" }}>
-      <button onClick={onClose} className="absolute top-4 right-4 z-10 p-2 rounded-full" style={{ background: "rgba(255,255,255,0.15)" }}>
+      <button onClick={onClose} className="pm-safe-top absolute top-4 right-4 z-10 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", minWidth: 44, minHeight: 44 }}>
         <X size={22} color="#fff" />
       </button>
       {error ? (
@@ -19158,6 +19190,7 @@ export default function App() {
       costo: form.costo ? Number(form.costo) : 0, fotos: form.fotos || [],
       repuestos: repuestosUsados.map(r => ({ itemId: r.itemId, nombre: invItems.find(it => it.id === r.itemId)?.name || "Repuesto", cantidad: Number(r.cantidad) })),
       createdBy: displayName, createdAt: nowIso(),
+      revisionEstado: "pendiente", // pendiente | aprobado | rechazado — lo cierra un supervisor
     };
     const next = [rec, ...mttoLog].slice(0, 5000);
     setMttoLog(next);
@@ -19168,6 +19201,17 @@ export default function App() {
       if (item) await adjustInvStock(item, -Math.abs(Number(r.cantidad)), "retiro", `Usado en mantenimiento de equipo (${rec.tipo})`);
     }
     return rec;
+  };
+
+  /** El supervisor cierra el ciclo de un mantenimiento — aprobándolo o devolviéndolo con un
+   *  comentario. Queda guardado quién lo revisó y cuándo, para que quede trazabilidad real. */
+  const reviewMaintenanceRecord = async (recordId, decision, comentario) => {
+    const next = mttoLog.map(r => r.id === recordId ? {
+      ...r, revisionEstado: decision, revisionComentario: comentario || "",
+      revisadoPor: displayName, revisadoAt: nowIso(),
+    } : r);
+    setMttoLog(next);
+    await sSet("mtto-log", next, true);
   };
 
   /** Reprograma una celda del cronograma anual (equipo + mes) — si no existía todavía una entrada
@@ -20393,7 +20437,7 @@ export default function App() {
           .floor-scroll::-webkit-scrollbar-thumb { background: #3d5674; border-radius: 8px; }
           .floor-scroll::-webkit-scrollbar-thumb:hover { background: #4d6a8a; }
         `}</style>
-        <div className="p-4 border-b shrink-0" style={{ borderColor: "#2a3f56" }}>
+        <div className="pm-safe-top p-4 border-b shrink-0" style={{ borderColor: "#2a3f56" }}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: C.amber }}><Gauge size={18} color="#fff" /></div>
@@ -20468,7 +20512,7 @@ export default function App() {
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="pm-safe-top flex items-center justify-between px-4 py-3 border-b gap-2 flex-wrap" style={{ background: C.panel, borderColor: C.line }}>
-          <button className="lg:hidden flex items-center justify-center" onClick={() => setSidebarOpen(v => !v)} style={{ minWidth: 44, minHeight: 44 }}>
+          <button className="hidden sm:flex lg:hidden items-center justify-center" onClick={() => setSidebarOpen(v => !v)} style={{ minWidth: 44, minHeight: 44 }}>
             <ChevronDown size={20} color={C.ink} style={{ transform: sidebarOpen ? "rotate(180deg)" : "none" }} />
           </button>
           <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
@@ -20659,7 +20703,7 @@ export default function App() {
             { id: "home", label: "Inicio", icon: Home, onClick: () => setView("home") },
             { id: "tasks", label: "Tareas", icon: ClipboardCheck, onClick: () => setView("tasks") },
             { id: "qr", label: "Escanear", icon: QrCode, onClick: () => setShowQrScanner(true) },
-            { id: "profile", label: "Perfil", icon: User, onClick: () => setShowProfileMenu(v => !v) },
+            { id: "profile", label: "Menú", icon: MenuIcon, onClick: () => setSidebarOpen(true) },
           ].map(item => (
             <button key={item.id} onClick={item.onClick} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
               style={{ color: (item.id === "home" ? view === "home" : item.id === "tasks" && view === "tasks") ? C.amber : C.inkSoft, minHeight: 52 }}>
@@ -20775,7 +20819,7 @@ export default function App() {
               coldRoundsIndex={coldRoundsIndex} meterRoundsIndex={meterRoundsIndex} currentUser={displayName} tasks={tasks} accounts={profiles} />
           )}
           {view === "maintenance-log" && isAdmin && (
-            <MaintenanceLogAuditView equipos={mttoEquipos} mttoLog={mttoLog}
+            <MaintenanceLogAuditView equipos={mttoEquipos} mttoLog={mttoLog} isAdmin={isAdmin} onReview={reviewMaintenanceRecord}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
           {view === "maintenance-schedule" && isAdmin && (

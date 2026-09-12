@@ -10665,7 +10665,8 @@ function StatCard({ label, value, valueColor, leading, breakdown, trend, tooltip
       </div>
       <div className="flex items-center gap-3 mt-2 min-w-0">
         {leading}
-        <div className="text-3xl font-bold leading-none tabular-nums truncate" style={{ color: valueColor || C.ink }} title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}>{value}</div>
+        <div className={`font-bold leading-tight tabular-nums ${String(value).length > 10 ? "text-xl" : String(value).length > 7 ? "text-2xl" : "text-3xl"}`}
+          style={{ color: valueColor || C.ink, wordBreak: "break-word" }}>{value}</div>
       </div>
       {trend}
       {breakdown && breakdown.length > 0 && (
@@ -10692,7 +10693,7 @@ function TrendBadge({ current, previous, unit = "%", goodDirection = "up" }) {
   return <span className="text-xs font-medium block mt-1" style={{ color: good ? C.green : C.red }}>{up ? "↑" : "↓"} {text} vs. mes pasado</span>;
 }
 
-function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, meterRoundsIndex, currentUser, tasks, accounts }) {
+function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, meterRoundsIndex, currentUser, tasks, accounts, issueHistory, activeIssues }) {
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
   const now = new Date();
@@ -10754,6 +10755,29 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
     [equipos, filteredLog, hasActiveFilters]);
   const costPrev = useMemo(() => computeMaintenanceCost(equipos, mttoLog, lastMonthDate), [equipos, mttoLog]); // eslint-disable-line react-hooks/exhaustive-deps
   const avgUptime = uptime.length ? Math.round(uptime.reduce((s, u) => s + u.pct, 0) / uptime.length) : 100;
+
+  // ===== Top 5 equipos con más tiempo fuera de servicio (usa el mismo cálculo que Análisis de Fallas) =====
+  const top5Down = useMemo(() => {
+    const sinceDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+    return computeEquipmentStats(issueHistory || [], activeIssues || {}, sinceDate)
+      .filter(e => e.totalHours > 0)
+      .slice(0, 5)
+      .map(e => ({ ...e, label: e.name || e.code || "(equipo eliminado)" }));
+  }, [issueHistory, activeIssues, dateFrom]);
+
+  // ===== Preventivo vs Correctivo, agrupado por sistema (con los mismos filtros de arriba) =====
+  const preventivoVsCorrectivo = useMemo(() => {
+    const map = {};
+    filteredLog.forEach(r => {
+      const eq = equipos.find(e => e.id === r.equipoId);
+      const sistema = eq?.sistema || "Otros";
+      if (!map[sistema]) map[sistema] = { sistema, preventivo: 0, correctivo: 0 };
+      if (r.tipo === "preventivo") map[sistema].preventivo++;
+      else if (r.tipo === "correctivo") map[sistema].correctivo++;
+    });
+    return Object.values(map).sort((a, b) => (b.preventivo + b.correctivo) - (a.preventivo + a.correctivo)).slice(0, 8);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredLog, equipos]);
 
   // ===== KPIs ejecutivos nuevos: órdenes cerradas y horas hombre, del sistema de tareas =====
   const ordenesCerradas = filteredTasks.length;
@@ -10832,7 +10856,7 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
       </div>
 
       {/* KPIs ejecutivos */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <StatCard label="Costo global de operación" value={cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}
           trend={!hasActiveFilters ? <TrendBadge current={cost.total} previous={costPrev.total} unit="$" goodDirection="down" /> : null} />
         <StatCard label="Eficiencia global de planta" value={`${avgUptime}%`} valueColor={avgUptime >= 90 ? C.green : C.red}
@@ -10843,13 +10867,31 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         <StatCard label="Horas hombre invertidas" value={fmtHours(horasHombre)}
           tooltip="Suma del tiempo que las tareas estuvieron realmente 'En proceso' (no el tiempo total abierto, solo cuando alguien estaba trabajando en ellas activamente), según los filtros de arriba."
           leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
         <StatCard label="Cumplimiento de rondas" value={`${compliance.ronda.pct}%`} valueColor={compliance.ronda.pct >= 90 ? C.green : C.red}
           tooltip="Rondas de revisión guardadas este mes, sobre el total que deberían haberse hecho a este punto del mes."
           leading={<MiniGauge value={compliance.ronda.pct} max={100} size={40} stroke={5} color={compliance.ronda.pct >= 90 ? C.green : C.red} />}
           trend={<TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+        {top5Down.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Top 5 — equipos con más tiempo fuera de servicio</div>
+            <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <HorizontalBarChart data={top5Down} labelKey="label" valueKey="totalHours"
+                colorFor={e => e.totalHours > 72 ? C.red : C.amber} formatValue={v => fmtHours(v)} />
+            </div>
+          </div>
+        )}
+        {preventivoVsCorrectivo.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Preventivo vs. correctivo, por sistema</div>
+            <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <StackedBarChart data={preventivoVsCorrectivo} labelKey="sistema"
+                series={[{ key: "preventivo", label: "Preventivo", color: C.blue }, { key: "correctivo", label: "Correctivo", color: C.red }]} />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -13022,6 +13064,46 @@ function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatValue, m
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Barras horizontales APILADAS — cada fila es un sistema, dividida en 2 (o más) segmentos de
+ *  color según "series". Útil para comparar preventivo vs correctivo sin necesitar recharts. */
+function StackedBarChart({ data, labelKey, series }) {
+  const totals = data.map(d => series.reduce((s, sr) => s + (Number(d[sr.key]) || 0), 0));
+  const maxTotal = Math.max(1, ...totals);
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-3 flex-wrap">
+        {series.map(sr => (
+          <span key={sr.key} className="flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}>
+            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: sr.color }} /> {sr.label}
+          </span>
+        ))}
+      </div>
+      <div className="space-y-4">
+        {data.map((d, i) => {
+          const total = totals[i];
+          return (
+            <div key={i}>
+              <div className="flex items-center justify-between text-sm mb-1.5 gap-3">
+                <span style={{ color: C.ink }} className="truncate" title={d[labelKey]}>{d[labelKey]}</span>
+                <span className="font-bold shrink-0 tabular-nums" style={{ color: C.ink, fontSize: 15 }}>{total}</span>
+              </div>
+              <div className="w-full rounded-full overflow-hidden flex" style={{ background: C.bg, height: 10 }}>
+                {series.map(sr => {
+                  const val = Number(d[sr.key]) || 0;
+                  const pct = maxTotal ? (val / maxTotal) * 100 : 0;
+                  return pct > 0 ? (
+                    <div key={sr.key} title={`${sr.label}: ${val}`} style={{ width: `${pct}%`, background: sr.color, height: "100%", transition: "width 600ms var(--ease-out)" }} />
+                  ) : null;
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -20816,7 +20898,8 @@ export default function App() {
           )}
           {view === "executive" && (isAdmin || isGerencia) && (
             <ExecutivePanelView equipos={mttoEquipos} mttoLog={mttoLog} roundsIndex={roundsIndex}
-              coldRoundsIndex={coldRoundsIndex} meterRoundsIndex={meterRoundsIndex} currentUser={displayName} tasks={tasks} accounts={profiles} />
+              coldRoundsIndex={coldRoundsIndex} meterRoundsIndex={meterRoundsIndex} currentUser={displayName} tasks={tasks} accounts={profiles}
+              issueHistory={issueHistory} activeIssues={activeIssues} />
           )}
           {view === "maintenance-log" && isAdmin && (
             <MaintenanceLogAuditView equipos={mttoEquipos} mttoLog={mttoLog} isAdmin={isAdmin} onReview={reviewMaintenanceRecord}

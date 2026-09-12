@@ -1207,6 +1207,35 @@ function computeEquipoStats(equipo, mttoLog) {
 }
 
 /**
+ * Mantenimiento preventivo automático — en vez de depender solo del Cronograma Anual (fechas
+ * fijas en el calendario), esto avisa según cuánto tiempo REAL lleva un equipo sin que le hagan
+ * un preventivo, comparado con la frecuencia que el admin le haya configurado (equipo.frecuenciaDias).
+ * No usa horas de funcionamiento porque la app no registra ese dato todavía — solo días desde el
+ * último preventivo (o desde que se creó el equipo, si nunca se le ha hecho ninguno).
+ */
+function computePreventiveStatus(equipo, mttoLog) {
+  const frecuencia = equipo.frecuenciaDias;
+  if (!frecuencia || frecuencia <= 0) return { configured: false };
+
+  const preventivos = mttoLog.filter(m => m.equipoId === equipo.id && m.tipo === "preventivo").sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const lastPreventive = preventivos[0];
+  const sinceDate = lastPreventive ? new Date(lastPreventive.fecha) : (equipo.createdAt ? new Date(equipo.createdAt) : null);
+  if (!sinceDate) return { configured: true, daysSince: null };
+
+  const daysSince = Math.floor((Date.now() - sinceDate.getTime()) / (1000 * 60 * 60 * 24));
+  const daysRemaining = frecuencia - daysSince;
+  return {
+    configured: true,
+    daysSince,
+    daysRemaining,
+    overdue: daysRemaining < 0,
+    dueSoon: daysRemaining >= 0 && daysRemaining <= 7,
+    lastPreventiveDate: lastPreventive?.fecha || null,
+    neverDone: !lastPreventive,
+  };
+}
+
+/**
  * Hoja de vida — parte 1: detecta solo, buscando palabras clave en la descripción de cada
  * mantenimiento, qué piezas se le han cambiado a un equipo (correa, rodamiento, variador, etc.)
  * — para que quede como referencia rápida sin tener que leer todo el historial completo.
@@ -6661,7 +6690,7 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
           )}
           {(item.k === "numeric" || item.k === "statusNumeric") && (
             <div className="flex items-center gap-1">
-              <input type="number" step="any" value={entry?.value ?? ""} onChange={e => update({ value: e.target.value })}
+              <input type="number" step="any" inputMode="decimal" value={entry?.value ?? ""} onChange={e => update({ value: e.target.value })}
                 placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               {item.u && <span className="text-xs" style={{ color: C.gray }}>{item.u}</span>}
             </div>
@@ -6839,7 +6868,7 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 
       <PendingItemsAlert msg={validationMsg} onClose={() => setValidationMsg(null)} />
 
-      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+      <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Vo.Bo. pendiente de supervisor</div>
         <Button icon={Save} variant="amber" onClick={handleSave}>
           {isLast ? "Finalizar y enviar" : "Guardar y pasar al siguiente piso"}
@@ -7054,7 +7083,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+      <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
       </div>
@@ -7137,7 +7166,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
                 {meter.subs ? sub : "Lectura"}{meter.u ? ` (${meter.u})` : ""}
               </label>
               <div className="flex items-center gap-1">
-                <input type="number" step="any" value={val ?? ""} onChange={e => updateManual(sub, e.target.value)}
+                <input type="number" step="any" inputMode="decimal" value={val ?? ""} onChange={e => updateManual(sub, e.target.value)}
                   placeholder="valor" className="w-24 text-sm border rounded-md px-2 py-1.5 outline-none"
                   style={{ borderColor: confirmed ? C.green : C.line, borderWidth: confirmed ? 2 : 1, background: confirmed ? C.greenSoft : C.panel, color: C.ink }} />
                 <label className="flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer shrink-0" style={{ background: C.blueSoft, color: C.blue }}>
@@ -7254,7 +7283,7 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
-      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+      <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar lecturas</Button>
       </div>
@@ -7394,7 +7423,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
 
       <PendingItemsAlert msg={validationMsg} onClose={() => setValidationMsg(null)} />
 
-      <div className="flex items-center justify-between mt-4 sticky bottom-0 py-2">
+      <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
         <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
       </div>
@@ -7408,11 +7437,27 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
    ============================================================ */
 function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
   const blank = { horaManometro: "", horaMcDonell: "", horaFondo: "", horaTqDistribucion: "", presionVaporPsi: "", observaciones: "" };
-  const [form, setForm] = useState(blank);
+  const draftKey = `pm-local:caldera-draft:${currentUser}:${todayStr()}:${shift}`;
+  const [form, setForm] = useState(() => {
+    try {
+      const saved = localStorage.getItem(draftKey);
+      return saved ? { ...blank, ...JSON.parse(saved) } : blank;
+    } catch { return blank; }
+  });
   const [saved, setSaved] = useState(false);
   const [validationMsg, setValidationMsg] = useState(null);
+  const [restoredDraft] = useState(() => {
+    try { return !!localStorage.getItem(draftKey); } catch { return false; }
+  });
 
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setSaved(false); };
+  const set = (k, v) => {
+    setForm(f => {
+      const next = { ...f, [k]: v };
+      try { localStorage.setItem(draftKey, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+    setSaved(false);
+  };
 
   const handleSave = () => {
     const required = ["horaManometro", "horaMcDonell", "horaFondo", "horaTqDistribucion", "presionVaporPsi"];
@@ -7425,12 +7470,18 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
     onSaveCaldera(form);
     setSaved(true);
     setForm(blank);
+    try { localStorage.removeItem(draftKey); } catch { /* noop */ }
   };
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Check List Caldera</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Equipo: Caldera Piso 4 Lavandería · Turno {shift} · {todayStr()}</p>
+      {restoredDraft && (
+        <div className="rounded-lg p-2.5 mb-3 text-xs flex items-center gap-2" style={{ background: C.blueSoft, color: C.blue }}>
+          <RotateCcw size={13} /> Recuperamos lo que ya habías llenado antes de que se cerrara la app — sigue donde ibas.
+        </div>
+      )}
 
       <div className="rounded-lg border p-4 mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.inkSoft }}>Purgas (hora)</div>
@@ -8431,50 +8482,83 @@ function cargoForUsername(username, accounts, employees) {
 
 function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDrawer, onMove, onZoom }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [swipeX, setSwipeX] = useState(0);
+  const touchStartX = useRef(null);
+  const swiping = useRef(false);
   const estado = normalizeTaskState(task.estado);
   const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : null;
   const linkedEquipo = task.equipoId && equipos ? equipos.find(e => e.id === task.equipoId) : null;
+
+  const SWIPE_THRESHOLD = 80;
+  const canSwipe = canAct && estado !== "finalizada";
+
+  const onTouchStart = (e) => { if (!canSwipe) return; touchStartX.current = e.touches[0].clientX; swiping.current = false; };
+  const onTouchMove = (e) => {
+    if (!canSwipe || touchStartX.current == null) return;
+    const dx = e.touches[0].clientX - touchStartX.current;
+    if (Math.abs(dx) > 8) swiping.current = true; // distingue de un simple toque
+    setSwipeX(Math.max(-120, Math.min(120, dx)));
+  };
+  const onTouchEnd = () => {
+    if (!canSwipe) return;
+    if (swipeX > SWIPE_THRESHOLD) onMove(task, "finalizada"); // derecha → completar
+    else if (swipeX < -SWIPE_THRESHOLD) onMove(task, estado === "pausada" ? "asignada" : "pausada"); // izquierda → pausar (o reanudar)
+    setSwipeX(0);
+    touchStartX.current = null;
+  };
+
   return (
-    <div draggable={canAct} onDragStart={e => e.dataTransfer.setData("text/plain", task.id)}
-      className="rounded-lg border p-2.5 mb-2 cursor-pointer relative" style={{ borderColor: C.line, borderLeftWidth: 3, borderLeftColor: TASK_PRIORITY_COLORS[task.prioridad] || C.line, background: C.panel, minHeight: 48 }}
-      onClick={() => onOpenDrawer(task.id)}>
-      {canAct && estado !== "finalizada" && (
-        <div className="absolute top-1.5 right-1.5" onClick={e => e.stopPropagation()}>
-          <button onClick={() => setMenuOpen(v => !v)} className="w-6 h-6 rounded-md flex items-center justify-center" style={{ color: C.gray }}>
-            <MoreVertical size={14} />
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 z-20 mt-1 w-36 rounded-md border shadow-lg overflow-hidden" style={{ background: C.panel, borderColor: C.line }}>
-                {KANBAN_COLUMNS.filter(c => c.code !== estado).map(c => (
-                  <button key={c.code} onClick={() => { onMove(task, c.code); setMenuOpen(false); }}
-                    className="block w-full text-left text-xs px-2.5 hover:bg-black/5" style={{ color: C.ink, minHeight: 36 }}>
-                    Mover a {c.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+    <div className="relative mb-2 rounded-lg overflow-hidden">
+      {/* Fondos que aparecen detrás al deslizar — dan la pista visual de qué va a pasar */}
+      {canSwipe && swipeX !== 0 && (
+        <div className="absolute inset-0 flex items-center rounded-lg" style={{ background: swipeX > 0 ? C.greenSoft : C.amberSoft, justifyContent: swipeX > 0 ? "flex-start" : "flex-end" }}>
+          <span className="px-3 text-xs font-bold" style={{ color: swipeX > 0 ? C.green : "#7a5405" }}>
+            {swipeX > 0 ? "✓ Completar" : (estado === "pausada" ? "↺ Reanudar" : "⏸ Pausar")}
+          </span>
         </div>
       )}
-      <div className="flex items-center gap-1.5 mb-1 pr-6">
-        <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
-        <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={20} />
-      </div>
-      {linkedEquipo?.sistema && (
-        <div className="mb-1.5"><Badge tone={badgeToneFor("sistema", linkedEquipo.sistema)}>{linkedEquipo.sistema}</Badge></div>
-      )}
-      <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
-      {task.fotosAntes && task.fotosAntes.length > 0 && (
-        <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
-          {task.fotosAntes.slice(0, 3).map((url, i) => (
-            <button key={i} onClick={() => onZoom(url)}>
-              <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
+      <div draggable={canAct} onDragStart={e => e.dataTransfer.setData("text/plain", task.id)}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        className="rounded-lg border p-2.5 cursor-pointer relative" style={{ borderColor: C.line, borderLeftWidth: 3, borderLeftColor: TASK_PRIORITY_COLORS[task.prioridad] || C.line, background: C.panel, minHeight: 48, transform: `translateX(${swipeX}px)`, transition: swipeX === 0 ? "transform 150ms" : "none" }}
+        onClick={() => { if (!swiping.current) onOpenDrawer(task.id); }}>
+        {canAct && estado !== "finalizada" && (
+          <div className="absolute top-1.5 right-1.5" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setMenuOpen(v => !v)} className="w-6 h-6 rounded-md flex items-center justify-center" style={{ color: C.gray }}>
+              <MoreVertical size={14} />
             </button>
-          ))}
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 w-36 rounded-md border shadow-lg overflow-hidden" style={{ background: C.panel, borderColor: C.line }}>
+                  {KANBAN_COLUMNS.filter(c => c.code !== estado).map(c => (
+                    <button key={c.code} onClick={() => { onMove(task, c.code); setMenuOpen(false); }}
+                      className="block w-full text-left text-xs px-2.5 hover:bg-black/5" style={{ color: C.ink, minHeight: 36 }}>
+                      Mover a {c.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 mb-1 pr-6">
+          <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
+          <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={20} />
         </div>
-      )}
+        {linkedEquipo?.sistema && (
+          <div className="mb-1.5"><Badge tone={badgeToneFor("sistema", linkedEquipo.sistema)}>{linkedEquipo.sistema}</Badge></div>
+        )}
+        <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
+        {task.fotosAntes && task.fotosAntes.length > 0 && (
+          <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
+            {task.fotosAntes.slice(0, 3).map((url, i) => (
+              <button key={i} onClick={() => onZoom(url)}>
+                <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -9173,7 +9257,15 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   <div className="text-[10px] mb-2 px-0.5" style={{ color: "#7a5405" }}>Muchas tareas pendientes sin empezar — puede valer la pena repartir antes de seguir creando más.</div>
                 )}
                 {colTasks.length === 0 ? (
-                  <div className="text-[11px] text-center py-4" style={{ color: C.gray }}>Vacío</div>
+                  <div className="flex flex-col items-center text-center py-5 gap-1.5" style={{ color: C.gray }}>
+                    {col.code === "finalizada" ? <ClipboardCheck size={22} color={C.gray} opacity={0.5} /> : <Wrench size={22} color={C.gray} opacity={0.5} />}
+                    <span className="text-[11px]">
+                      {col.code === "asignada" ? "Nada pendiente por empezar" :
+                       col.code === "en-proceso" ? "¡Todo al día en tu turno!" :
+                       col.code === "pausada" ? "Nada esperando repuesto" :
+                       "Todavía no se ha cerrado nada"}
+                    </span>
+                  </div>
                 ) : colTasks.map(t => (
                   <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} equipos={equipos} canAct={isAdmin || t.asignadoA === currentUsername}
                     onOpenDrawer={setDrawerTaskId}
@@ -9563,15 +9655,24 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSe
           {visEquipos.map(eq => {
             const status = currentEquipoStatus(eq.id, mttoLog);
             const stats = computeEquipoStats(eq, mttoLog);
+            const prevent = computePreventiveStatus(eq, mttoLog);
             return (
               <div key={eq.id} className="relative">
                 <button onClick={() => onSelectEquipo(eq.id)}
-                  className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: status.outOfService ? C.red : C.line, background: status.outOfService ? C.redSoft : C.panel }}>
+                  className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: status.outOfService ? C.red : (prevent.overdue ? C.amber : C.line), background: status.outOfService ? C.redSoft : (prevent.overdue ? C.amberSoft : C.panel) }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold pr-5" style={{ color: C.ink }}>{eq.nombre}</div>
                     {status.outOfService && <Pill tone="red">Fuera de servicio</Pill>}
                   </div>
                   <div className="text-xs mt-1" style={{ color: C.gray }}>{stats.total} mantenimiento{stats.total !== 1 ? "s" : ""} registrado{stats.total !== 1 ? "s" : ""}</div>
+                  {!status.outOfService && prevent.configured && (prevent.overdue || prevent.dueSoon) && (
+                    <div className="text-[11px] mt-1 font-semibold flex items-center gap-1" style={{ color: prevent.overdue ? "#7a5405" : C.amber }}>
+                      <AlertTriangle size={11} />
+                      {prevent.overdue
+                        ? (prevent.neverDone ? "Preventivo nunca hecho" : `Preventivo atrasado ${Math.abs(prevent.daysRemaining)} días`)
+                        : `Preventivo en ${prevent.daysRemaining} días`}
+                    </div>
+                  )}
                 </button>
                 {canManage && (
                   <button onClick={(e) => { e.stopPropagation(); onDeleteEquipo(eq.id); }} className="absolute top-2 right-2 p-1">
@@ -9835,10 +9936,13 @@ function VideoEmbed({ url }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl }) {
+function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia }) {
   const [editingVideo, setEditingVideo] = useState(false);
   const [videoDraft, setVideoDraft] = useState(equipo.videoUrl || "");
   const [savingVideo, setSavingVideo] = useState(false);
+  const [editingFrecuencia, setEditingFrecuencia] = useState(false);
+  const [frecuenciaDraft, setFrecuenciaDraft] = useState(equipo.frecuenciaDias || "");
+  const [savingFrecuencia, setSavingFrecuencia] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoUploadError, setVideoUploadError] = useState(null);
   const [tipo, setTipo] = useState("preventivo");
@@ -9853,6 +9957,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
 
   const status = currentEquipoStatus(equipo.id, records);
   const stats = useMemo(() => computeEquipoStats(equipo, records), [equipo, records]);
+  const preventiveStatus = useMemo(() => computePreventiveStatus(equipo, records), [equipo, records]);
   const partsChanged = useMemo(() => detectPartsChanged(records), [records]);
   const fechaAlta = records.length ? records.reduce((a, b) => new Date(a.fecha) < new Date(b.fecha) ? a : b).fecha : equipo.createdAt;
   const [downloadingHV, setDownloadingHV] = useState(false);
@@ -9904,6 +10009,51 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
         {status.outOfService && <Pill tone="red">Fuera de servicio desde {fmtDT(status.since)}</Pill>}
       </div>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: C.inkSoft }}>
+            <CalendarDays size={13} /> Mantenimiento preventivo
+          </div>
+          {isAdmin && !editingFrecuencia && (
+            <button onClick={() => { setFrecuenciaDraft(equipo.frecuenciaDias || ""); setEditingFrecuencia(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>
+              {equipo.frecuenciaDias ? "Cambiar" : "Configurar"}
+            </button>
+          )}
+        </div>
+        {editingFrecuencia ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <select value={frecuenciaDraft} onChange={e => setFrecuenciaDraft(e.target.value)}
+              className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <option value="">Sin configurar</option>
+              <option value="30">Cada 30 días</option>
+              <option value="60">Cada 60 días</option>
+              <option value="90">Cada 90 días</option>
+              <option value="180">Cada 180 días</option>
+              <option value="365">Cada 365 días</option>
+            </select>
+            <Button size="sm" disabled={savingFrecuencia} onClick={async () => { setSavingFrecuencia(true); await onSetFrecuencia(equipo.id, frecuenciaDraft ? Number(frecuenciaDraft) : null); setSavingFrecuencia(false); setEditingFrecuencia(false); }}>
+              {savingFrecuencia ? "Guardando…" : "Guardar"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditingFrecuencia(false)}>Cancelar</Button>
+          </div>
+        ) : preventiveStatus.configured ? (
+          <div>
+            <div className="text-sm" style={{ color: C.ink }}>Cada {equipo.frecuenciaDias} días</div>
+            <div className="text-xs mt-1 font-semibold flex items-center gap-1" style={{ color: preventiveStatus.overdue ? C.red : preventiveStatus.dueSoon ? "#7a5405" : C.green }}>
+              {(preventiveStatus.overdue || preventiveStatus.dueSoon) && <AlertTriangle size={12} />}
+              {preventiveStatus.overdue
+                ? (preventiveStatus.neverDone ? "Nunca se le ha hecho un preventivo" : `Atrasado por ${Math.abs(preventiveStatus.daysRemaining)} días`)
+                : `Próximo en ${preventiveStatus.daysRemaining} días`}
+            </div>
+            {preventiveStatus.lastPreventiveDate && (
+              <div className="text-xs mt-0.5" style={{ color: C.gray }}>Último preventivo: {fmtDT(preventiveStatus.lastPreventiveDate)}</div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: C.gray }}>Sin configurar — {isAdmin ? "define cada cuántos días se le debe hacer preventivo a este equipo, y la app te avisa sola cuando se acerque la fecha." : "no hay ninguna frecuencia definida todavía."}</p>
+        )}
+      </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <div className="flex items-center justify-between mb-2">
@@ -10064,7 +10214,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, initialEquipoId, onConsumedInitialEquipo }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -10081,7 +10231,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} />;
+    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} />;
   }
 
   if (selectedSistema) {
@@ -10107,8 +10257,23 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(20);
+  const sentinelRef = useRef(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
+  useEffect(() => { setVisibleCount(20); }, [search, filterTipo, sort]); // si cambian los filtros, vuelve a empezar
+
+  // Scroll infinito: cuando el "centinela" invisible al final de la lista entra en pantalla,
+  // se cargan 20 más — así nunca se descargan los cientos de reportes de una sola vez.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setVisibleCount(v => v + 20);
+    }, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  });
 
   const rows = useMemo(() => {
     return mttoLog.map(r => {
@@ -10206,7 +10371,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
 
       {filtered.length === 0 ? (
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin mantenimientos registrados todavía.</p>
-      ) : filtered.slice(0, 200).map(r => (
+      ) : filtered.slice(0, visibleCount).map(r => (
         <button key={r.id} onClick={() => setSelectedId(r.id)}
           className="w-full text-left rounded-lg border p-3 mb-2 flex items-center gap-3 transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
           style={{ borderColor: r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
@@ -10231,7 +10396,11 @@ function MaintenanceLogAuditView({ equipos, mttoLog, reportEmail, onLogSent, cur
           <ChevronRight size={16} color={C.gray} className="shrink-0" />
         </button>
       ))}
-      {filtered.length > 200 && <div className="text-xs mt-2" style={{ color: C.gray }}>Mostrando los 200 más recientes — descarga el Excel para ver todos ({filtered.length}).</div>}
+      {filtered.length > visibleCount && (
+        <div ref={sentinelRef} className="py-4 text-center text-xs" style={{ color: C.gray }}>
+          Cargando más… ({visibleCount} de {filtered.length})
+        </div>
+      )}
 
       {/* Modal de exportación — antes era un bloque gigante siempre visible, ahora vive detrás del ícono de descarga */}
       {showExportModal && (
@@ -12326,7 +12495,7 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
       </div>
 
       {/* Móvil: solo el ícono — al tocarlo, abre la búsqueda a pantalla completa */}
-      <button onClick={() => setMobileOpen(true)} className="sm:hidden p-1.5 rounded-md shrink-0" style={{ background: C.bg }} title="Buscar">
+      <button onClick={() => setMobileOpen(true)} className="sm:hidden p-1.5 rounded-md shrink-0 flex items-center justify-center" style={{ background: C.bg, minWidth: 44, minHeight: 44 }} title="Buscar">
         <Search size={16} color={C.ink} />
       </button>
       {mobileOpen && (
@@ -13185,7 +13354,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "coldrooms", label: "Cuartos fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange, group: "Operación en Campo" },
     { id: "meters", label: "Lecturas de medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies, group: "Operación en Campo" },
     { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías, alertas, movimientos y herramientas", access: true, badge: counts.lowStock, urgentBadge: false, group: "Gestión e Inventario" },
-    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true, group: "Operación en Campo" },
+    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true, group: "Operación en Campo", badge: counts.preventiveOverdue, urgentBadge: false },
     { id: "maintenance-analytics", label: "Análisis de mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "executive", label: "Panel ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "maintenance-log", label: "Historial de mantenimientos", icon: History, desc: "Auditoría de lo registrado", access: isAdmin, group: "Reportes y Análisis" },
@@ -13394,10 +13563,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       )}
 
-      {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados.
-          Queda pegada arriba al hacer scroll, para poder crear algo sin tener que subir hasta el tope. */}
+      {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados. */}
       {!gerenciaLocked && !searchNorm && (
-        <div className="mb-4 sticky top-0 z-30 -mx-4 px-4 pt-2 pb-1" style={{ background: C.bg }}>
+        <div className="mb-4">
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
           <div className="flex items-stretch rounded-xl border overflow-hidden shadow-sm" style={{ borderColor: C.line, background: C.panel }}>
             {[
@@ -18972,6 +19140,12 @@ export default function App() {
     await sSet("mtto-equipos", next, true);
   };
 
+  const setEquipoFrecuencia = async (id, frecuenciaDias) => {
+    const next = mttoEquipos.map(e => e.id === id ? { ...e, frecuenciaDias: frecuenciaDias || null } : e);
+    setMttoEquipos(next);
+    await sSet("mtto-equipos", next, true);
+  };
+
   /** Registra un mantenimiento y, si se marcaron repuestos usados, los descuenta del inventario
    *  solo — sin tener que ir aparte a Inventario a hacer el retiro a mano. Guarda una copia del
    *  nombre/cantidad en el propio registro (no solo el id), para que la hoja de vida del equipo
@@ -19982,6 +20156,9 @@ export default function App() {
   const coldOutOfRange = useMemo(() => computeColdOutOfRange(latestColdValues), [latestColdValues]);
   const meterAnomalies = useMemo(() => computeMeterAnomalies(meterHistory), [meterHistory]);
   const lowStockItems = useMemo(() => computeLowStock(invItems), [invItems]);
+  const preventiveOverdueCount = useMemo(() =>
+    mttoEquipos.filter(e => e.active !== false && computePreventiveStatus(e, mttoLog).overdue).length,
+    [mttoEquipos, mttoLog]);
   const criticalStockItems = useMemo(() => computeCriticalStock(invItems), [invItems]);
   const criticalFuelTanks = useMemo(() => {
     return FUEL_ITEMS.filter(it => it.u === "%").map(it => {
@@ -20050,11 +20227,22 @@ export default function App() {
   }, [currentUser, pendingDiagramId]);
 
   if (loading) return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-3" style={{ background: C.bg, color: C.inkSoft }}>
-      <div className="pm-pulse rounded-2xl p-4" style={{ background: C.amber }}>
-        <Gauge size={32} color="#fff" />
+    <div className="min-h-screen flex flex-col" style={{ background: C.bg }}>
+      <div className="p-4 border-b flex items-center gap-3" style={{ background: C.panel, borderColor: C.line }}>
+        <div className="pm-skeleton rounded-md" style={{ width: 32, height: 32, background: C.line }} />
+        <div className="pm-skeleton rounded-md" style={{ width: 140, height: 16, background: C.line }} />
+        <div className="flex-1" />
+        <div className="pm-skeleton rounded-full" style={{ width: 32, height: 32, background: C.line }} />
       </div>
-      <span className="text-sm">Cargando…</span>
+      <div className="max-w-5xl w-full mx-auto p-4">
+        <div className="pm-skeleton rounded-xl mb-4" style={{ height: 90, background: C.line }} />
+        <div className="pm-skeleton rounded-md mb-3" style={{ width: 160, height: 12, background: C.line }} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="pm-skeleton rounded-lg" style={{ height: 68, background: C.line }} />
+          ))}
+        </div>
+      </div>
     </div>
   );
   if (loadError) return (
@@ -20280,7 +20468,7 @@ export default function App() {
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="pm-safe-top flex items-center justify-between px-4 py-3 border-b gap-2 flex-wrap" style={{ background: C.panel, borderColor: C.line }}>
-          <button className="lg:hidden" onClick={() => setSidebarOpen(v => !v)}>
+          <button className="lg:hidden flex items-center justify-center" onClick={() => setSidebarOpen(v => !v)} style={{ minWidth: 44, minHeight: 44 }}>
             <ChevronDown size={20} color={C.ink} style={{ transform: sidebarOpen ? "rotate(180deg)" : "none" }} />
           </button>
           <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
@@ -20394,7 +20582,7 @@ export default function App() {
             <span className="hidden sm:flex text-sm font-medium items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
             <span className="hidden sm:inline-flex"><Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button></span>
             {/* En móvil: solo el avatar — toca para abrir la pantalla de Perfil con todo consolidado */}
-            <button onClick={() => setShowProfileMenu(true)} className="sm:hidden w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg }}>
+            <button onClick={() => setShowProfileMenu(true)} className="sm:hidden rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg, minWidth: 44, minHeight: 44 }}>
               <User size={16} color={isAdmin ? "#7a5405" : C.ink} />
             </button>
           </div>
@@ -20497,7 +20685,7 @@ export default function App() {
               mttoWeekCount={mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length}
               tasksToday={tasks.filter(t => localDateIso(new Date(t.createdAt)) === localDateIso(new Date()) && (t.asignadoA === currentUser || t.createdBy === displayName))}
               changelogEntries={changelogEntries}
-              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, pendingAccounts: pendingAccountsCount }} />
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
@@ -20575,6 +20763,7 @@ export default function App() {
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
               onSetVideoUrl={setEquipoVideoUrl}
+              onSetFrecuencia={setEquipoFrecuencia}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (

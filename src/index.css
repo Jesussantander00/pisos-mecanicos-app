@@ -92,3 +92,17 @@ html, body {
 .pm-safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Esqueletos de carga — bloques con un parpadeo suave, para mostrar la FORMA de lo que va a
+   aparecer mientras se descarga, en vez de un círculo girando sin contexto. El color de fondo
+   se pasa por style desde React (así respeta modo claro/oscuro); acá solo va la animación. */
+@keyframes pm-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pm-skeleton {
+  animation: pm-skeleton-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pm-skeleton { animation: none; }
+}

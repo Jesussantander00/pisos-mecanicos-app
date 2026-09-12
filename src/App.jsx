@@ -6537,6 +6537,7 @@ function Button({ children, onClick, variant = "primary", size = "md", disabled,
     primary: { background: C.steel, color: "#fff" },
     amber: { background: C.amber, color: "#fff" },
     red: { background: C.red, color: "#fff" },
+    green: { background: C.green, color: "#fff" },
     ghost: { background: "transparent", color: C.ink, border: `1px solid ${C.line}` },
     subtle: { background: C.bg, color: C.ink },
   }[variant];
@@ -9949,6 +9950,8 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
   const [descripcion, setDescripcion] = useState("");
   const [estado, setEstado] = useState("funcionando");
   const [costo, setCosto] = useState("");
+  const [costoRepuestos, setCostoRepuestos] = useState("");
+  const [costoContratista, setCostoContratista] = useState("");
   const [photos, setPhotos] = useState([]);
   const [repuestos, setRepuestos] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -9987,11 +9990,11 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
     try {
       const res = await saveRecordWithPhotos(
         "maintenance",
-        { equipoId: equipo.id, tipo, descripcion: descripcion.trim(), estado, costo, repuestos },
+        { equipoId: equipo.id, tipo, descripcion: descripcion.trim(), estado, costo, costoRepuestos, costoContratista, repuestos },
         photos,
         async (payload, urls) => { await onLogMaintenance(payload.equipoId, { ...payload, fotos: urls }); }
       );
-      setDescripcion(""); setCosto(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando"); setRepuestos([]);
+      setDescripcion(""); setCosto(""); setCostoRepuestos(""); setCostoContratista(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando"); setRepuestos([]);
       setSaveMsg(res.queued
         ? { ok: true, text: "✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva, sin que tengas que escribir nada de nuevo." }
         : { ok: true, text: "✓ Mantenimiento registrado." });
@@ -10119,9 +10122,20 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
             <select value={estado} onChange={e => setEstado(e.target.value)} className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {MTTO_ESTADOS.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
             </select>
-            <input type="number" min="0" value={costo} onChange={e => setCosto(e.target.value)} placeholder="Costo (opcional)"
-              className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <input type="number" min="0" value={costo} onChange={e => setCosto(e.target.value)} placeholder="Costo total (opcional)"
+              className="text-sm border rounded-md px-2 py-1.5 outline-none w-36" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
+          {Number(costo) > 0 && (
+            <div className="mb-2">
+              <div className="text-[10px] mb-1" style={{ color: C.gray }}>De ese total, ¿cuánto fue repuestos y cuánto contratista externo? (opcional — lo demás se cuenta como mano de obra propia)</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input type="number" min="0" value={costoRepuestos} onChange={e => setCostoRepuestos(e.target.value)} placeholder="Repuestos"
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <input type="number" min="0" value={costoContratista} onChange={e => setCostoContratista(e.target.value)} placeholder="Contratista"
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              </div>
+            </div>
+          )}
           <MaintenanceTextSuggestions sistema={equipo.sistema} tipo={tipo} onPick={t => setDescripcion(d => d.trim() ? `${d.trim()} ${t}` : t)} />
           <EquipoHistorySuggestions equipoId={equipo.id} mttoLog={records} onPick={t => setDescripcion(d => d.trim() ? `${d.trim()} ${t}` : t)} />
           <div className="flex items-start gap-1.5 mb-2">
@@ -10259,6 +10273,8 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [visibleCount, setVisibleCount] = useState(20);
   const [reviewComment, setReviewComment] = useState("");
+  const [drawerSwipeX, setDrawerSwipeX] = useState(0);
+  const drawerTouchStartX = useRef(null);
   const [reviewing, setReviewing] = useState(false);
   const sentinelRef = useRef(null);
 
@@ -10426,10 +10442,23 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
         </div>
       )}
 
-      {/* Panel de detalle — reporte tipo documento industrial, con lo que de verdad se registra hoy */}
+      {/* Panel de detalle — reporte tipo documento industrial, con lo que de verdad se registra hoy.
+          Se puede cerrar deslizando hacia la derecha (además del botón y de tocar el fondo). */}
       {selected && (
         <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setSelectedId(null)}>
-          <div className="w-full sm:w-[440px] h-full overflow-y-auto p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+          <div className="w-full sm:w-[440px] h-full overflow-y-auto p-5" style={{ background: C.panel, transform: `translateX(${drawerSwipeX}px)`, transition: drawerSwipeX === 0 ? "transform 150ms" : "none" }}
+            onClick={e => e.stopPropagation()}
+            onTouchStart={e => { drawerTouchStartX.current = e.touches[0].clientX; }}
+            onTouchMove={e => {
+              if (drawerTouchStartX.current == null) return;
+              const dx = e.touches[0].clientX - drawerTouchStartX.current;
+              if (dx > 0) setDrawerSwipeX(Math.min(300, dx));
+            }}
+            onTouchEnd={() => {
+              if (drawerSwipeX > 90) setSelectedId(null);
+              setDrawerSwipeX(0);
+              drawerTouchStartX.current = null;
+            }}>
             <button onClick={() => setSelectedId(null)} className="flex items-center gap-1 text-sm mb-4" style={{ color: C.inkSoft }}>
               <ArrowLeft size={15} /> Cerrar
             </button>
@@ -10461,7 +10490,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
 
             {/* Sección 2: Diagnóstico y trabajo realizado */}
             <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Diagnóstico y trabajo realizado</div>
-            <div className="text-sm rounded-lg p-3 mb-4" style={{ background: C.bg, color: C.ink, whiteSpace: "pre-wrap" }}>
+            <div className="text-sm mb-4 pl-3" style={{ borderLeft: `3px solid ${C.amber}`, color: C.ink, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
               {selected.descripcion || "(sin descripción)"}
             </div>
 
@@ -10519,19 +10548,19 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
               </div>
             )}
             {isAdmin && selected.revisionEstado === "pendiente" && (
-              <div className="mt-3 pt-3 border-t" style={{ borderColor: C.line }}>
-                <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Auditoría — pendiente de tu revisión</div>
-                <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Comentario (opcional si apruebas, recomendado si devuelves)…"
+              <div className="mt-3 pt-3 border-t rounded-b-lg -mx-5 px-5 pb-4" style={{ borderColor: C.line, background: C.bg }}>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2 pt-1" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
+                <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Comentario de auditoría (opcional si apruebas, recomendado si devuelves)…"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <Button disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
-                      ✓ Aprobar y cerrar
+                <div className="space-y-2">
+                  <div className="[&>button]:w-full [&>button]:justify-center">
+                    <Button variant="green" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                      ✓ Aprobar y cerrar mantenimiento
                     </Button>
                   </div>
-                  <div className="flex-1">
-                    <Button variant="ghost" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
-                      ↩ Devolver
+                  <div className="[&>button]:w-full [&>button]:justify-center">
+                    <Button variant="amber" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                      ↩ Rechazar / Devolver
                     </Button>
                   </div>
                 </div>
@@ -10779,6 +10808,24 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredLog, equipos]);
 
+  // ===== Distribución de costos: Mano de obra / Repuestos / Contratista =====
+  // Los 2 últimos son campos nuevos — los registros de mantenimiento de ANTES de agregarlos
+  // cuentan su costo entero como "mano de obra" (es lo más honesto que se puede asumir sin ese
+  // dato: no fue explícitamente ni repuesto ni contratista, así que no se puede reclasificar).
+  const costBreakdown = useMemo(() => {
+    let manoObra = 0, repuestos = 0, contratista = 0;
+    filteredLog.forEach(r => {
+      const total = Number(r.costo) || 0;
+      if (!total) return;
+      const rep = Number(r.costoRepuestos) || 0;
+      const con = Number(r.costoContratista) || 0;
+      repuestos += rep;
+      contratista += con;
+      manoObra += Math.max(0, total - rep - con);
+    });
+    return { manoObra, repuestos, contratista, total: manoObra + repuestos + contratista };
+  }, [filteredLog]);
+
   // ===== KPIs ejecutivos nuevos: órdenes cerradas y horas hombre, del sistema de tareas =====
   const ordenesCerradas = filteredTasks.length;
   const horasHombre = useMemo(() => {
@@ -10873,7 +10920,7 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
           trend={<TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
         {top5Down.length > 0 && (
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Top 5 — equipos con más tiempo fuera de servicio</div>
@@ -10889,6 +10936,42 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
             <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               <StackedBarChart data={preventivoVsCorrectivo} labelKey="sistema"
                 series={[{ key: "preventivo", label: "Preventivo", color: C.blue }, { key: "correctivo", label: "Correctivo", color: C.red }]} />
+            </div>
+          </div>
+        )}
+        {costBreakdown.total > 0 && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>
+              Distribución de costos: mano de obra, repuestos y contratista
+            </div>
+            <div className="rounded-xl border p-5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+              <div className="flex items-center gap-5">
+                <MiniDonut size={140} stroke={26}
+                  centerValue={`$${(costBreakdown.total / 1000).toFixed(0)}k`} centerLabel="total"
+                  segments={[
+                    { name: "Mano de obra", value: costBreakdown.manoObra, color: C.blue },
+                    { name: "Repuestos", value: costBreakdown.repuestos, color: C.amber },
+                    { name: "Contratista", value: costBreakdown.contratista, color: "#8b5cf6" },
+                  ]} />
+                <div className="space-y-2 flex-1 min-w-0">
+                  {[
+                    { label: "Mano de obra", value: costBreakdown.manoObra, color: C.blue },
+                    { label: "Repuestos", value: costBreakdown.repuestos, color: C.amber },
+                    { label: "Contratista", value: costBreakdown.contratista, color: "#8b5cf6" },
+                  ].map(row => (
+                    <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="flex items-center gap-1.5 min-w-0" style={{ color: C.ink }}>
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: row.color }} />
+                        <span className="truncate">{row.label}</span>
+                      </span>
+                      <span className="font-bold shrink-0" style={{ color: C.ink }}>{costBreakdown.total ? ((row.value / costBreakdown.total) * 100).toFixed(1) : "0.0"}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[10px] mt-3 pt-3 border-t" style={{ color: C.gray, borderColor: C.line }}>
+                Los registros de antes de tener este desglose cuentan su costo entero como mano de obra — no hay forma honesta de reclasificarlos.
+              </p>
             </div>
           </div>
         )}
@@ -12996,7 +13079,7 @@ function MiniGauge({ value, max, size = 56, stroke = 6, color, trackColor }) {
  * Donut de varios segmentos, en SVG puro (sin recharts) — recibe [{ value, color }, ...].
  * Se usa en vez del PieChart de recharts para evitar un bug conocido de esa librería.
  */
-function MiniDonut({ segments, size = 140, stroke = 22 }) {
+function MiniDonut({ segments, size = 140, stroke = 22, centerValue, centerLabel }) {
   const r = (size - stroke) / 2;
   const cx = size / 2, cy = size / 2;
   const circumference = 2 * Math.PI * r;
@@ -13023,6 +13106,12 @@ function MiniDonut({ segments, size = 140, stroke = 22 }) {
           );
         })}
       </svg>
+      {centerValue != null && !hover && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <div className="font-bold tabular-nums" style={{ color: C.ink, fontSize: size > 100 ? 18 : 14 }}>{centerValue}</div>
+          {centerLabel && <div className="text-[10px]" style={{ color: C.gray }}>{centerLabel}</div>}
+        </div>
+      )}
       {hover && (
         <div className="absolute rounded-lg border shadow-lg px-2.5 py-1.5 text-xs pointer-events-none"
           style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: C.panel, borderColor: C.line, color: C.ink, whiteSpace: "nowrap", zIndex: 10 }}>
@@ -19270,6 +19359,8 @@ export default function App() {
       id: uid("mtl"), equipoId, tipo: form.tipo || "preventivo", fecha: form.fecha || nowIso(),
       tecnico: displayName, descripcion: form.descripcion || "", estado: form.estado || "funcionando",
       costo: form.costo ? Number(form.costo) : 0, fotos: form.fotos || [],
+      costoRepuestos: form.costoRepuestos ? Number(form.costoRepuestos) : 0,
+      costoContratista: form.costoContratista ? Number(form.costoContratista) : 0,
       repuestos: repuestosUsados.map(r => ({ itemId: r.itemId, nombre: invItems.find(it => it.id === r.itemId)?.name || "Repuesto", cantidad: Number(r.cantidad) })),
       createdBy: displayName, createdAt: nowIso(),
       revisionEstado: "pendiente", // pendiente | aprobado | rechazado — lo cierra un supervisor

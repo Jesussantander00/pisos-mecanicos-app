@@ -8636,6 +8636,16 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
             )}
           </div>
         )}
+        {task.origen && (
+          <div className="mb-1">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center gap-1" style={{
+              background: task.origen === "cronograma" ? C.blueSoft : task.origen === "hotsos" ? "#ede9fe" : C.bg,
+              color: task.origen === "cronograma" ? C.blue : task.origen === "hotsos" ? "#6d28d9" : C.gray,
+            }}>
+              {task.origen === "cronograma" ? "📅 Cronograma" : task.origen === "hotsos" ? "🛎️ HotSOS" : "🛠️ Manual"}
+            </span>
+          </div>
+        )}
         <div className={`flex items-center gap-1.5 mb-1 pr-6 ${selectMode ? "pl-6" : ""}`}>
           <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
         </div>
@@ -8880,6 +8890,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
 function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onDeleteTask }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
+  const [filterOrigen, setFilterOrigen] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newTab, setNewTab] = useState("manual"); // "manual" | "sugerencias"
   const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
@@ -9011,7 +9022,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     return "Noche";
   };
   const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterPrioridad;
-  const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); };
+  const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); setFilterOrigen(""); };
 
   const [onlyMine, setOnlyMine] = useState(() => {
     try { const saved = localStorage.getItem(`pm-local:tasks-only-mine:${currentUsername}`); return saved != null ? saved === "1" : !isAdmin; } catch { return !isAdmin; }
@@ -9038,6 +9049,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       // desplegable se ignora del todo (si no, entre los dos filtros se pisaban y la tarea
       // podía desaparecer aunque sí fuera del técnico).
       if (!onlyMine && filterOperario && t.asignadoA !== filterOperario) return false;
+      if (filterOrigen && (t.origen || "manual") !== filterOrigen) return false;
       if (filterPrioridad && t.prioridad !== filterPrioridad) return false;
       return true;
     })
@@ -9452,6 +9464,22 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             </div>
           </>
         )}
+        <div className="flex items-center gap-1">
+          {[
+            { v: "cronograma", l: "📅 Cronograma" },
+            { v: "hotsos", l: "🛎️ HotSOS" },
+            { v: "manual", l: "🛠️ Manual" },
+          ].map(o => (
+            <button key={o.v} onClick={() => setFilterOrigen(f => f === o.v ? "" : o.v)}
+              className="text-[11px] font-semibold px-2 py-1.5 rounded-full border" style={{
+                background: filterOrigen === o.v ? C.steelDark : C.panel,
+                color: filterOrigen === o.v ? "#fff" : C.inkSoft,
+                borderColor: filterOrigen === o.v ? C.steelDark : C.line,
+              }}>
+              {o.l}
+            </button>
+          ))}
+        </div>
         {!showAdvFilters && !hasAdvancedFilters && (
           <button onClick={() => setShowAdvFilters(true)} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={{ color: C.amber }}>
             Filtros avanzados
@@ -10562,6 +10590,8 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const [drawerSwipeX, setDrawerSwipeX] = useState(0);
   const drawerTouchStartX = useRef(null);
   const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState(null);
+  const [successToast, setSuccessToast] = useState(null);
   const sentinelRef = useRef(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
@@ -10860,16 +10890,32 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           {isAdmin && isPendingReview(selected) && (
             <div className="shrink-0 border-t p-4" style={{ borderColor: C.line, background: C.bg }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
-              <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Escribe un comentario o motivo de rechazo…"
-                className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <textarea value={reviewComment} onChange={e => { setReviewComment(e.target.value); setReviewError(null); }} rows={2} placeholder="Escribe un comentario o motivo de rechazo…"
+                className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: reviewError ? C.red : C.line, background: C.panel, color: C.ink }} />
+              {reviewError && <p className="text-xs mb-2" style={{ color: C.red }}>{reviewError}</p>}
               <div className="space-y-2">
                 <div className="[&>button]:w-full [&>button]:justify-center">
-                  <Button variant="green" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                  <Button variant="green" disabled={reviewing} onClick={async () => {
+                    setReviewing(true);
+                    await onReview(selected.id, "aprobado", reviewComment);
+                    setReviewComment(""); setReviewing(false);
+                    setSelectedId(null);
+                    setSuccessToast("✓ Mantenimiento aprobado y cerrado.");
+                    setTimeout(() => setSuccessToast(null), 4000);
+                  }}>
                     ✔️ Aprobar y Cerrar Ticket
                   </Button>
                 </div>
                 <div className="[&>button]:w-full [&>button]:justify-center">
-                  <Button variant="amber" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                  <Button variant="amber" disabled={reviewing} onClick={async () => {
+                    if (!reviewComment.trim()) { setReviewError("Escribe el motivo antes de devolverlo — el técnico necesita saber qué corregir."); return; }
+                    setReviewing(true);
+                    await onReview(selected.id, "rechazado", reviewComment);
+                    setReviewComment(""); setReviewing(false);
+                    setSelectedId(null);
+                    setSuccessToast("↩ Devuelto al técnico, con notificación enviada.");
+                    setTimeout(() => setSuccessToast(null), 4000);
+                  }}>
                     ↩️ Rechazar / Devolver
                   </Button>
                 </div>
@@ -10880,6 +10926,11 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
         </div>
       )}
 
+      {successToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] rounded-xl shadow-2xl px-4 py-3" style={{ background: C.steelDark, color: "#fff" }}>
+          <span className="text-sm">{successToast}</span>
+        </div>
+      )}
       <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   );
@@ -19931,7 +19982,7 @@ export default function App() {
       const suyas = pushSubscriptions.filter(s => s.ownerUsername === original.createdByUsername);
       if (suyas.length > 0) {
         sendPushToSubscriptions(suyas, "↩ Mantenimiento devuelto",
-          `${displayName} devolvió tu registro de "${eq?.nombre || "un equipo"}"${comentario ? `: ${comentario}` : " — revisa el detalle."}`, "/");
+          `Tu mantenimiento en ${eq?.nombre || "un equipo"} fue devuelto.${comentario ? ` Motivo: ${comentario}` : ""}`, "/");
       }
     }
   };
@@ -20352,6 +20403,7 @@ export default function App() {
         estado: "asignada", prioridad: latest.prioridad, asignadoA: latest.asignadoA,
         recurrencia: latest.recurrencia, recurrenceGroupId: latest.recurrenceGroupId, recurrencePeriodKey: currentKey,
         fotosAntes: [], fotosDespues: [], notaCierre: "",
+        equipoId: latest.equipoId || null, origen: latest.origen || "manual",
         assignedAt: latest.asignadoA ? nowStr : null, startedAt: null, finishedAt: null,
         timeLog: [{ estado: "asignada", at: nowStr }],
         createdBy: latest.createdBy, createdAt: nowStr, updatedAt: nowStr,

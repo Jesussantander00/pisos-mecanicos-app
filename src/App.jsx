@@ -9323,10 +9323,22 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             </div>
           ) : (
             <>
-              {form.equipoId && (
+              {form.equipoId ? (
                 <div className="text-xs rounded-md px-2 py-1.5 mb-2 flex items-center justify-between" style={{ background: C.blueSoft, color: "#1a4f8a" }}>
                   <span>🔗 Vinculada a {equipos.find(e => e.id === form.equipoId)?.nombre || "un equipo"}</span>
                   <button onClick={() => setForm(f => ({ ...f, equipoId: null }))} className="font-semibold">Quitar</button>
+                </div>
+              ) : (
+                <div className="mb-2">
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: C.inkSoft }}>¿Es sobre un equipo del catálogo? (opcional)</label>
+                  <select value="" onChange={e => e.target.value && setForm(f => ({ ...f, equipoId: e.target.value }))}
+                    className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                    <option value="">Sin vincular — es una tarea general (limpieza, ronda, etc.)</option>
+                    {equipos.filter(e => e.active !== false).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(e => (
+                      <option key={e.id} value={e.id}>{e.nombre} · {e.sistema}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] mt-1" style={{ color: C.gray }}>Vincularla ayuda a llevar el historial real de ese equipo y a que las gráficas por sistema sean más útiles.</p>
                 </div>
               )}
               <div className="flex items-center gap-1 mb-2">

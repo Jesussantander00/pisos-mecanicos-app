@@ -1213,6 +1213,16 @@ function computeEquipoStats(equipo, mttoLog) {
  * No usa horas de funcionamiento porque la app no registra ese dato todavía — solo días desde el
  * último preventivo (o desde que se creó el equipo, si nunca se le ha hecho ninguno).
  */
+/**
+ * Si un mantenimiento está pendiente de revisión — cuenta como pendiente tanto los que dicen
+ * "pendiente" explícitamente (los nuevos) como los que NO TIENEN el campo en absoluto (los
+ * registrados antes de que existiera este flujo de aprobación). Sin esto, todo lo viejo se
+ * queda invisible para el supervisor porque `=== "pendiente"` nunca es cierto en un `undefined`.
+ */
+function isPendingReview(r) {
+  return r.revisionEstado !== "aprobado" && r.revisionEstado !== "rechazado";
+}
+
 function computePreventiveStatus(equipo, mttoLog) {
   const frecuencia = equipo.frecuenciaDias;
   if (!frecuencia || frecuencia <= 0) return { configured: false };
@@ -10582,7 +10592,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
     }), sort);
     // Los pendientes de revisión siempre van primero — es lo que el supervisor debe auditar hoy,
     // sin importar qué columna haya elegido para ordenar el resto de la lista.
-    return [...base].sort((a, b) => (a.revisionEstado === "pendiente" ? 0 : 1) - (b.revisionEstado === "pendiente" ? 0 : 1));
+    return [...base].sort((a, b) => (isPendingReview(a) ? 0 : 1) - (isPendingReview(b) ? 0 : 1));
   }, [rows, filterTipo, search, sort]);
 
   const selected = filtered.find(r => r.id === selectedId) || rows.find(r => r.id === selectedId);
@@ -10670,7 +10680,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
       ) : filtered.slice(0, visibleCount).map(r => (
         <button key={r.id} onClick={() => setSelectedId(r.id)}
           className="w-full text-left rounded-lg border-2 p-3 mb-2 flex items-center gap-3 transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
-          style={{ borderColor: r.revisionEstado === "pendiente" ? C.amber : r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.revisionEstado === "pendiente" ? C.amberSoft : r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
+          style={{ borderColor: isPendingReview(r) ? C.amber : r.estado === "fuera-de-servicio" ? C.red : C.line, background: isPendingReview(r) ? C.amberSoft : r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
           {r.fotos && r.fotos.length > 0 ? (
             <img src={r.fotos[0]} alt="" className="w-14 h-14 object-cover rounded-lg border shrink-0" style={{ borderColor: C.line }} />
           ) : (
@@ -10686,7 +10696,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
             <div className="text-xs truncate" style={{ color: C.gray }}>{r.sistema}</div>
             <div className="text-xs mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: C.inkSoft }}>
               <Badge tone={badgeToneFor("tipoMtto", r.tipo)}>{MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo}</Badge>
-              {r.revisionEstado === "pendiente" && <Badge tone="amber">Pendiente de revisión</Badge>}
+              {isPendingReview(r) && <Badge tone="amber">Pendiente de revisión</Badge>}
               {r.revisionEstado === "rechazado" && <Badge tone="red">Devuelto</Badge>}
               <Avatar name={r.tecnico} size={16} /> {r.tecnico} · {fmtDT(r.fecha)}
             </div>
@@ -10843,7 +10853,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           </div>
 
           {/* Módulo de auditoría — footer FIJO, siempre visible sin importar cuánto se haya scrolleado arriba */}
-          {isAdmin && selected.revisionEstado === "pendiente" && (
+          {isAdmin && isPendingReview(selected) && (
             <div className="shrink-0 border-t p-4" style={{ borderColor: C.line, background: C.bg }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
               <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Escribe un comentario o motivo de rechazo…"
@@ -20913,7 +20923,7 @@ export default function App() {
   const preventiveOverdueCount = useMemo(() =>
     mttoEquipos.filter(e => e.active !== false && computePreventiveStatus(e, mttoLog).overdue).length,
     [mttoEquipos, mttoLog]);
-  const pendingReviewCount = useMemo(() => mttoLog.filter(r => r.revisionEstado === "pendiente").length, [mttoLog]);
+  const pendingReviewCount = useMemo(() => mttoLog.filter(isPendingReview).length, [mttoLog]);
   const criticalStockItems = useMemo(() => computeCriticalStock(invItems), [invItems]);
   const criticalFuelTanks = useMemo(() => {
     return FUEL_ITEMS.filter(it => it.u === "%").map(it => {

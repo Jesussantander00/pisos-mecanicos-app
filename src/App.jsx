@@ -10082,11 +10082,12 @@ function VideoEmbed({ url }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia }) {
+function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra }) {
   const [editingVideo, setEditingVideo] = useState(false);
   const [videoDraft, setVideoDraft] = useState(equipo.videoUrl || "");
   const [savingVideo, setSavingVideo] = useState(false);
   const [editingFrecuencia, setEditingFrecuencia] = useState(false);
+  const [uploadingFoto, setUploadingFoto] = useState(false);
   const [frecuenciaDraft, setFrecuenciaDraft] = useState(equipo.frecuenciaDias || "");
   const [savingFrecuencia, setSavingFrecuencia] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
@@ -10152,11 +10153,34 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
   return (
     <div>
       <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a {equipo.sistema}</Button>
-      <div className="flex items-start justify-between flex-wrap gap-2 mt-2 mb-1">
-        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{equipo.nombre}</h2>
-        {status.outOfService && <Pill tone="red">Fuera de servicio desde {fmtDT(status.since)}</Pill>}
+      <div className="flex items-start gap-3 mt-2 mb-4">
+        {equipo.fotoMaestra ? (
+          <img src={equipo.fotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
+        ) : (
+          <div className="w-16 h-16 rounded-lg border flex items-center justify-center shrink-0" style={{ borderColor: C.line, background: C.bg }}>
+            <Wrench size={22} color={C.gray} />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between flex-wrap gap-2">
+            <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{equipo.nombre}</h2>
+            {status.outOfService && <Pill tone="red">Fuera de servicio desde {fmtDT(status.since)}</Pill>}
+          </div>
+          <p className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
+          {isAdmin && (
+            <label className="inline-flex items-center gap-1 text-xs font-semibold mt-1 cursor-pointer" style={{ color: C.amber }}>
+              {uploadingFoto ? "Subiendo…" : equipo.fotoMaestra ? "Cambiar foto oficial" : "Agregar foto oficial del equipo"}
+              <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto} onChange={async e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadingFoto(true);
+                try { const url = await uploadPhoto(file, `equipo-foto-${equipo.id}`); await onSetFotoMaestra(equipo.id, url); }
+                finally { setUploadingFoto(false); }
+              }} />
+            </label>
+          )}
+        </div>
       </div>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <div className="flex items-center justify-between mb-2">
@@ -10373,7 +10397,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, initialEquipoId, onConsumedInitialEquipo }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -10390,7 +10414,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} />;
+    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} />;
   }
 
   if (selectedSistema) {
@@ -10404,7 +10428,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   );
 }
 
-function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEmail, onLogSent, currentUser }) {
+function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEmail, onLogSent, currentUser, onViewEquipoHistory }) {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
   const [sort, setSort] = useState({ key: "fecha", dir: "desc" });
@@ -10442,16 +10466,21 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const rows = useMemo(() => {
     return mttoLog.map(r => {
       const eq = equipos.find(e => e.id === r.equipoId);
-      return { ...r, equipoNombre: eq?.nombre || "(equipo eliminado)", sistema: eq?.sistema || "—" };
+      return { ...r, equipoNombre: eq?.nombre || "(equipo eliminado)", sistema: eq?.sistema || "—", equipoFotoMaestra: eq?.fotoMaestra || null };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mttoLog, equipos]);
 
-  const filtered = useMemo(() => sortRows(rows.filter(r => {
-    if (filterTipo && r.tipo !== filterTipo) return false;
-    if (!search.trim()) return true;
-    return `${r.equipoNombre} ${r.sistema} ${r.tecnico} ${r.descripcion}`.toLowerCase().includes(search.toLowerCase());
-  }), sort), [rows, filterTipo, search, sort]);
+  const filtered = useMemo(() => {
+    const base = sortRows(rows.filter(r => {
+      if (filterTipo && r.tipo !== filterTipo) return false;
+      if (!search.trim()) return true;
+      return `${r.equipoNombre} ${r.sistema} ${r.tecnico} ${r.descripcion}`.toLowerCase().includes(search.toLowerCase());
+    }), sort);
+    // Los pendientes de revisión siempre van primero — es lo que el supervisor debe auditar hoy,
+    // sin importar qué columna haya elegido para ordenar el resto de la lista.
+    return [...base].sort((a, b) => (a.revisionEstado === "pendiente" ? 0 : 1) - (b.revisionEstado === "pendiente" ? 0 : 1));
+  }, [rows, filterTipo, search, sort]);
 
   const selected = filtered.find(r => r.id === selectedId) || rows.find(r => r.id === selectedId);
   const selectedIndex = mttoLog.findIndex(r => r.id === selectedId);
@@ -10537,8 +10566,8 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Sin mantenimientos registrados todavía.</p>
       ) : filtered.slice(0, visibleCount).map(r => (
         <button key={r.id} onClick={() => setSelectedId(r.id)}
-          className="w-full text-left rounded-lg border p-3 mb-2 flex items-center gap-3 transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
-          style={{ borderColor: r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
+          className="w-full text-left rounded-lg border-2 p-3 mb-2 flex items-center gap-3 transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
+          style={{ borderColor: r.revisionEstado === "pendiente" ? C.amber : r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.revisionEstado === "pendiente" ? C.amberSoft : r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
           {r.fotos && r.fotos.length > 0 ? (
             <img src={r.fotos[0]} alt="" className="w-14 h-14 object-cover rounded-lg border shrink-0" style={{ borderColor: C.line }} />
           ) : (
@@ -10591,7 +10620,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           Se puede cerrar deslizando hacia la derecha (además del botón y de tocar el fondo). */}
       {selected && (
         <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setSelectedId(null)}>
-          <div className="w-full sm:w-[440px] h-full overflow-y-auto p-5" style={{ background: C.panel, transform: `translateX(${drawerSwipeX}px)`, transition: drawerSwipeX === 0 ? "transform 150ms" : "none" }}
+          <div className="w-full sm:w-[440px] h-full flex flex-col" style={{ background: C.panel, transform: `translateX(${drawerSwipeX}px)`, transition: drawerSwipeX === 0 ? "transform 150ms" : "none" }}
             onClick={e => e.stopPropagation()}
             onTouchStart={e => { drawerTouchStartX.current = e.touches[0].clientX; }}
             onTouchMove={e => {
@@ -10604,17 +10633,34 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
               setDrawerSwipeX(0);
               drawerTouchStartX.current = null;
             }}>
+          <div className="flex-1 overflow-y-auto p-5">
             <button onClick={() => setSelectedId(null)} className="flex items-center gap-1 text-sm mb-4" style={{ color: C.inkSoft }}>
               <ArrowLeft size={15} /> Cerrar
             </button>
 
-            {/* Encabezado ejecutivo */}
-            <div className="flex items-center justify-between gap-2 mb-1">
+            {/* Encabezado ejecutivo — Cabecera del Activo: foto maestra + hoja de vida */}
+            <div className="flex items-center justify-between gap-2 mb-2">
               <div className="text-xs font-mono font-semibold" style={{ color: C.gray }}>{shortId(selected.id)}</div>
               <Pill tone={selected.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === selected.estado)?.label || selected.estado}</Pill>
             </div>
-            <h2 className="text-xl font-bold mb-0.5" style={{ color: C.ink }}>{selected.equipoNombre}</h2>
-            <div className="text-sm mb-4" style={{ color: C.inkSoft }}>{selected.sistema}</div>
+            <div className="flex items-start gap-3 mb-4">
+              {selected.equipoFotoMaestra ? (
+                <img src={selected.equipoFotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
+              ) : (
+                <div className="w-16 h-16 rounded-lg border flex items-center justify-center shrink-0" style={{ borderColor: C.line, background: C.bg }}>
+                  <Wrench size={22} color={C.gray} />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-bold mb-0.5" style={{ color: C.ink }}>{selected.equipoNombre}</h2>
+                <div className="text-sm mb-1.5" style={{ color: C.inkSoft }}>{selected.sistema}</div>
+                {selected.equipoId && onViewEquipoHistory && (
+                  <button onClick={() => onViewEquipoHistory(selected.equipoId)} className="text-xs font-semibold flex items-center gap-1" style={{ color: C.amber }}>
+                    📄 Ver hoja de vida del equipo
+                  </button>
+                )}
+              </div>
+            </div>
 
             {/* Sección 1: Datos de ejecución */}
             <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Datos de ejecución</div>
@@ -10685,33 +10731,35 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
               {selectedIndex >= 0 && <> · registro {selectedIndex + 1} de {mttoLog.length}</>}
             </div>
 
-            {/* Auditoría — solo un supervisor puede cerrar el ciclo de este reporte */}
             {selected.revisionEstado && selected.revisionEstado !== "pendiente" && (
               <div className="text-xs mt-3 pt-3 border-t rounded-lg p-2.5" style={{ borderColor: C.line, background: selected.revisionEstado === "aprobado" ? C.greenSoft : C.redSoft, color: selected.revisionEstado === "aprobado" ? C.green : C.red }}>
                 {selected.revisionEstado === "aprobado" ? "✓ Aprobado" : "↩ Devuelto"} por <b>{selected.revisadoPor}</b> el {fmtDT(selected.revisadoAt)}
                 {selected.revisionComentario && <div className="mt-1" style={{ color: C.ink }}>"{selected.revisionComentario}"</div>}
               </div>
             )}
-            {isAdmin && selected.revisionEstado === "pendiente" && (
-              <div className="mt-3 pt-3 border-t rounded-b-lg -mx-5 px-5 pb-4" style={{ borderColor: C.line, background: C.bg }}>
-                <div className="text-xs font-semibold uppercase tracking-wide mb-2 pt-1" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
-                <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Comentario de auditoría (opcional si apruebas, recomendado si devuelves)…"
-                  className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                <div className="space-y-2">
-                  <div className="[&>button]:w-full [&>button]:justify-center">
-                    <Button variant="green" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
-                      ✓ Aprobar y cerrar mantenimiento
-                    </Button>
-                  </div>
-                  <div className="[&>button]:w-full [&>button]:justify-center">
-                    <Button variant="amber" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
-                      ↩ Rechazar / Devolver
-                    </Button>
-                  </div>
+          </div>
+
+          {/* Módulo de auditoría — footer FIJO, siempre visible sin importar cuánto se haya scrolleado arriba */}
+          {isAdmin && selected.revisionEstado === "pendiente" && (
+            <div className="shrink-0 border-t p-4" style={{ borderColor: C.line, background: C.bg }}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
+              <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Comentario de auditoría (opcional si apruebas, recomendado si devuelves)…"
+                className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <div className="space-y-2">
+                <div className="[&>button]:w-full [&>button]:justify-center">
+                  <Button variant="green" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                    ✓ Aprobar y cerrar mantenimiento
+                  </Button>
+                </div>
+                <div className="[&>button]:w-full [&>button]:justify-center">
+                  <Button variant="amber" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
+                    ↩ Rechazar / Devolver
+                  </Button>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
         </div>
       )}
 
@@ -19715,6 +19763,12 @@ export default function App() {
     await sSet("mtto-equipos", next, true);
   };
 
+  const setEquipoFotoMaestra = async (id, url) => {
+    const next = mttoEquipos.map(e => e.id === id ? { ...e, fotoMaestra: url || null } : e);
+    setMttoEquipos(next);
+    await sSet("mtto-equipos", next, true);
+  };
+
   /** Registra un mantenimiento y, si se marcaron repuestos usados, los descuenta del inventario
    *  solo — sin tener que ir aparte a Inventario a hacer el retiro a mano. Guarda una copia del
    *  nombre/cantidad en el propio registro (no solo el id), para que la hoja de vida del equipo
@@ -19728,7 +19782,7 @@ export default function App() {
       costoRepuestos: form.costoRepuestos ? Number(form.costoRepuestos) : 0,
       costoContratista: form.costoContratista ? Number(form.costoContratista) : 0,
       repuestos: repuestosUsados.map(r => ({ itemId: r.itemId, nombre: invItems.find(it => it.id === r.itemId)?.name || "Repuesto", cantidad: Number(r.cantidad) })),
-      createdBy: displayName, createdAt: nowIso(),
+      createdBy: displayName, createdByUsername: currentUser, createdAt: nowIso(),
       revisionEstado: "pendiente", // pendiente | aprobado | rechazado — lo cierra un supervisor
     };
     const next = [rec, ...mttoLog].slice(0, 5000);
@@ -19745,12 +19799,24 @@ export default function App() {
   /** El supervisor cierra el ciclo de un mantenimiento — aprobándolo o devolviéndolo con un
    *  comentario. Queda guardado quién lo revisó y cuándo, para que quede trazabilidad real. */
   const reviewMaintenanceRecord = async (recordId, decision, comentario) => {
+    const original = mttoLog.find(r => r.id === recordId);
     const next = mttoLog.map(r => r.id === recordId ? {
       ...r, revisionEstado: decision, revisionComentario: comentario || "",
       revisadoPor: displayName, revisadoAt: nowIso(),
     } : r);
     setMttoLog(next);
     await sSet("mtto-log", next, true);
+
+    // Al devolver un mantenimiento, avisarle al técnico que lo registró — solo a él, no a todos
+    // los que tengan las notificaciones activadas (por eso se filtra por ownerUsername).
+    if (decision === "rechazado" && original?.createdByUsername) {
+      const eq = mttoEquipos.find(e => e.id === original.equipoId);
+      const suyas = pushSubscriptions.filter(s => s.ownerUsername === original.createdByUsername);
+      if (suyas.length > 0) {
+        sendPushToSubscriptions(suyas, "↩ Mantenimiento devuelto",
+          `${displayName} devolvió tu registro de "${eq?.nombre || "un equipo"}"${comentario ? `: ${comentario}` : " — revisa el detalle."}`, "/");
+      }
+    }
   };
 
   /** Reprograma una celda del cronograma anual (equipo + mes) — si no existía todavía una entrada
@@ -20057,7 +20123,8 @@ export default function App() {
   const enablePushNotifications = async () => {
     const sub = await subscribeToPush();
     if (!sub) return { ok: false, message: "No se pudo activar. ¿Le diste permiso a las notificaciones cuando te lo pidió el navegador?" };
-    const next = [...pushSubscriptions.filter(s => s.endpoint !== sub.endpoint), sub];
+    const tagged = { ...sub, ownerUsername: currentUser };
+    const next = [...pushSubscriptions.filter(s => s.endpoint !== sub.endpoint), tagged];
     setPushSubscriptions(next);
     await sSet("push-subscriptions", next, true);
     return { ok: true, message: "✓ Notificaciones activadas en este dispositivo." };
@@ -20743,6 +20810,7 @@ export default function App() {
   const preventiveOverdueCount = useMemo(() =>
     mttoEquipos.filter(e => e.active !== false && computePreventiveStatus(e, mttoLog).overdue).length,
     [mttoEquipos, mttoLog]);
+  const pendingReviewCount = useMemo(() => mttoLog.filter(r => r.revisionEstado === "pendiente").length, [mttoLog]);
   const criticalStockItems = useMemo(() => computeCriticalStock(invItems), [invItems]);
   const criticalFuelTanks = useMemo(() => {
     return FUEL_ITEMS.filter(it => it.u === "%").map(it => {
@@ -20879,7 +20947,7 @@ export default function App() {
     },
     {
       id: "historial", label: "Historial y reportes", items: [
-        ...(isAdmin ? [{ id: "maintenance-log", label: "Historial de mantenimientos", icon: History }] : []),
+        ...(isAdmin ? [{ id: "maintenance-log", label: "Historial de mantenimientos", icon: History, badge: pendingReviewCount, urgentBadge: pendingReviewCount > 0, pulse: pendingReviewCount > 0 }] : []),
         ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays }] : []),
         { id: "reports", label: "Reportes", icon: History },
         { id: "tanks", label: "Tanques de agua potable", icon: Droplets },
@@ -21361,6 +21429,7 @@ export default function App() {
               onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
               onSetVideoUrl={setEquipoVideoUrl}
               onSetFrecuencia={setEquipoFrecuencia}
+              onSetFotoMaestra={setEquipoFotoMaestra}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (
@@ -21374,7 +21443,8 @@ export default function App() {
           )}
           {view === "maintenance-log" && isAdmin && (
             <MaintenanceLogAuditView equipos={mttoEquipos} mttoLog={mttoLog} isAdmin={isAdmin} onReview={reviewMaintenanceRecord}
-              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
+              reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName}
+              onViewEquipoHistory={(equipoId) => { setPendingEquipoId(equipoId); setView("maintenance"); }} />
           )}
           {view === "maintenance-schedule" && isAdmin && (
             <CronogramaAnualView equipos={mttoEquipos} mttoCronograma={mttoCronograma} mttoLog={mttoLog} invItems={invItems}

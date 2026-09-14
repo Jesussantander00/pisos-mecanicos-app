@@ -8628,21 +8628,26 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
         )}
         <div className={`flex items-center gap-1.5 mb-1 pr-6 ${selectMode ? "pl-6" : ""}`}>
           <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
-          <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={20} />
         </div>
         {linkedEquipo?.sistema && (
           <div className="mb-1.5"><Badge tone={badgeToneFor("sistema", linkedEquipo.sistema)}>{linkedEquipo.sistema}</Badge></div>
         )}
-        <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
-        {task.fotosAntes && task.fotosAntes.length > 0 && (
-          <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
-            {task.fotosAntes.slice(0, 3).map((url, i) => (
-              <button key={i} onClick={() => onZoom(url)}>
-                <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
-              </button>
-            ))}
+        <div className="flex items-end justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
+            {task.fotosAntes && task.fotosAntes.length > 0 && (
+              <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
+                {task.fotosAntes.slice(0, 3).map((url, i) => (
+                  <button key={i} onClick={() => onZoom(url)}>
+                    <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          {/* Avatar del responsable — esquina inferior derecha, solo si hay alguien asignado */}
+          {assigneeName && <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={22} />}
+        </div>
       </div>
     </div>
   );
@@ -9042,6 +9047,43 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const cumplimientoPct = totalTareas > 0 ? Math.round((cerradas.length / totalTareas) * 100) : 100;
   const misTareasAbiertas = tasks.filter(t => t.asignadoA === currentUsername && normalizeTaskState(t.estado) !== "finalizada").length;
 
+  // ===== Sparkline: tareas creadas por día, últimos 7 días =====
+  const sparkCreadas = useMemo(() => {
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - (6 - i)); d.setHours(0, 0, 0, 0);
+      return d;
+    });
+    return days.map(d => {
+      const next = new Date(d); next.setDate(next.getDate() + 1);
+      return tasks.filter(t => { const c = new Date(t.createdAt || t.assignedAt || 0); return c >= d && c < next; }).length;
+    });
+  }, [tasks]);
+
+  // ===== Leaderboard: técnicos y cuántas tareas cerraron HOY, con si están activos ahora mismo =====
+  const leaderboard = useMemo(() => {
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    const byUser = {};
+    tasks.forEach(t => {
+      if (!t.asignadoA) return;
+      if (!byUser[t.asignadoA]) byUser[t.asignadoA] = { username: t.asignadoA, cerradasHoy: 0, activo: false };
+      if (normalizeTaskState(t.estado) === "finalizada" && t.finishedAt && new Date(t.finishedAt) >= today0) byUser[t.asignadoA].cerradasHoy++;
+      if (normalizeTaskState(t.estado) === "en-proceso") byUser[t.asignadoA].activo = true;
+    });
+    return Object.values(byUser).sort((a, b) => b.cerradasHoy - a.cerradasHoy).slice(0, 6);
+  }, [tasks]);
+
+  // ===== Distribución de tareas ABIERTAS por sistema (dona) =====
+  const tareasPorSistema = useMemo(() => {
+    const map = {};
+    tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").forEach(t => {
+      const eq = t.equipoId ? equipos.find(e => e.id === t.equipoId) : null;
+      const s = eq?.sistema || "Sin equipo vinculado";
+      map[s] = (map[s] || 0) + 1;
+    });
+    const palette = [C.blue, C.amber, C.green, "#8b5cf6", C.red, C.gray];
+    return Object.entries(map).map(([name, value], i) => ({ name, value, color: palette[i % palette.length] })).sort((a, b) => b.value - a.value);
+  }, [tasks, equipos]);
+
   /** Si alguien tiene notablemente más tareas abiertas que el promedio del equipo esta semana
    *  (al menos 1.5x el promedio, y al menos 2 de diferencia), lo señala — para repartir mejor,
    *  no como un reclamo, solo un aviso simple. */
@@ -9133,19 +9175,80 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-        <StatCard label="Tuyas, abiertas ahora" value={misTareasAbiertas} valueColor={misTareasAbiertas > 0 ? C.amber : C.ink}
-          tooltip="Tareas asignadas a ti que todavía no has marcado como Finalizada."
-          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: misTareasAbiertas > 0 ? C.amberSoft : C.greenSoft }}><User size={18} color={misTareasAbiertas > 0 ? C.amber : C.green} /></div>} />
-        <StatCard label="Tareas totales" value={totalTareas}
-          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.blueSoft }}><ClipboardCheck size={18} color={C.blue} /></div>} />
-        <StatCard label="Tiempo prom. de cierre" value={tiempoCierrePromedio != null ? fmtHours(tiempoCierrePromedio) : "Sin cierres"}
-          tooltip="Promedio de horas desde que una tarea se asigna hasta que se marca Finalizada, contando solo las tareas ya cerradas."
-          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.amberSoft }}><Clock size={18} color={C.amber} /></div>} />
-        <StatCard label="Críticas vencidas (>24h)" value={criticasVencidas} valueColor={criticasVencidas ? C.red : C.ink}
-          leading={<div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: criticasVencidas ? C.redSoft : C.greenSoft }}><AlertTriangle size={18} color={criticasVencidas ? C.red : C.green} /></div>} />
-        <StatCard label="Cumplimiento" value={totalTareas > 0 ? `${cumplimientoPct}%` : "Sin datos"} valueColor={cumplimientoPct >= 80 ? C.green : C.amber}
-          leading={<MiniGauge value={cumplimientoPct} max={100} size={40} stroke={5} color={cumplimientoPct >= 80 ? C.green : C.amber} />} />
+      {/* Analytics Ribbon — KPIs con tendencia a la izquierda, quién está resolviendo qué a la derecha */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-4">
+        {/* Bloque izquierdo (40%) — KPIs compactos con sparkline de fondo */}
+        <div className="lg:col-span-2 grid grid-cols-2 gap-2.5">
+          <div className="rounded-xl border p-3 relative overflow-hidden col-span-2" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="absolute inset-x-0 bottom-0 h-10 opacity-40"><Sparkline points={sparkCreadas.map(v => ({ v }))} height={40} color={C.blue} /></div>
+            <div className="relative">
+              <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Tareas totales · últimos 7 días</div>
+              <div className="text-2xl font-bold tabular-nums" style={{ color: C.ink }}>{totalTareas}</div>
+            </div>
+          </div>
+          <div className="rounded-xl border p-3" style={{ borderColor: criticasVencidas ? C.red : C.line, background: criticasVencidas ? C.redSoft : C.panel }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: criticasVencidas ? C.red : C.gray }}>Críticas &gt;24h</div>
+            <div className="text-2xl font-bold tabular-nums" style={{ color: criticasVencidas ? C.red : C.ink }}>{criticasVencidas}</div>
+          </div>
+          <div className="rounded-xl border p-3 flex items-center gap-2" style={{ borderColor: C.line, background: C.panel }}>
+            <MiniGauge value={cumplimientoPct} max={100} size={44} stroke={6} color={cumplimientoPct >= 80 ? C.green : C.amber} />
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento</div>
+              <div className="text-lg font-bold tabular-nums" style={{ color: cumplimientoPct >= 80 ? C.green : C.amber }}>{totalTareas > 0 ? `${cumplimientoPct}%` : "—"}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bloque derecho (60%) — quién está resolviendo (en vivo) + en qué está concentrado el trabajo */}
+        <div className="lg:col-span-3 rounded-xl border p-3.5" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+            <div className="sm:col-span-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Técnicos hoy — tareas cerradas</div>
+              {leaderboard.length === 0 ? (
+                <p className="text-xs py-3" style={{ color: C.gray }}>Nadie tiene tareas asignadas todavía.</p>
+              ) : (
+                <div className="space-y-2">
+                  {leaderboard.map(l => {
+                    const maxCerradas = Math.max(1, ...leaderboard.map(x => x.cerradasHoy));
+                    const displayName = accounts[l.username]?.display_name || l.username;
+                    return (
+                      <div key={l.username} className="relative rounded-md overflow-hidden" style={{ background: C.bg, height: 26 }}>
+                        <div className="absolute inset-y-0 left-0" style={{ width: `${(l.cerradasHoy / maxCerradas) * 100}%`, background: C.blueSoft, transition: "width 600ms var(--ease-out)" }} />
+                        <div className="relative flex items-center justify-between h-full px-2">
+                          <span className="flex items-center gap-1.5 text-xs font-medium min-w-0" style={{ color: C.ink }}>
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${l.activo ? "pm-pulse" : ""}`} style={{ background: l.activo ? C.green : C.gray }} title={l.activo ? "Con una tarea en proceso ahora mismo" : "Sin actividad ahora mismo"} />
+                            <span className="truncate">{displayName}</span>
+                          </span>
+                          <span className="text-xs font-bold tabular-nums shrink-0" style={{ color: C.blue }}>{l.cerradasHoy}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="sm:col-span-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Trabajo abierto por sistema</div>
+              {tareasPorSistema.length === 0 ? (
+                <p className="text-xs py-3" style={{ color: C.gray }}>Sin tareas abiertas.</p>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <MiniDonut segments={tareasPorSistema} size={90} stroke={16} />
+                  <div className="w-full space-y-1">
+                    {tareasPorSistema.slice(0, 4).map(s => (
+                      <div key={s.name} className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className="flex items-center gap-1 min-w-0" style={{ color: C.ink }}>
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: s.color }} /><span className="truncate">{s.name}</span>
+                        </span>
+                        <span className="font-bold shrink-0" style={{ color: C.gray }}>{s.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {workloadImbalance && (
@@ -10743,17 +10846,17 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           {isAdmin && selected.revisionEstado === "pendiente" && (
             <div className="shrink-0 border-t p-4" style={{ borderColor: C.line, background: C.bg }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
-              <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Comentario de auditoría (opcional si apruebas, recomendado si devuelves)…"
+              <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} rows={2} placeholder="Escribe un comentario o motivo de rechazo…"
                 className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               <div className="space-y-2">
                 <div className="[&>button]:w-full [&>button]:justify-center">
                   <Button variant="green" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "aprobado", reviewComment); setReviewComment(""); setReviewing(false); }}>
-                    ✓ Aprobar y cerrar mantenimiento
+                    ✔️ Aprobar y Cerrar Ticket
                   </Button>
                 </div>
                 <div className="[&>button]:w-full [&>button]:justify-center">
                   <Button variant="amber" disabled={reviewing} onClick={async () => { setReviewing(true); await onReview(selected.id, "rechazado", reviewComment); setReviewComment(""); setReviewing(false); }}>
-                    ↩ Rechazar / Devolver
+                    ↩️ Rechazar / Devolver
                   </Button>
                 </div>
               </div>
@@ -13785,7 +13888,7 @@ function TaskTimer({ assignedAt, finishedAt, estado }) {
   const { bg, fg } = finishedAt
     ? { bg: C.greenSoft, fg: C.green }
     : estado === "pausada" ? { bg: C.amberSoft, fg: "#8a5a00" }
-      : hrs > 24 ? { bg: C.redSoft, fg: C.red } : { bg: C.bg, fg: C.inkSoft };
+      : hrs > 24 ? { bg: C.red, fg: "#fff" } : { bg: C.bg, fg: C.inkSoft };
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: bg, color: fg }}>
       <Clock size={11} /> {label}

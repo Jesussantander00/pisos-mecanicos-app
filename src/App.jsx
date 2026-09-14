@@ -9020,6 +9020,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     setOnlyMine(v => {
       const next = !v;
       try { localStorage.setItem(`pm-local:tasks-only-mine:${currentUsername}`, next ? "1" : "0"); } catch { /* noop */ }
+      if (next) setFilterOperario(""); // evita el conflicto: si se activa "Solo lo mío", el desplegable vuelve a "Todos"
       return next;
     });
   };
@@ -9033,7 +9034,10 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       if (dateFrom && d < new Date(dateFrom + "T00:00:00")) return false;
       if (dateTo && d > new Date(dateTo + "T23:59:59")) return false;
       if (filterTurno && turnoOf(t.createdAt) !== filterTurno) return false;
-      if (filterOperario && t.asignadoA !== filterOperario) return false;
+      // "Solo lo mío" manda por encima del desplegable de Operario — si está activo, el
+      // desplegable se ignora del todo (si no, entre los dos filtros se pisaban y la tarea
+      // podía desaparecer aunque sí fuera del técnico).
+      if (!onlyMine && filterOperario && t.asignadoA !== filterOperario) return false;
       if (filterPrioridad && t.prioridad !== filterPrioridad) return false;
       return true;
     })
@@ -9174,7 +9178,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <p className="text-sm" style={{ color: C.inkSoft }}>El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={toggleOnlyMine} className="text-xs font-semibold px-2.5 rounded-md border" style={{ background: onlyMine ? C.amberSoft : C.panel, color: onlyMine ? "#7a5405" : C.inkSoft, borderColor: onlyMine ? C.amber : C.line, minHeight: 36 }}>
+          <button onClick={toggleOnlyMine} className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
             {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
           </button>
           <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>

@@ -6670,7 +6670,7 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
             <Gauge size={26} color="#fff" />
           </div>
           <h1 className="text-white text-lg font-semibold tracking-tight">Revisión Diaria de Equipos</h1>
-          <p className="text-sm" style={{ color: "#8fa3b8" }}>Pisos Mecánicos · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
+          <p className="text-sm" style={{ color: "#8fa3b8" }}>FacilitaSys · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
         </div>
         <div className="rounded-xl p-5" style={{ background: C.panel }}>
           <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -13525,7 +13525,7 @@ function PushEnableButton({ onEnable }) {
    RECORRIDO GUIADO (primera vez que alguien entra)
    ============================================================ */
 const ONBOARDING_STEPS = [
-  { title: "¡Bienvenido a Pisos Mecánicos!", body: "Esta es la app para tus rondas, mantenimiento, inventario y más — reemplaza los formatos en papel. Te mostramos rápido cómo usarla, toma un minuto." },
+  { title: "¡Bienvenido a FacilitaSys!", body: "Esta es la app para tus rondas, mantenimiento, inventario y más — reemplaza los formatos en papel. Te mostramos rápido cómo usarla, toma un minuto." },
   { title: "Todo empieza en Inicio", body: "Ahí tienes una tarjeta por cada sección de la app. Toca la que necesites. Si alguna se ve atenuada/gris, es porque tu cuenta no tiene ese permiso — pídeselo a un administrador si crees que deberías tenerlo." },
   { title: "Tu ronda diaria", body: "Entra a \"Ronda de revisión\", elige tu turno arriba a la derecha, y ve marcando cada equipo piso por piso. Guarda al terminar cada piso, y sigue al siguiente." },
   { title: "Si algo está dañado", body: "Marca \"Dañado / Fuera de servicio\" en ese equipo y escribe qué pasó — es obligatorio. Queda registrado y avisa a los administradores." },
@@ -21441,7 +21441,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: C.amber }}><Gauge size={18} color="#fff" /></div>
               <div>
-                <div className="text-white text-sm font-semibold leading-tight">Pisos Mecánicos</div>
+                <div className="text-white text-sm font-semibold leading-tight">FacilitaSys</div>
                 <div className="text-xs" style={{ color: "#8fa3b8" }}>Revisión diaria</div>
               </div>
             </div>

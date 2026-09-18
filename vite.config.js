@@ -13,8 +13,8 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
-        name: "Pisos Mecánicos — Hyatt Regency Cartagena",
-        short_name: "Pisos Mecánicos",
+        name: "FacilitaSys — Hyatt Regency Cartagena",
+        short_name: "FacilitaSys",
         description: "Revisión diaria de equipos, cuartos fríos, medidores, inventario, mantenimiento y horarios.",
         start_url: "/",
         display: "standalone",

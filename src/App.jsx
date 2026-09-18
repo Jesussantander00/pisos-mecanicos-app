@@ -6600,6 +6600,40 @@ function daysInMonthIso(year, month) {
 }
 
 /* ============================================================
+   TOAST GLOBAL — notificación flotante consistente para "guardado"/"error" en toda la app,
+   sin depender de que el texto inline del formulario siga visible tras hacer scroll.
+   Un pequeño "bus" fuera de React: cualquier componente puede llamar showToast(...) sin tener
+   que recibir la función por props desde arriba.
+   ============================================================ */
+let _toastListeners = [];
+function showToast(text, ok = true) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  _toastListeners.forEach(fn => fn({ id, text, ok }));
+}
+function ToastHost() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    const handler = (t) => {
+      setItems(prev => [...prev, t]);
+      setTimeout(() => setItems(prev => prev.filter(x => x.id !== t.id)), 3800);
+    };
+    _toastListeners.push(handler);
+    return () => { _toastListeners = _toastListeners.filter(l => l !== handler); };
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 items-center px-4 w-full sm:w-auto pointer-events-none">
+      {items.map(t => (
+        <div key={t.id} className="rounded-lg shadow-lg px-4 py-2.5 text-sm font-medium max-w-[90vw] sm:max-w-sm text-center pointer-events-auto"
+          style={{ background: t.ok ? "#1a7f4a" : "#c0392b", color: "#fff" }}>
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================
    UI PRIMITIVES
    ============================================================ */
 function Pill({ children, tone = "gray" }) {
@@ -7950,7 +7984,7 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Inventario — Bodegas</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Elige una bodega para ver sus estanterías y repuestos.</p>
 
-      {canManage && (
+      {canManage && bodegas.length === 0 && (
         <div className="rounded-md p-2 mb-3 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, color: "#7a5405" }}>
           <span>¿Primera vez usando esto? Importa de una vez el inventario real del hotel (29 bodegas, ~316 estanterías, ~2897 repuestos).</span>
           <Button size="sm" disabled={importing} onClick={doImport}>{importing ? "Importando…" : "Importar inventario completo"}</Button>
@@ -7982,13 +8016,18 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
             const myShelves = shelves.filter(s => s.bodegaId === b.id);
             const myItems = invItems.filter(i => i.bodegaId === b.id);
             const low = computeLowStock(myItems).length;
+            const critical = computeCriticalStock(myItems).length;
             return (
               <div key={b.id} className="relative">
                 <button onClick={() => onSelectBodega(b.id)}
                   className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold pr-5" style={{ color: C.ink }}>{b.name}</div>
-                    {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
+                    {low > 0 && (
+                      <Pill tone={critical > 0 ? "red" : "amber"}>
+                        {critical > 0 ? `${critical} crítico${critical !== 1 ? "s" : ""}` : `${low} bajo stock`}
+                      </Pill>
+                    )}
                   </div>
                   <div className="text-xs mt-1" style={{ color: C.gray }}>
                     {myShelves.length} estantería{myShelves.length !== 1 ? "s" : ""} · {myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}
@@ -8058,13 +8097,18 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
           {shelves.map(s => {
             const myItems = invItems.filter(i => i.shelfId === s.id);
             const low = computeLowStock(myItems).length;
+            const critical = computeCriticalStock(myItems).length;
             return (
               <div key={s.id} className="relative">
                 <button onClick={() => onSelectShelf(s.id)}
                   className="text-left rounded-lg border p-3 hover:shadow-sm transition w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold pr-5" style={{ color: C.ink }}>Estantería {s.code}</div>
-                    {low > 0 && <Pill tone="red">{low} bajo stock</Pill>}
+                    {low > 0 && (
+                      <Pill tone={critical > 0 ? "red" : "amber"}>
+                        {critical > 0 ? `${critical} crítico${critical !== 1 ? "s" : ""}` : `${low} bajo stock`}
+                      </Pill>
+                    )}
                   </div>
                   {s.name && <div className="text-xs" style={{ color: C.inkSoft }}>{s.name}</div>}
                   <div className="text-xs mt-1" style={{ color: C.gray }}>{myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}</div>
@@ -8986,9 +9030,12 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       );
       setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
       setShowNew(false); setNewTab("manual"); setDupWarning(null);
-      if (res.queued) setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." });
+      if (res.queued) { setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." }); showToast("Tarea guardada en este celular — se sube sola apenas vuelva la señal.", true); }
+      else showToast("✓ Tarea creada.", true);
     } catch (e) {
-      setSaveMsg({ ok: false, text: e.message || "No se pudo crear la tarea — revisa tu conexión e intenta de nuevo." });
+      const msg = e.message || "No se pudo crear la tarea — revisa tu conexión e intenta de nuevo.";
+      setSaveMsg({ ok: false, text: msg });
+      showToast(msg, false);
     }
     setSaving(false);
   };
@@ -9886,7 +9933,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mantenimiento — Sistemas</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Elige un sistema para ver sus equipos y registrar mantenimientos.</p>
 
-      {canManage && (
+      {canManage && equipos.length === 0 && (
         <div className="rounded-md p-2 mb-3 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, color: "#7a5405" }}>
           <span>¿Primera vez usando esto? Importa de una vez el cronograma completo (925 equipos, el año completo programado, y los ~914 mantenimientos ya ejecutados con su fecha y técnico).</span>
           <Button size="sm" disabled={importing} onClick={doImport}>{importing ? "Importando…" : "Importar cronograma completo"}</Button>
@@ -9969,6 +10016,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
 
 function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSelectEquipo, onDeleteEquipo }) {
   const [search, setSearch] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const q = search.trim().toLowerCase();
   const visEquipos = q ? equipos.filter(eq => eq.nombre.toLowerCase().includes(q)) : equipos;
   return (
@@ -10010,9 +10058,20 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSe
                   )}
                 </button>
                 {canManage && (
-                  <button onClick={(e) => { e.stopPropagation(); onDeleteEquipo(eq.id); }} className="absolute top-2 right-2 p-1">
-                    <Trash2 size={13} color={C.gray} />
-                  </button>
+                  confirmDeleteId === eq.id ? (
+                    <div className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-md px-1.5 py-1" style={{ background: C.panel, boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }}>
+                      <button onClick={(e) => { e.stopPropagation(); onDeleteEquipo(eq.id); setConfirmDeleteId(null); }} className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: C.red, color: "#fff" }}>
+                        Sí, borrar
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }} className="text-[10px] font-semibold px-1" style={{ color: C.gray }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(eq.id); }} className="absolute top-2 right-2 p-1">
+                      <Trash2 size={13} color={C.gray} />
+                    </button>
+                  )
                 )}
               </div>
             );
@@ -10276,6 +10335,8 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
   const [equipoDraft, setEquipoDraft] = useState({ nombre: equipo.nombre, sistema: equipo.sistema });
   const [savingEquipo, setSavingEquipo] = useState(false);
   const [cascadeConfirm, setCascadeConfirm] = useState(null);
+  const [prevOpen, setPrevOpen] = useState(!!equipo.frecuenciaDias);
+  const [videoOpen, setVideoOpen] = useState(!!equipo.videoUrl);
   const [editingVideo, setEditingVideo] = useState(false);
   const [videoDraft, setVideoDraft] = useState(equipo.videoUrl || "");
   const [savingVideo, setSavingVideo] = useState(false);
@@ -10383,8 +10444,11 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
       setSaveMsg(res.queued
         ? { ok: true, text: "✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva, sin que tengas que escribir nada de nuevo." }
         : { ok: true, text: "✓ Mantenimiento registrado." });
+      showToast(res.queued ? "Guardado en este celular — se sube solo apenas vuelva la señal." : "✓ Mantenimiento registrado.", true);
     } catch (e) {
-      setSaveMsg({ ok: false, text: e.message || "No se pudo guardar — revisa tu conexión e intenta de nuevo." });
+      const msg = e.message || "No se pudo guardar — revisa tu conexión e intenta de nuevo.";
+      setSaveMsg({ ok: false, text: msg });
+      showToast(msg, false);
     }
     setSaving(false);
   };
@@ -10461,17 +10525,18 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
       </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => { if (!preventiveStatus.configured && !editingFrecuencia) setPrevOpen(o => !o); }}>
           <div className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: C.inkSoft }}>
             <CalendarDays size={13} /> Mantenimiento preventivo
+            {!preventiveStatus.configured && (prevOpen ? <ChevronDown size={13} color={C.gray} /> : <ChevronRight size={13} color={C.gray} />)}
           </div>
           {isAdmin && !editingFrecuencia && (
-            <button onClick={() => { setFrecuenciaDraft(equipo.frecuenciaDias || ""); setEditingFrecuencia(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>
+            <button onClick={(e) => { e.stopPropagation(); setFrecuenciaDraft(equipo.frecuenciaDias || ""); setEditingFrecuencia(true); setPrevOpen(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>
               {equipo.frecuenciaDias ? "Cambiar" : "Configurar"}
             </button>
           )}
         </div>
-        {editingFrecuencia ? (
+        {(prevOpen || preventiveStatus.configured || editingFrecuencia) && (editingFrecuencia ? (
           <div className="flex items-center gap-2 flex-wrap">
             <select value={frecuenciaDraft} onChange={e => setFrecuenciaDraft(e.target.value)}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -10502,21 +10567,22 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
           </div>
         ) : (
           <p className="text-xs" style={{ color: C.gray }}>Sin configurar — {isAdmin ? "define cada cuántos días se le debe hacer preventivo a este equipo, y la app te avisa sola cuando se acerque la fecha." : "no hay ninguna frecuencia definida todavía."}</p>
-        )}
+        ))}
       </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => { if (!equipo.videoUrl && !editingVideo) setVideoOpen(o => !o); }}>
           <div className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: C.inkSoft }}>
             <Video size={13} /> Video de referencia
+            {!equipo.videoUrl && (videoOpen ? <ChevronDown size={13} color={C.gray} /> : <ChevronRight size={13} color={C.gray} />)}
           </div>
           {isAdmin && !editingVideo && (
-            <button onClick={() => { setVideoDraft(equipo.videoUrl || ""); setEditingVideo(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>
+            <button onClick={(e) => { e.stopPropagation(); setVideoDraft(equipo.videoUrl || ""); setEditingVideo(true); setVideoOpen(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>
               {equipo.videoUrl ? "Cambiar" : "Agregar"}
             </button>
           )}
         </div>
-        {editingVideo ? (
+        {(videoOpen || equipo.videoUrl || editingVideo) && (editingVideo ? (
           <div>
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <input value={videoDraft} onChange={e => setVideoDraft(e.target.value)} placeholder="Pega el enlace del video (YouTube, Drive, etc.)"
@@ -10552,7 +10618,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
           <VideoEmbed url={equipo.videoUrl} />
         ) : (
           <p className="text-xs" style={{ color: C.gray }}>Sin video guardado — {isAdmin ? "agrega el enlace de un video corto mostrando cómo se hace el mantenimiento." : "no hay ninguno cargado todavía."}</p>
-        )}
+        ))}
       </div>
 
       <div className="flex items-start gap-3 flex-wrap mb-4">
@@ -10569,16 +10635,19 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
             <select value={estado} onChange={e => setEstado(e.target.value)} className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {MTTO_ESTADOS.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
             </select>
-            <input type="number" min="0" value={costo} onChange={e => setCosto(e.target.value)} placeholder="Costo total (opcional)"
+            <input type="text" inputMode="numeric" value={costo ? Number(costo.toString().replace(/\D/g, "") || 0).toLocaleString("es-CO") : ""}
+              onChange={e => setCosto(e.target.value.replace(/\D/g, ""))} placeholder="Costo total (opcional)"
               className="text-sm border rounded-md px-2 py-1.5 outline-none w-36" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           </div>
           {Number(costo) > 0 && (
             <div className="mb-2">
               <div className="text-[10px] mb-1" style={{ color: C.gray }}>De ese total, ¿cuánto fue repuestos y cuánto contratista externo? (opcional — lo demás se cuenta como mano de obra propia)</div>
               <div className="flex items-center gap-2 flex-wrap">
-                <input type="number" min="0" value={costoRepuestos} onChange={e => setCostoRepuestos(e.target.value)} placeholder="Repuestos"
+                <input type="text" inputMode="numeric" value={costoRepuestos ? Number(costoRepuestos.toString().replace(/\D/g, "") || 0).toLocaleString("es-CO") : ""}
+                  onChange={e => setCostoRepuestos(e.target.value.replace(/\D/g, ""))} placeholder="Repuestos"
                   className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                <input type="number" min="0" value={costoContratista} onChange={e => setCostoContratista(e.target.value)} placeholder="Contratista"
+                <input type="text" inputMode="numeric" value={costoContratista ? Number(costoContratista.toString().replace(/\D/g, "") || 0).toLocaleString("es-CO") : ""}
+                  onChange={e => setCostoContratista(e.target.value.replace(/\D/g, ""))} placeholder="Contratista"
                   className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               </div>
             </div>
@@ -11454,6 +11523,12 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
         )}
       </div>
 
+      <div className="text-xs font-medium mb-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: hasActiveFilters ? C.amberSoft : C.bg, color: hasActiveFilters ? "#7a5405" : C.inkSoft }}>
+        <CalendarDays size={12} /> Viendo: {hasActiveFilters
+          ? `${dateFrom || "inicio"} – ${dateTo || "hoy"}${filterTurno ? ` · ${filterTurno}` : ""}${filterTecnico ? ` · ${filterTecnico}` : ""}`
+          : "Este mes (sin filtros)"}
+      </div>
+
       {/* KPIs ejecutivos */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <StatCard label="Costo global de operación" value={cost.total ? `$${cost.total.toLocaleString("es-CO")}` : "—"}
@@ -11823,6 +11898,12 @@ function MaintenanceAnalyticsView({ equipos, mttoLog, issueHistory, activeIssues
             <X size={13} /> Limpiar filtros
           </button>
         )}
+      </div>
+
+      <div className="text-xs font-medium mb-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: hasActiveFilters ? C.amberSoft : C.bg, color: hasActiveFilters ? "#7a5405" : C.inkSoft }}>
+        <CalendarDays size={12} /> Viendo: {hasActiveFilters
+          ? `${dateFrom || "inicio"} – ${dateTo || "hoy"}${filterTurno ? ` · ${filterTurno}` : ""}${filterTecnico ? ` · ${filterTecnico}` : ""}${filterSistema ? ` · ${filterSistema}` : ""}`
+          : "Todo el historial"}
       </div>
 
       {/* KPIs de eficiencia */}
@@ -12808,7 +12889,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
         </div>
       )}
 
-      {isAdmin && (
+      {isAdmin && Object.keys(scheduleEntries || {}).length === 0 && (
         <div className="rounded-md p-2 mb-3 text-xs" style={{ background: C.amberSoft, color: "#7a5405" }}>
           <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
             <span>¿Primera vez usando esto? Importa de una vez el horario real ya trabajado, para tener la base sobre la que la IA arma los siguientes meses.</span>
@@ -18674,7 +18755,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
     const d = new Date();
     d.setDate(d.getDate() - days);
     setDateFrom(localDateIso(d));
-    setDateTo("");
+    setDateTo(localDateIso(new Date()));
   };
 
   const sinceDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
@@ -18840,6 +18921,10 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
         <button onClick={() => setShowExportModal(true)} title="Descargar o enviar PDF" className="p-2 rounded-md shrink-0 ml-auto" style={{ background: C.bg }}>
           <Download size={16} color={C.ink} />
         </button>
+      </div>
+
+      <div className="text-xs font-medium mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: hasActiveFilters ? C.amberSoft : C.bg, color: hasActiveFilters ? "#7a5405" : C.inkSoft }}>
+        <CalendarDays size={12} /> Viendo: {rangeLabel}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -19011,28 +19096,137 @@ function BackupButton() {
   );
 }
 
+/** Modal "Editar usuario" — reemplaza la fila de 6-7 botones por usuario. Junta info básica,
+ * acciones rápidas (clave/traspaso/eliminar), un selector de Rol Base (mutuamente excluyente:
+ * Operador/Almacenista/Gerencia) y, aparte, "Es administrador" como interruptor propio ya que un
+ * admin no es "un rol más" sino que ve y hace de todo. La sección de Permisos Específicos vive
+ * ahí mismo para cuando se agreguen más permisos finos (hoy solo hay uno real: editar horarios). */
+function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, currentUsername, onClose,
+  onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleScheduleManager, onDeleteAccount, onResetPassword, onTransferTasks }) {
+  const [newPw, setNewPw] = useState("");
+  const [resetMsg, setResetMsg] = useState("");
+  const [transferTo, setTransferTo] = useState("");
+  const [transferMsg, setTransferMsg] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const baseRole = acc.is_almacenista ? "almacenista" : acc.is_gerencia ? "gerencia" : "operador";
+  const isLastAdmin = acc.is_admin && adminCount === 1;
+
+  const setBaseRole = async (next) => {
+    setBusy(true);
+    try {
+      if (next !== "almacenista" && acc.is_almacenista) await onToggleAlmacenista(uid);
+      if (next !== "gerencia" && acc.is_gerencia) await onToggleGerencia(uid);
+      if (next === "almacenista" && !acc.is_almacenista) await onToggleAlmacenista(uid);
+      if (next === "gerencia" && !acc.is_gerencia) await onToggleGerencia(uid);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doReset = async () => {
+    if (!newPw || newPw.length < 4) { setResetMsg("La contraseña debe tener al menos 4 caracteres."); return; }
+    await onResetPassword(uid, newPw);
+    setResetMsg(`✓ Contraseña actualizada. Avísale la nueva clave a ${acc.display_name || acc.email}.`);
+    showToast("✓ Contraseña actualizada.", true);
+    setNewPw("");
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
+      <div className="fixed inset-x-2 top-10 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] z-50 rounded-xl border shadow-xl max-h-[85vh] overflow-y-auto"
+        style={{ background: "#fff", borderColor: C.line }}>
+        <div className="flex items-center justify-between p-4 border-b sticky top-0" style={{ borderColor: C.line, background: "#fff" }}>
+          <div>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>{acc.display_name || acc.email}</div>
+            <div className="text-xs" style={{ color: C.gray }}>{acc.email}</div>
+          </div>
+          <button onClick={onClose} className="p-1"><X size={16} color={C.gray} /></button>
+        </div>
+
+        <div className="p-4">
+          <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.created_at)}</div>
+
+          <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Acciones rápidas</div>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <input value={newPw} onChange={e => { setNewPw(e.target.value); setResetMsg(""); }} type="text" placeholder="Nueva contraseña (mín. 4 caracteres)"
+              className="flex-1 min-w-[180px] text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}
+              onKeyDown={e => { if (e.key === "Enter") doReset(); }} />
+            <Button size="sm" variant="ghost" onClick={doReset}>Restablecer contraseña</Button>
+          </div>
+          {resetMsg && <div className="text-xs mb-2" style={{ color: C.green }}>{resetMsg}</div>}
+
+          {openTaskCount > 0 && (
+            <div className="mb-2">
+              <div className="text-xs mb-1" style={{ color: C.inkSoft }}>Traspasar {openTaskCount} tarea{openTaskCount === 1 ? "" : "s"} abierta{openTaskCount === 1 ? "" : "s"} a:</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select value={transferTo} onChange={e => setTransferTo(e.target.value)}
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <option value="">Elige a quién…</option>
+                  {otherUsers.map(([u2, acc2]) => <option key={u2} value={u2}>{acc2.display_name || acc2.email}</option>)}
+                </select>
+                <Button size="sm" variant="ghost" disabled={!transferTo} onClick={async () => {
+                  const count = await onTransferTasks(uid, transferTo);
+                  setTransferMsg(`✓ Se pasaron ${count} tarea${count === 1 ? "" : "s"}.`);
+                  showToast("✓ Tareas traspasadas.", true);
+                }}>Traspasar</Button>
+              </div>
+              {transferMsg && <div className="text-xs mt-1" style={{ color: C.green }}>{transferMsg}</div>}
+            </div>
+          )}
+
+          <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Rol base</div>
+          <select value={baseRole} disabled={busy || acc.is_admin} onChange={e => setBaseRole(e.target.value)}
+            className="text-sm border rounded-md px-2 py-1.5 outline-none w-full mb-1" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <option value="operador">Operador</option>
+            <option value="almacenista">Almacenista</option>
+            <option value="gerencia">Gerencia (solo consulta)</option>
+          </select>
+          {acc.is_admin && <div className="text-[11px] mb-2" style={{ color: C.gray }}>Un administrador ya tiene acceso a todo — quita el admin abajo si quieres asignarle un rol base específico.</div>}
+
+          <label className="flex items-center justify-between gap-3 py-2 mt-1 cursor-pointer select-none">
+            <div>
+              <div className="text-sm" style={{ color: C.ink }}>Es administrador</div>
+              <div className="text-[11px]" style={{ color: C.gray }}>Acceso total a todos los módulos, incluido este panel.</div>
+            </div>
+            <input type="checkbox" checked={!!acc.is_admin} disabled={isLastAdmin} onChange={() => onToggleAdmin(uid)} />
+          </label>
+          {isLastAdmin && <div className="text-[11px] mb-2" style={{ color: C.red }}>No puedes quitarle admin — es el único administrador que queda.</div>}
+
+          <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Permisos específicos</div>
+          <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
+            <span className="text-sm" style={{ color: C.ink }}>Editar horarios (sin ser admin)</span>
+            <input type="checkbox" checked={!!acc.can_manage_schedule} disabled={acc.is_admin} onChange={() => onToggleScheduleManager(uid)} />
+          </label>
+
+          <div className="mt-5 pt-3 border-t" style={{ borderColor: C.line }}>
+            {confirmDelete ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs" style={{ color: C.red }}>¿Eliminar esta cuenta para siempre?</span>
+                <Button size="sm" variant="red" onClick={() => { onDeleteAccount(uid); onClose(); }}>Sí, eliminar</Button>
+                <button onClick={() => setConfirmDelete(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+              </div>
+            ) : (
+              <Button size="sm" variant="red" disabled={uid === currentUsername} onClick={() => setConfirmDelete(true)}>Eliminar usuario</Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleScheduleManager, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
   const [waSaved, setWaSaved] = useState(false);
-  const [resettingUser, setResettingUser] = useState(null);
-  const [transferringUser, setTransferringUser] = useState(null);
-  const [transferTo, setTransferTo] = useState("");
-  const [transferMsg, setTransferMsg] = useState(null);
-  const [newPw, setNewPw] = useState("");
-  const [resetMsg, setResetMsg] = useState("");
+  const [editingUser, setEditingUser] = useState(null);
   const list = Object.entries(accounts).sort((a, b) => (a[1].created_at || "").localeCompare(b[1].created_at || ""));
   const adminCount = list.filter(([, a]) => a.is_admin).length;
   const pending = list.filter(([, a]) => a.approved === false);
-
-  const doReset = async (uid) => {
-    if (!newPw || newPw.length < 4) { setResetMsg("La contraseña debe tener al menos 4 caracteres."); return; }
-    await onResetPassword(uid, newPw);
-    setResetMsg(`✓ Contraseña de "${accounts[uid]?.display_name || accounts[uid]?.email || uid}" actualizada. Avísale la nueva contraseña.`);
-    setNewPw("");
-    setTimeout(() => { setResettingUser(null); setResetMsg(""); }, 2500);
-  };
 
   return (
     <div>
@@ -19114,88 +19308,50 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
       <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Usuarios ({list.length})</div>
         {list.map(([uid, acc]) => (
-          <div key={uid} className="py-2 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <div className="text-sm font-medium" style={{ color: C.ink }}>
-                  {acc.display_name || acc.email} {uid === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}
-                </div>
-                <div className="text-xs" style={{ color: C.gray }}>{acc.email}</div>
-                <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.created_at)}</div>
-                <div className="text-xs" style={{ color: C.gray }}>
-                  {(() => {
-                    const entries = (loginLog || []).filter(l => l.userId === uid);
-                    if (entries.length === 0) return "Nunca ha entrado";
-                    return `Último ingreso: ${fmtDT(entries[0].at)} · ${entries.length} ingreso${entries.length !== 1 ? "s" : ""} en total`;
-                  })()}
-                </div>
+          <div key={uid} className="py-2 border-b last:border-0 flex items-center justify-between flex-wrap gap-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div>
+              <div className="text-sm font-medium" style={{ color: C.ink }}>
+                {acc.display_name || acc.email} {uid === currentUsername && <span className="text-xs" style={{ color: C.gray }}>(tú)</span>}
               </div>
-              <div className="flex items-center gap-2">
-                {acc.is_admin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
-                {acc.is_almacenista && <Pill tone="blue">Almacenista</Pill>}
-                {acc.is_gerencia && <Pill tone="green">Gerencia</Pill>}
-                {!acc.is_admin && acc.can_manage_schedule && <Pill tone="blue">Gestiona horarios</Pill>}
-                <Button size="sm" variant="ghost" onClick={() => { setResettingUser(resettingUser === uid ? null : uid); setNewPw(""); setResetMsg(""); }}>
-                  Restablecer contraseña
-                </Button>
+              <div className="text-xs" style={{ color: C.gray }}>{acc.email}</div>
+              <div className="text-xs" style={{ color: C.gray }}>Creado: {fmtDT(acc.created_at)}</div>
+              <div className="text-xs" style={{ color: C.gray }}>
                 {(() => {
-                  const openCount = (tasks || []).filter(t => t.asignadoA === uid && normalizeTaskState(t.estado) !== "finalizada").length;
-                  return openCount > 0 ? (
-                    <Button size="sm" variant="ghost" onClick={() => { setTransferringUser(transferringUser === uid ? null : uid); setTransferTo(""); setTransferMsg(null); }}>
-                      Traspasar {openCount} tarea{openCount === 1 ? "" : "s"}
-                    </Button>
-                  ) : null;
+                  const entries = (loginLog || []).filter(l => l.userId === uid);
+                  if (entries.length === 0) return "Nunca ha entrado";
+                  return `Último ingreso: ${fmtDT(entries[0].at)} · ${entries.length} ingreso${entries.length !== 1 ? "s" : ""} en total`;
                 })()}
-                <Button size="sm" variant="ghost" disabled={acc.is_admin && adminCount === 1} onClick={() => onToggleAdmin(uid)}>
-                  {acc.is_admin ? "Quitar admin" : "Hacer admin"}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onToggleAlmacenista(uid)}>
-                  {acc.is_almacenista ? "Quitar almacenista" : "Hacer almacenista"}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onToggleGerencia(uid)}>
-                  {acc.is_gerencia ? "Quitar gerencia" : "Hacer gerencia (solo consulta)"}
-                </Button>
-                {!acc.is_admin && (
-                  <Button size="sm" variant="ghost" onClick={() => onToggleScheduleManager(uid)}>
-                    {acc.can_manage_schedule ? "Quitar acceso a horarios" : "Dar acceso a editar horarios"}
-                  </Button>
-                )}
-                <Button size="sm" variant="red" disabled={uid === currentUsername} onClick={() => onDeleteAccount(uid)}>Eliminar</Button>
               </div>
             </div>
-            {resettingUser === uid && (
-              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                <input value={newPw} onChange={e => setNewPw(e.target.value)} type="text" placeholder="Nueva contraseña (mínimo 4 caracteres)"
-                  className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 220 }}
-                  onKeyDown={e => { if (e.key === "Enter") doReset(uid); }} />
-                <Button size="sm" onClick={() => doReset(uid)}>Guardar nueva contraseña</Button>
-                {resetMsg && <span className="text-xs" style={{ color: resetMsg.startsWith("✓") ? C.green : C.red }}>{resetMsg}</span>}
-              </div>
-            )}
-            {transferringUser === uid && (
-              <div className="mt-2 rounded-md p-2" style={{ background: C.bg }}>
-                <div className="text-xs mb-1.5" style={{ color: C.inkSoft }}>
-                  Pasa todas las tareas abiertas de {acc.display_name || acc.email} a otra persona (por ejemplo, si sale de vacaciones o cambia de turno fijo):
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <select value={transferTo} onChange={e => setTransferTo(e.target.value)}
-                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                    <option value="">Elige a quién…</option>
-                    {list.filter(([u2]) => u2 !== uid).map(([u2, acc2]) => <option key={u2} value={u2}>{acc2.display_name || acc2.email}</option>)}
-                  </select>
-                  <Button size="sm" disabled={!transferTo} onClick={async () => {
-                    const count = await onTransferTasks(uid, transferTo);
-                    setTransferMsg({ uid, ok: true, text: `✓ Se pasaron ${count} tarea${count === 1 ? "" : "s"}.` });
-                    setTransferringUser(null);
-                  }}>Traspasar</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setTransferringUser(null)}>Cancelar</Button>
-                </div>
-              </div>
-            )}
-            {transferMsg?.uid === uid && transferringUser !== uid && <div className="text-xs mt-1" style={{ color: C.green }}>{transferMsg.text}</div>}
+            <div className="flex items-center gap-2">
+              {acc.is_admin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
+              {acc.is_almacenista && <Pill tone="blue">Almacenista</Pill>}
+              {acc.is_gerencia && <Pill tone="green">Gerencia</Pill>}
+              {!acc.is_admin && acc.can_manage_schedule && <Pill tone="blue">Gestiona horarios</Pill>}
+              <Button size="sm" variant="ghost" icon={SettingsIcon} onClick={() => setEditingUser(uid)}>Editar usuario</Button>
+            </div>
           </div>
         ))}
       </div>
+
+      {editingUser && accounts[editingUser] && (
+        <UserEditModal
+          uid={editingUser}
+          acc={accounts[editingUser]}
+          adminCount={adminCount}
+          openTaskCount={(tasks || []).filter(t => t.asignadoA === editingUser && normalizeTaskState(t.estado) !== "finalizada").length}
+          otherUsers={list.filter(([u2]) => u2 !== editingUser)}
+          currentUsername={currentUsername}
+          onClose={() => setEditingUser(null)}
+          onToggleAdmin={onToggleAdmin}
+          onToggleAlmacenista={onToggleAlmacenista}
+          onToggleGerencia={onToggleGerencia}
+          onToggleScheduleManager={onToggleScheduleManager}
+          onDeleteAccount={onDeleteAccount}
+          onResetPassword={onResetPassword}
+          onTransferTasks={onTransferTasks}
+        />
+      )}
     </div>
   );
 }
@@ -21377,6 +21533,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
+      <ToastHost />
       {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin
           importar si la app está en modo claro u oscuro, para que combine con el theme-color
           del manifiesto y no se vea un bloque blanco cortado arriba en iOS. */}

@@ -8952,8 +8952,29 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     setNewTab("manual");
   };
 
-  const doCreate = async () => {
+  const [dupWarning, setDupWarning] = useState(null);
+  const findDuplicateTask = (tituloRaw, equipoId) => {
+    const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+    const titulo = norm(tituloRaw);
+    if (!titulo) return null;
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    return (tasks || []).find(t => {
+      const createdSameDay = new Date(t.createdAt) >= today0;
+      if (!createdSameDay) return false;
+      const sameEquipo = equipoId && t.equipoId === equipoId;
+      const tTitulo = norm(t.titulo);
+      const similarTitulo = tTitulo === titulo || (titulo.length > 6 && (tTitulo.includes(titulo) || titulo.includes(tTitulo)));
+      return sameEquipo || similarTitulo;
+    }) || null;
+  };
+
+  const doCreate = async (skipDupCheck = false) => {
     if (!form.titulo.trim()) return;
+    if (!skipDupCheck) {
+      const dup = findDuplicateTask(form.titulo, form.equipoId);
+      if (dup) { setDupWarning(dup); return; }
+    }
+    setDupWarning(null);
     setSaving(true); setSaveMsg(null);
     try {
       const { fotosAntes, ...rest } = form;
@@ -8964,7 +8985,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         async (payload, urls) => { await onCreateTask({ ...payload, fotosAntes: urls }); }
       );
       setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
-      setShowNew(false); setNewTab("manual");
+      setShowNew(false); setNewTab("manual"); setDupWarning(null);
       if (res.queued) setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." });
     } catch (e) {
       setSaveMsg({ ok: false, text: e.message || "No se pudo crear la tarea — revisa tu conexión e intenta de nuevo." });
@@ -9342,7 +9363,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                 </div>
               )}
               <div className="flex items-center gap-1 mb-2">
-                <input value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="¿Qué hay que hacer?"
+                <input value={form.titulo} onChange={e => { setForm(f => ({ ...f, titulo: e.target.value })); setDupWarning(null); }} placeholder="¿Qué hay que hacer?"
                   className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
               </div>
@@ -9420,8 +9441,19 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             </div>
             <PhotoPicker photos={form.fotosAntes} onChange={fotosAntes => setForm(f => ({ ...f, fotosAntes }))} max={4} />
           </div>
+          {dupWarning && (
+            <div className="rounded-md p-2.5 mb-2" style={{ background: C.amberSoft }}>
+              <div className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "#7a5405" }}>
+                <AlertTriangle size={13} /> Se parece a una tarea de hoy: "{dupWarning.titulo}"
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <Button size="sm" variant="ghost" onClick={() => doCreate(true)}>Crear de todos modos</Button>
+                <button onClick={() => setDupWarning(null)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+              </div>
+            </div>
+          )}
           {saveMsg && <div className="text-xs mb-2" style={{ color: saveMsg.ok ? C.green : C.red }}>{saveMsg.text}</div>}
-          <Button size="sm" disabled={saving} onClick={doCreate}>{saving ? "Guardando…" : "Crear tarea"}</Button>
+          <Button size="sm" disabled={saving} onClick={() => doCreate(false)}>{saving ? "Guardando…" : "Crear tarea"}</Button>
             </>
           )}
         </div>
@@ -10239,7 +10271,11 @@ function VideoEmbed({ url }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra }) {
+function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, mttoRequiredFields, onUpdateRequiredFields }) {
+  const [editingEquipo, setEditingEquipo] = useState(false);
+  const [equipoDraft, setEquipoDraft] = useState({ nombre: equipo.nombre, sistema: equipo.sistema });
+  const [savingEquipo, setSavingEquipo] = useState(false);
+  const [cascadeConfirm, setCascadeConfirm] = useState(null);
   const [editingVideo, setEditingVideo] = useState(false);
   const [videoDraft, setVideoDraft] = useState(equipo.videoUrl || "");
   const [savingVideo, setSavingVideo] = useState(false);
@@ -10287,8 +10323,54 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
     setDownloadingQr(false);
   };
 
-  const doSave = async () => {
+  // ===== Auditoría de ediciones en cascada =====
+  // Cuenta cuántos mantenimientos y tareas ya guardados quedan vinculados a este equipo, para
+  // que quien edite el sistema/nombre vea de un vistazo cuántos registros "viejos" van a
+  // aparecer ahora bajo el valor nuevo (útil para no romper estadísticas por sistema sin darse
+  // cuenta de cuántos registros históricos arrastra el cambio).
+  const affectedCounts = useMemo(() => ({
+    mantenimientos: (records || []).length,
+    tareas: (tasks || []).filter(t => t.equipoId === equipo.id).length,
+  }), [records, tasks, equipo.id]);
+
+  const requestSaveEquipoInfo = () => {
+    const nombre = (equipoDraft.nombre || "").trim();
+    const sistema = (equipoDraft.sistema || "").trim();
+    if (!nombre || !sistema) return;
+    const sistemaChanged = sistema !== equipo.sistema;
+    const nada = affectedCounts.mantenimientos + affectedCounts.tareas === 0;
+    if (sistemaChanged && !nada) {
+      setCascadeConfirm({ nombre, sistema });
+    } else {
+      doSaveEquipoInfo(nombre, sistema);
+    }
+  };
+
+  const doSaveEquipoInfo = async (nombre, sistema) => {
+    setSavingEquipo(true);
+    try {
+      await onUpdateEquipoInfo?.(equipo.id, { nombre, sistema });
+      setEditingEquipo(false);
+      setCascadeConfirm(null);
+    } finally {
+      setSavingEquipo(false);
+    }
+  };
+
+  const [dupWarning, setDupWarning] = useState(null);
+  const reqFields = mttoRequiredFields || { foto: false, costo: false, repuestos: false };
+
+  const doSave = async (skipDupCheck = false) => {
     if (!descripcion.trim()) { setSaveMsg({ ok: false, text: "Escribe qué se hizo." }); return; }
+    if (reqFields.foto && photos.length === 0) { setSaveMsg({ ok: false, text: "Falta al menos una foto — es obligatoria para este registro." }); return; }
+    if (reqFields.costo && !(Number(costo) > 0)) { setSaveMsg({ ok: false, text: "Falta el costo — es obligatorio para este registro." }); return; }
+    if (reqFields.repuestos && repuestos.length === 0) { setSaveMsg({ ok: false, text: "Falta registrar al menos un repuesto usado — es obligatorio para este registro." }); return; }
+    if (!skipDupCheck) {
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const dup = (records || []).find(r => new Date(r.fecha || r.createdAt) >= today0);
+      if (dup) { setDupWarning(dup); return; }
+    }
+    setDupWarning(null);
     setSaving(true); setSaveMsg(null);
     try {
       const res = await saveRecordWithPhotos(
@@ -10297,7 +10379,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
         photos,
         async (payload, urls) => { await onLogMaintenance(payload.equipoId, { ...payload, fotos: urls }); }
       );
-      setDescripcion(""); setCosto(""); setCostoRepuestos(""); setCostoContratista(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando"); setRepuestos([]);
+      setDescripcion(""); setCosto(""); setCostoRepuestos(""); setCostoContratista(""); setPhotos([]); setTipo("preventivo"); setEstado("funcionando"); setRepuestos([]); setDupWarning(null);
       setSaveMsg(res.queued
         ? { ok: true, text: "✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva, sin que tengas que escribir nada de nuevo." }
         : { ok: true, text: "✓ Mantenimiento registrado." });
@@ -10322,8 +10404,47 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
           <div className="flex items-start justify-between flex-wrap gap-2">
             <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{equipo.nombre}</h2>
             {status.outOfService && <Pill tone="red">Fuera de servicio desde {fmtDT(status.since)}</Pill>}
+            {isAdmin && !editingEquipo && (
+              <button onClick={() => { setEquipoDraft({ nombre: equipo.nombre, sistema: equipo.sistema }); setCascadeConfirm(null); setEditingEquipo(true); }}
+                className="text-xs font-semibold" style={{ color: C.amber }}>
+                Editar equipo
+              </button>
+            )}
           </div>
-          <p className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
+          {editingEquipo ? (
+            <div className="rounded-md border p-2.5 mt-1.5 mb-1" style={{ borderColor: C.line, background: C.bg }}>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <input value={equipoDraft.nombre} onChange={e => setEquipoDraft(d => ({ ...d, nombre: e.target.value }))} placeholder="Nombre del equipo"
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1 min-w-[160px]" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <input value={equipoDraft.sistema} onChange={e => setEquipoDraft(d => ({ ...d, sistema: e.target.value }))} placeholder="Sistema"
+                  className="text-sm border rounded-md px-2 py-1.5 outline-none flex-1 min-w-[140px]" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              </div>
+              {cascadeConfirm ? (
+                <div className="rounded-md p-2.5 mb-2" style={{ background: C.amberSoft }}>
+                  <div className="text-xs font-semibold flex items-center gap-1.5 mb-1" style={{ color: "#7a5405" }}>
+                    <AlertTriangle size={13} /> Este cambio afecta registros existentes
+                  </div>
+                  <div className="text-xs" style={{ color: "#7a5405" }}>
+                    Este equipo tiene <b>{affectedCounts.mantenimientos}</b> mantenimiento{affectedCounts.mantenimientos !== 1 ? "s" : ""} y <b>{affectedCounts.tareas}</b> tarea{affectedCounts.tareas !== 1 ? "s" : ""} ya registrados bajo el sistema "<b>{equipo.sistema}</b>".
+                    Si cambias al sistema "<b>{cascadeConfirm.sistema}</b>", esos registros no se borran ni se editan, pero de ahora en adelante aparecerán en reportes y estadísticas bajo el sistema nuevo.
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button size="sm" disabled={savingEquipo} onClick={() => doSaveEquipoInfo(cascadeConfirm.nombre, cascadeConfirm.sistema)}>
+                      {savingEquipo ? "Guardando…" : "Confirmar cambio"}
+                    </Button>
+                    <button onClick={() => setCascadeConfirm(null)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" disabled={savingEquipo} onClick={requestSaveEquipoInfo}>{savingEquipo ? "Guardando…" : "Guardar"}</Button>
+                  <button onClick={() => { setEditingEquipo(false); setCascadeConfirm(null); }} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
+          )}
           {isAdmin && (
             <label className="inline-flex items-center gap-1 text-xs font-semibold mt-1 cursor-pointer" style={{ color: C.amber }}>
               {uploadingFoto ? "Subiendo…" : equipo.fotoMaestra ? "Cambiar foto oficial" : "Agregar foto oficial del equipo"}
@@ -10469,16 +10590,28 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
               className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             <VoiceInputButton onResult={text => setDescripcion(d => (d ? d + " " : "") + text)} />
           </div>
-          <div className="text-xs mb-1" style={{ color: C.gray }}>Fotos (opcional, hasta 2)</div>
+          <div className="text-xs mb-1" style={{ color: C.gray }}>Fotos {reqFields.foto ? <b style={{ color: "#a31245" }}>(obligatorio)</b> : "(opcional, hasta 2)"}</div>
           <PhotoPicker photos={photos} onChange={setPhotos} max={6} />
           {invItems && (
             <>
-              <div className="text-xs mb-1 mt-2" style={{ color: C.gray }}>Repuestos usados (opcional) — se descuentan solos del inventario</div>
+              <div className="text-xs mb-1 mt-2" style={{ color: C.gray }}>Repuestos usados {reqFields.repuestos ? <b style={{ color: "#a31245" }}>(obligatorio)</b> : "(opcional)"} — se descuentan solos del inventario</div>
               <PartsPicker invItems={invItems} parts={repuestos} onChange={setRepuestos} />
             </>
           )}
+          {reqFields.costo && <div className="text-[10px] mb-1" style={{ color: "#a31245" }}>El costo total es obligatorio para este registro.</div>}
+          {dupWarning && (
+            <div className="rounded-md p-2.5 mt-2" style={{ background: C.amberSoft }}>
+              <div className="text-xs font-semibold flex items-center gap-1.5" style={{ color: "#7a5405" }}>
+                <AlertTriangle size={13} /> Ya hay un registro de hoy para este equipo, a las {fmtDT(dupWarning.fecha || dupWarning.createdAt)}
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <Button size="sm" variant="ghost" onClick={() => doSave(true)}>Registrar de todos modos</Button>
+                <button onClick={() => setDupWarning(null)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+              </div>
+            </div>
+          )}
           <div className="mt-2">
-            <Button size="sm" disabled={saving} onClick={doSave}>{saving ? "Guardando…" : "Guardar registro"}</Button>
+            <Button size="sm" disabled={saving} onClick={() => doSave(false)}>{saving ? "Guardando…" : "Guardar registro"}</Button>
           </div>
           {saveMsg && <div className="text-xs mt-2" style={{ color: saveMsg.ok ? C.green : C.red }}>{saveMsg.text}</div>}
         </div>
@@ -10554,7 +10687,7 @@ function EquipoDetailView({ equipo, records, invItems, onBack, onLogMaintenance,
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -10571,7 +10704,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} />;
+    return <EquipoDetailView equipo={equipo} records={records} tasks={tasks} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} onUpdateEquipoInfo={onUpdateEquipoInfo} mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={onUpdateRequiredFields} />;
   }
 
   if (selectedSistema) {
@@ -10580,8 +10713,45 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   }
 
   return (
-    <SistemasListView equipos={equipos} mttoLog={mttoLog} canManage={canManage}
-      onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog} />
+    <>
+      {isAdmin && <RequiredFieldsSettings value={mttoRequiredFields} onChange={onUpdateRequiredFields} />}
+      <SistemasListView equipos={equipos} mttoLog={mttoLog} canManage={canManage}
+        onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog} />
+    </>
+  );
+}
+
+/** Panel de configuración (solo admin) para decidir qué campos son obligatorios al registrar un
+ * mantenimiento, sin necesidad de tocar código: foto, costo, repuestos usados. Se guarda en
+ * app_storage vía sGet/sSet igual que el resto de la configuración de la app. */
+function RequiredFieldsSettings({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const v = value || { foto: false, costo: false, repuestos: false };
+  const Toggle = ({ label, field }) => (
+    <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
+      <span className="text-sm" style={{ color: C.ink }}>{label}</span>
+      <input type="checkbox" checked={!!v[field]} onChange={e => onChange?.({ [field]: e.target.checked })} />
+    </label>
+  );
+  return (
+    <div className="rounded-lg border mb-3" style={{ borderColor: C.line, background: C.panel }}>
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-3 py-2 text-left">
+        <span className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: C.inkSoft }}>
+          <SettingsIcon size={13} /> Campos obligatorios al registrar mantenimiento
+        </span>
+        {open ? <ChevronDown size={15} color={C.gray} /> : <ChevronRight size={15} color={C.gray} />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 border-t" style={{ borderColor: C.line }}>
+          <div className="text-xs mt-2 mb-1" style={{ color: C.gray }}>
+            Decide qué debe llenar quien registra un mantenimiento antes de poder guardar. Aplica a todos los equipos.
+          </div>
+          <Toggle label="Foto obligatoria" field="foto" />
+          <Toggle label="Costo obligatorio" field="costo" />
+          <Toggle label="Repuestos usados obligatorios" field="repuestos" />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -19184,6 +19354,7 @@ export default function App() {
   const [tools, setTools] = useState([]);
   const [contractorVisits, setContractorVisits] = useState([]);
   const [wikiPages, setWikiPages] = useState([]);
+  const [mttoRequiredFields, setMttoRequiredFields] = useState({ foto: false, costo: false, repuestos: false });
   const [roomTypes, setRoomTypes] = useState([]);
   const [systemDiagrams, setSystemDiagrams] = useState([]);
   const [systemProcedures, setSystemProcedures] = useState([]);
@@ -19265,7 +19436,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls, rtp, rbk, sd, sp, cvis, wiki] = await Promise.all([
+      const [ai, ih, ri, lv, th, email, sr, wa, lt, thist, lcv, cri, lmv, mh, mri, lcr, ch, bod, shv, iit, imv, emp, sch, mte, mtl, mtc, llv, lri, lgv, gri, cari, lcar, psub, tsk, trs, llog, schLog, chgl, gel, fh, tls, rtp, rbk, sd, sp, cvis, wiki, mrf] = await Promise.all([
         sGet("active-issues", true),
         sGet("issue-history", true), sGet("rounds-index", true), sGet("latest-values", true),
         sGet("tank-history", true), sGet("report-email", true), sGet("sent-reports", true),
@@ -19295,6 +19466,7 @@ export default function App() {
         sGet("system-procedures", true),
         sGet("contractor-visits", true),
         sGet("wiki-pages", true),
+        sGet("mtto-required-fields", true),
       ]);
       setActiveIssues(ai || {});
       setIssueHistory(ih || []);
@@ -19344,6 +19516,7 @@ export default function App() {
       setTools(tls || []);
       setContractorVisits(cvis || []);
       setWikiPages(wiki || []);
+      setMttoRequiredFields(mrf || { foto: false, costo: false, repuestos: false });
       setRoomTypes(rtp || []);
       setRoomBlocks(rbk || []);
       // Igual que con el changelog: fusiona los diagramas "de fábrica" con los que ya haya
@@ -19943,6 +20116,23 @@ export default function App() {
     await sSet("mtto-equipos", next, true);
   };
 
+  /** Edita nombre/sistema de un equipo ya existente. Se usa junto con la auditoría de cascada:
+   * la UI le muestra antes al usuario cuántos mantenimientos/tareas quedarían bajo el sistema
+   * nuevo, y solo si confirma se llama a esta función. */
+  const updateMttoEquipoInfo = async (id, patch) => {
+    const before = mttoEquipos.find(e => e.id === id);
+    if (!before) return;
+    const next = mttoEquipos.map(e => e.id === id ? { ...e, ...patch } : e);
+    setMttoEquipos(next);
+    await sSet("mtto-equipos", next, true);
+    if (patch.sistema && patch.sistema !== before.sistema) {
+      logGeneralEdit({
+        kind: "equipo", action: "edicion", entityLabel: before.nombre,
+        detail: `Sistema cambiado de "${before.sistema}" a "${patch.sistema}"`,
+      });
+    }
+  };
+
   const setEquipoFotoMaestra = async (id, url) => {
     const next = mttoEquipos.map(e => e.id === id ? { ...e, fotoMaestra: url || null } : e);
     setMttoEquipos(next);
@@ -20525,6 +20715,13 @@ export default function App() {
     const next = wikiPages.filter(p => p.id !== pageId);
     setWikiPages(next);
     await sSet("wiki-pages", next, true);
+  };
+
+  /* ---- Campos obligatorios configurables por admin al registrar un mantenimiento ---- */
+  const updateMttoRequiredFields = async (patch) => {
+    const next = { ...mttoRequiredFields, ...patch };
+    setMttoRequiredFields(next);
+    await sSet("mtto-required-fields", next, true);
   };
 
   /* ---- Habitaciones: tipos (con sus accesorios) y bloqueos con motivo ---- */
@@ -21611,6 +21808,8 @@ export default function App() {
               onSetVideoUrl={setEquipoVideoUrl}
               onSetFrecuencia={setEquipoFrecuencia}
               onSetFotoMaestra={setEquipoFotoMaestra}
+              onUpdateEquipoInfo={updateMttoEquipoInfo} tasks={tasks}
+              mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={updateMttoRequiredFields}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (

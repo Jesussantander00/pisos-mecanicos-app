@@ -6700,9 +6700,7 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
     <div className="min-h-screen flex items-center justify-center" style={{ background: C.steelDark }}>
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-6">
-          <div className="mx-auto w-12 h-12 rounded-lg flex items-center justify-center mb-3" style={{ background: C.amber }}>
-            <Gauge size={26} color="#fff" />
-          </div>
+          <img src="/icon-192.png" alt="QuinTech" className="mx-auto w-12 h-12 rounded-lg mb-3 object-cover" />
           <h1 className="text-white text-lg font-semibold tracking-tight">Revisión Diaria de Equipos</h1>
           <p className="text-sm" style={{ color: "#8fa3b8" }}>QuinTech · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
         </div>
@@ -21596,7 +21594,7 @@ export default function App() {
         <div className="pm-safe-top p-4 border-b shrink-0" style={{ borderColor: "#2a3f56" }}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: C.amber }}><Gauge size={18} color="#fff" /></div>
+              <img src="/icon-192.png" alt="QuinTech" className="w-8 h-8 rounded-md object-cover" />
               <div>
                 <div className="text-white text-sm font-semibold leading-tight">QuinTech</div>
                 <div className="text-xs" style={{ color: "#8fa3b8" }}>Revisión diaria</div>

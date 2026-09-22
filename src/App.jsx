@@ -1611,12 +1611,61 @@ function employeesWorkingNow(employees, scheduleEntries, now = new Date()) {
 /* ============================================================
    HORARIOS — festivos Colombia 2026 y reglas de turnistas
    ============================================================ */
-const COLOMBIA_HOLIDAYS_2026 = [
-  "2026-01-01", "2026-01-12", "2026-03-23", "2026-04-02", "2026-04-03",
-  "2026-05-01", "2026-05-18", "2026-06-08", "2026-06-15", "2026-06-29",
-  "2026-07-13", "2026-07-20", "2026-08-07", "2026-08-17", "2026-10-12",
-  "2026-11-02", "2026-11-16", "2026-12-08", "2026-12-25",
-];
+/** Calcula los festivos de Colombia para CUALQUIER año (antes esto era una lista escrita a mano
+ *  solo para 2026 — funcionaba mientras durara ese año, pero se hubiera "roto" en silencio en
+ *  enero de 2027, dejando de reconocer festivos sin ningún aviso). Se calcula con la fecha de
+ *  Pascua (algoritmo de Meeus/Jones/Butcher) y la Ley Emiliani (varios festivos se trasladan al
+ *  lunes siguiente si no caen ya en lunes), y se guarda en caché por año para no recalcular. */
+const _colombiaHolidaysCache = {};
+function _fmtIsoUTC(d) {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+function _addDaysUTC(d, days) {
+  const r = new Date(d.getTime());
+  r.setUTCDate(r.getUTCDate() + days);
+  return r;
+}
+function _toNextMondayUTC(d) {
+  const day = d.getUTCDay(); // 0=domingo … 1=lunes
+  if (day === 1) return d;
+  const add = (8 - day) % 7 || 7;
+  return _addDaysUTC(d, add);
+}
+function _easterSundayUTC(year) {
+  // Algoritmo de Meeus/Jones/Butcher (calendario gregoriano) — devuelve el Domingo de Pascua.
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+function colombiaHolidaysForYear(year) {
+  if (_colombiaHolidaysCache[year]) return _colombiaHolidaysCache[year];
+  const fixed = [`${year}-01-01`, `${year}-05-01`, `${year}-07-20`, `${year}-08-07`, `${year}-12-08`, `${year}-12-25`];
+  const emilianiRaw = [
+    Date.UTC(year, 0, 6),   // Reyes Magos
+    Date.UTC(year, 2, 19),  // San José
+    Date.UTC(year, 5, 29),  // San Pedro y San Pablo
+    Date.UTC(year, 7, 15),  // Asunción de la Virgen
+    Date.UTC(year, 9, 12),  // Día de la Raza
+    Date.UTC(year, 10, 1),  // Todos los Santos
+    Date.UTC(year, 10, 11), // Independencia de Cartagena
+  ].map(ms => _fmtIsoUTC(_toNextMondayUTC(new Date(ms))));
+  const easter = _easterSundayUTC(year);
+  const easterBased = [
+    _fmtIsoUTC(_addDaysUTC(easter, -3)), // Jueves Santo
+    _fmtIsoUTC(_addDaysUTC(easter, -2)), // Viernes Santo
+    _fmtIsoUTC(_toNextMondayUTC(_addDaysUTC(easter, 39))), // Ascensión
+    _fmtIsoUTC(_toNextMondayUTC(_addDaysUTC(easter, 60))), // Corpus Christi
+    _fmtIsoUTC(_toNextMondayUTC(_addDaysUTC(easter, 68))), // Sagrado Corazón
+  ];
+  const all = [...fixed, ...emilianiRaw, ...easterBased];
+  _colombiaHolidaysCache[year] = all;
+  return all;
+}
 
 const SPECIAL_CODES = [
   { code: "VAC", label: "Vacaciones" },
@@ -6421,10 +6470,14 @@ const DEFAULT_CHANGELOG_SEED = [
   { id: "cl-seed-1", title: "Mi horario y accesos rápidos", description: "Cada quien puede ver solo sus propios turnos, y hay botones grandes en Inicio para las acciones más comunes.", at: "2026-08-12T00:00:00.000Z", by: "Sistema" },
 ];
 
-function isHoliday2026(dateIso) { return COLOMBIA_HOLIDAYS_2026.includes(dateIso); }
+function isColombiaHoliday(dateIso) {
+  const year = parseInt(String(dateIso).slice(0, 4), 10);
+  if (!year) return false;
+  return colombiaHolidaysForYear(year).includes(dateIso);
+}
 function isSundayOrHoliday(dateIso) {
   const d = new Date(dateIso + "T00:00:00");
-  return d.getDay() === 0 || isHoliday2026(dateIso);
+  return d.getDay() === 0 || isColombiaHoliday(dateIso);
 }
 function scheduleKey(employeeId, dateIso) { return `${employeeId}::${dateIso}`; }
 
@@ -6479,17 +6532,17 @@ function buildIcsForEmployee(employee, daysIso, entriesByEmployee) {
     const end = fmtIcsDate(endDateIso, entry.salida);
     events.push(
       "BEGIN:VEVENT",
-      `UID:${employee.id}-${d}@pisosmecanicos-hcc.com`,
+      `UID:${employee.id}-${d}@quintech-hcc.com`,
       `DTSTAMP:${nowIso().replace(/[-:]/g, "").split(".")[0]}Z`,
       `DTSTART:${start}`,
       `DTEND:${end}`,
-      `SUMMARY:Turno — Pisos Mecánicos`,
+      `SUMMARY:Turno — QuinTech`,
       `DESCRIPTION:Hyatt Regency Cartagena, Ingeniería`,
       "END:VEVENT"
     );
   });
   return [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Pisos Mecanicos - Hyatt Regency Cartagena//ES", "CALSCALE:GREGORIAN",
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//QuinTech - Hyatt Regency Cartagena//ES", "CALSCALE:GREGORIAN",
     ...events,
     "END:VCALENDAR",
   ].join("\r\n");
@@ -6940,7 +6993,8 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
   const [validationMsg, setValidationMsg] = useState(null);
   const visibleItems = floor.items;
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false);
+  const handleSave = async () => {
     const { missing, missingComment } = validateRoundEntries(floor.items, entries);
     if (missingComment.length > 0) {
       setValidationMsg({ prefix: "Falta el comentario de qué pasó en:", items: missingComment, suffix: "Los equipos marcados como dañados necesitan una observación antes de guardar." });
@@ -6951,10 +7005,21 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
       return;
     }
     setValidationMsg(null);
-    onSaveRound(floor, entries, notes);
-    setSaved(true);
-    if (!isLast) {
-      setTimeout(() => onGoFloor(floorIndex + 1), 700);
+    setSaving(true);
+    try {
+      // Antes esto no esperaba a que se confirmara el guardado en Supabase: si fallaba la red
+      // (wifi del hotel cortándose, por ejemplo), la app decía "Guardado" y avanzaba al siguiente
+      // piso igual, perdiendo esta ronda sin que nadie se enterara. Ahora sí se espera de verdad.
+      await onSaveRound(floor, entries, notes);
+      setSaved(true);
+      if (!isLast) {
+        setTimeout(() => onGoFloor(floorIndex + 1), 700);
+      }
+    } catch (e) {
+      setValidationMsg({ prefix: "No se pudo guardar esta ronda — revisa tu conexión e intenta de nuevo.", items: [] });
+      showToast("✗ No se pudo guardar la ronda. Intenta de nuevo.", false);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -7012,8 +7077,8 @@ function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onRe
 
       <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Vo.Bo. pendiente de supervisor</div>
-        <Button icon={Save} variant="amber" onClick={handleSave}>
-          {isLast ? "Finalizar y enviar" : "Guardar y pasar al siguiente piso"}
+        <Button icon={Save} variant="amber" onClick={handleSave} disabled={saving}>
+          {saving ? "Guardando…" : (isLast ? "Finalizar y enviar" : "Guardar y pasar al siguiente piso")}
         </Button>
       </div>
       {saved && (
@@ -7071,6 +7136,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sendMsg, setSendMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -7098,7 +7164,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
   const weekGrid = useMemo(() => buildColdRoomsWeekGrid(coldHistory || {}, weekStart), [coldHistory, weekStart]);
   const weekLabel = `${fmtDayFull(weekStart)} — ${fmtDayFull(addDays(weekStart, 6))}`;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const { missing, missingComment } = validateRoundEntries(ALL_COLD_ROOM_ITEMS, entries);
     if (missingComment.length > 0) {
       setSendMsg({ ok: false, text: "Falta el comentario de qué pasó en:", items: missingComment });
@@ -7108,9 +7174,17 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
       setSendMsg({ ok: false, text: "Todavía faltan estos por registrar:", items: missing });
       return;
     }
-    onSaveColdRound(entries, notes, supervisor, ingeniero);
-    setSaved(true);
-    setSendMsg(null);
+    setSaving(true);
+    try {
+      await onSaveColdRound(entries, notes, supervisor, ingeniero);
+      setSaved(true);
+      setSendMsg(null);
+    } catch (e) {
+      setSendMsg({ ok: false, text: "No se pudo guardar — revisa tu conexión e intenta de nuevo." });
+      showToast("✗ No se pudo guardar la ronda de cuartos fríos.", false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const doDownloadPdf = async () => {
@@ -7227,7 +7301,7 @@ function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValues, onR
 
       <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
-        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
+        <Button icon={Save} variant="amber" onClick={handleSave} disabled={saving}>{saving ? "Guardando…" : "Guardar ronda"}</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1 mb-3" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
       {sendMsg && !sendMsg.ok && !sendMsg.items && (
@@ -7347,6 +7421,8 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}").notes || ""; } catch { return ""; }
   });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [restoredDraft] = useState(() => {
     try { return Object.keys(JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}").entries || {}).length > 0; } catch { return false; }
   });
@@ -7371,12 +7447,20 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
 
   const anomalies = useMemo(() => computeMeterAnomalies(meterHistory || {}), [meterHistory]);
 
-  const handleSave = () => {
-    onSaveMetersRound(entries, notes);
-    setSaved(true);
-    setEntries({});
-    setNotes("");
-    try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
+  const handleSave = async () => {
+    setSaving(true); setSaveError(null);
+    try {
+      await onSaveMetersRound(entries, notes);
+      setSaved(true);
+      setEntries({});
+      setNotes("");
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
+    } catch (e) {
+      setSaveError("No se pudo guardar — revisa tu conexión e intenta de nuevo.");
+      showToast("✗ No se pudieron guardar las lecturas.", false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -7427,8 +7511,9 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
 
       <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
-        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar lecturas</Button>
+        <Button icon={Save} variant="amber" onClick={handleSave} disabled={saving}>{saving ? "Guardando…" : "Guardar lecturas"}</Button>
       </div>
+      {saveError && <div className="text-right text-sm mt-1" style={{ color: C.red }}>{saveError}</div>}
       {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Lecturas guardadas correctamente</div>}
     </div>
   );
@@ -7485,6 +7570,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
   const [validationMsg, setValidationMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const seeded = {};
@@ -7504,7 +7590,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
     return e && (e.status || (e.value !== undefined && e.value !== "") || e.damaged);
   }).length;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const { missing, missingComment } = validateRoundEntries(allItems, entries);
     if (missingComment.length > 0) {
       setValidationMsg({ prefix: "Falta el comentario de qué pasó en:", items: missingComment, suffix: "Los equipos marcados como dañados necesitan una observación antes de guardar." });
@@ -7515,8 +7601,16 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
       return;
     }
     setValidationMsg(null);
-    onSaveRound(entries, notes);
-    setSaved(true);
+    setSaving(true);
+    try {
+      await onSaveRound(entries, notes);
+      setSaved(true);
+    } catch (e) {
+      setValidationMsg({ prefix: "No se pudo guardar — revisa tu conexión e intenta de nuevo.", items: [] });
+      showToast("✗ No se pudo guardar el check list.", false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -7567,7 +7661,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
 
       <div className="flex items-center justify-between mt-4 sticky bottom-16 sm:bottom-0 py-2 px-2 -mx-2 rounded-t-lg" style={{ background: C.bg }}>
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
-        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar ronda</Button>
+        <Button icon={Save} variant="amber" onClick={handleSave} disabled={saving}>{saving ? "Guardando…" : "Guardar ronda"}</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Ronda guardada correctamente</div>}
     </div>
@@ -7588,6 +7682,7 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
   });
   const [saved, setSaved] = useState(false);
   const [validationMsg, setValidationMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [restoredDraft] = useState(() => {
     try { return !!localStorage.getItem(draftKey); } catch { return false; }
   });
@@ -7601,7 +7696,7 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
     setSaved(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const required = ["horaManometro", "horaMcDonell", "horaFondo", "horaTqDistribucion", "presionVaporPsi"];
     const missing = required.filter(k => !form[k]);
     if (missing.length > 0) {
@@ -7609,10 +7704,18 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
       return;
     }
     setValidationMsg(null);
-    onSaveCaldera(form);
-    setSaved(true);
-    setForm(blank);
-    try { localStorage.removeItem(draftKey); } catch { /* noop */ }
+    setSaving(true);
+    try {
+      await onSaveCaldera(form);
+      setSaved(true);
+      setForm(blank);
+      try { localStorage.removeItem(draftKey); } catch { /* noop */ }
+    } catch (e) {
+      setValidationMsg("No se pudo guardar — revisa tu conexión e intenta de nuevo.");
+      showToast("✗ No se pudo guardar el check list de la caldera.", false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -7669,7 +7772,7 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
 
       <div className="flex items-center justify-between">
         <div className="text-xs" style={{ color: C.gray }}>{currentUser} · Operario</div>
-        <Button icon={Save} variant="amber" onClick={handleSave}>Guardar check list</Button>
+        <Button icon={Save} variant="amber" onClick={handleSave} disabled={saving}>{saving ? "Guardando…" : "Guardar check list"}</Button>
       </div>
       {saved && <div className="text-right text-sm mt-1" style={{ color: C.green }}>✓ Check list guardado correctamente</div>}
 
@@ -7950,7 +8053,7 @@ function QrCodeBox({ url, label, filename }) {
   return (
     <div className="flex flex-col items-center gap-2 p-3 rounded-lg border shrink-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
       {dataUrl
-        ? <img src={dataUrl} alt="Código QR" width={140} height={140} />
+        ? <img loading="lazy" src={dataUrl} alt="Código QR" width={140} height={140} />
         : <div className="w-[140px] h-[140px] flex items-center justify-center text-xs" style={{ color: C.gray }}>Generando…</div>}
       {label && <div className="text-xs text-center" style={{ color: C.inkSoft }}>{label}</div>}
       <Button size="sm" variant="ghost" icon={Download} disabled={!dataUrl} onClick={doDownload}>Descargar QR</Button>
@@ -8722,7 +8825,7 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
               <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
                 {task.fotosAntes.slice(0, 3).map((url, i) => (
                   <button key={i} onClick={() => onZoom(url)}>
-                    <img src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
+                    <img loading="lazy" src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
                   </button>
                 ))}
               </div>
@@ -8793,7 +8896,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
             <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: stateColors.bg, color: stateColors.fg }}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</span>
             <div className="text-base font-semibold mt-1" style={{ color: C.ink }}>{task.titulo}</div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
         </div>
 
         <div className="p-4 space-y-4">
@@ -8871,7 +8974,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
               <div className="flex items-center gap-2 flex-wrap">
                 {task.fotosAntes.map((url, pi) => (
                   <button key={pi} onClick={() => onZoom(url)}>
-                    <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                    <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
                   </button>
                 ))}
               </div>
@@ -8914,7 +9017,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                   <div className="flex items-center gap-2 flex-wrap">
                     {task.fotosDespues.map((url, pi) => (
                       <button key={pi} onClick={() => onZoom(url)}>
-                        <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.green }} />
+                        <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.green }} />
                       </button>
                     ))}
                   </div>
@@ -9689,7 +9792,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                     <div className="flex items-center gap-1.5 flex-wrap mt-1.5" onClick={e => e.stopPropagation()}>
                       {t.fotosAntes.map((url, pi) => (
                         <button key={pi} onClick={() => setLightboxUrl(url)}>
-                          <img src={url} alt="" className="w-10 h-10 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                          <img loading="lazy" src={url} alt="" className="w-10 h-10 object-cover rounded-md border" style={{ borderColor: C.line }} />
                         </button>
                       ))}
                     </div>
@@ -9712,7 +9815,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   </Button>
                 )}
                 {canDelete && (
-                  <button onClick={() => onDeleteTask(t.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
+                  <button onClick={() => onDeleteTask(t.id)} aria-label="Eliminar tarea" className="p-1"><Trash2 size={14} color={C.gray} /></button>
                 )}
               </div>
             </div>
@@ -10115,7 +10218,7 @@ function PhotoPicker({ photos, onChange, max = 2 }) {
       <div className="flex items-center gap-2 flex-wrap mb-2">
         {photos.map((f, i) => (
           <div key={i} className="relative">
-            <img src={typeof f === "string" ? f : URL.createObjectURL(f)} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <img loading="lazy" src={typeof f === "string" ? f : URL.createObjectURL(f)} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             <button type="button" onClick={() => removeAt(i)} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 flex items-center justify-center text-xs"
               style={{ background: C.red, color: "#fff" }}>×</button>
           </div>
@@ -10477,7 +10580,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
       <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a {equipo.sistema}</Button>
       <div className="flex items-start gap-3 mt-2 mb-4">
         {equipo.fotoMaestra ? (
-          <img src={equipo.fotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
+          <img loading="lazy" src={equipo.fotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
         ) : (
           <div className="w-16 h-16 rounded-lg border flex items-center justify-center shrink-0" style={{ borderColor: C.line, background: C.bg }}>
             <Wrench size={22} color={C.gray} />
@@ -10764,7 +10867,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
             <div className="flex items-center gap-2 mt-2">
               {r.fotos.map((url, i) => (
                 <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 </a>
               ))}
             </div>
@@ -10986,7 +11089,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           className="w-full text-left rounded-lg border-2 p-3 mb-2 flex items-center gap-3 transition duration-150 hover:-translate-y-0.5 hover:shadow-md"
           style={{ borderColor: isPendingReview(r) ? C.amber : r.estado === "fuera-de-servicio" ? C.red : C.line, background: isPendingReview(r) ? C.amberSoft : r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
           {r.fotos && r.fotos.length > 0 ? (
-            <img src={r.fotos[0]} alt="" className="w-14 h-14 object-cover rounded-lg border shrink-0" style={{ borderColor: C.line }} />
+            <img loading="lazy" src={r.fotos[0]} alt="" className="w-14 h-14 object-cover rounded-lg border shrink-0" style={{ borderColor: C.line }} />
           ) : (
             <div className="w-14 h-14 rounded-lg border flex items-center justify-center shrink-0" style={{ borderColor: C.line, background: C.bg }}>
               <Wrench size={18} color={C.gray} />
@@ -11062,7 +11165,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
             </div>
             <div className="flex items-start gap-3 mb-4">
               {selected.equipoFotoMaestra ? (
-                <img src={selected.equipoFotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
+                <img loading="lazy" src={selected.equipoFotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
               ) : (
                 <div className="w-16 h-16 rounded-lg border flex items-center justify-center shrink-0" style={{ borderColor: C.line, background: C.bg }}>
                   <Wrench size={22} color={C.gray} />
@@ -11109,7 +11212,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
                 <div className="grid grid-cols-3 gap-2 mb-4">
                   {selected.fotos.map((url, i) => (
                     <button key={i} onClick={() => setLightboxUrl(url)}>
-                      <img src={url} alt="" className="w-full aspect-square object-cover rounded-md border" style={{ borderColor: C.line }} />
+                      <img loading="lazy" src={url} alt="" className="w-full aspect-square object-cover rounded-md border" style={{ borderColor: C.line }} />
                     </button>
                   ))}
                 </div>
@@ -12142,7 +12245,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
             <div className="text-base font-semibold" style={{ color: C.ink }}>{equipo.nombre}</div>
             <div className="text-xs" style={{ color: C.gray }}>{equipo.sistema} · {MESES_LABELS[mesNum - 1]} {year}</div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
         </div>
 
         <div className="p-4 space-y-4">
@@ -12159,7 +12262,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
                   <div className="flex items-center gap-1.5 flex-wrap mt-2">
                     {lastReal.fotos.map((url, i) => (
                       <button key={i} onClick={() => onZoom(url)}>
-                        <img src={url} alt="" className="w-14 h-14 object-cover rounded-md border" style={{ borderColor: C.line }} />
+                        <img loading="lazy" src={url} alt="" className="w-14 h-14 object-cover rounded-md border" style={{ borderColor: C.line }} />
                       </button>
                     ))}
                   </div>
@@ -13696,7 +13799,7 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center" style={{ background: "#000" }}>
-      <button onClick={onClose} className="pm-safe-top absolute top-4 right-4 z-10 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", minWidth: 44, minHeight: 44 }}>
+      <button onClick={onClose} aria-label="Cerrar" className="pm-safe-top absolute top-4 right-4 z-10 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", minWidth: 44, minHeight: 44 }}>
         <X size={22} color="#fff" />
       </button>
       {error ? (
@@ -13728,7 +13831,7 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
 /**
  * Medidor circular pequeño — la idea visual de todo el rediseño de Inicio: en vez de tarjetas de
  * "dashboard bancario" genéricas, widgets que se sienten como los manómetros del piso mecánico
- * mismo (coherente con el ícono de la app y el nombre "Pisos Mecánicos").
+ * mismo (coherente con el ícono de la app y el nombre "QuinTech").
  */
 function MiniGauge({ value, max, size = 56, stroke = 6, color, trackColor }) {
   const r = (size - stroke) / 2;
@@ -14267,10 +14370,10 @@ function Lightbox({ url, onClose }) {
   if (!url) return null;
   return (
     <div className="fixed inset-0 flex items-center justify-center p-6" style={{ background: "rgba(10,14,20,0.85)", zIndex: 200 }} onClick={onClose}>
-      <button onClick={onClose} className="absolute top-4 right-4 rounded-full w-9 h-9 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}>
+      <button onClick={onClose} aria-label="Cerrar" className="absolute top-4 right-4 rounded-full w-9 h-9 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}>
         <X size={20} />
       </button>
-      <img src={url} alt="" className="max-w-full max-h-full rounded-lg" style={{ objectFit: "contain" }} onClick={e => e.stopPropagation()} />
+      <img loading="lazy" src={url} alt="" className="max-w-full max-h-full rounded-lg" style={{ objectFit: "contain" }} onClick={e => e.stopPropagation()} />
     </div>
   );
 }
@@ -14331,7 +14434,7 @@ function WhatsNewBanner({ entries, currentUser }) {
         <div className="text-sm font-semibold" style={{ color: C.ink }}>{latest.title}</div>
         <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{latest.description}</div>
       </div>
-      <button onClick={dismiss} className="p-0.5 shrink-0" style={{ minWidth: 24, minHeight: 24 }}><X size={16} color={C.gray} /></button>
+      <button onClick={dismiss} aria-label="Cerrar" className="p-0.5 shrink-0" style={{ minWidth: 24, minHeight: 24 }}><X size={16} color={C.gray} /></button>
     </div>
   );
 }
@@ -14721,7 +14824,11 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
   const doAttachBefore = async (file) => {
     if (!file) return;
     setUploadingBefore(true);
-    try { await onAttachPhoto(iss.equipmentId, file); } catch { /* se puede intentar de nuevo */ }
+    try {
+      await onAttachPhoto(iss.equipmentId, file);
+    } catch (e) {
+      showToast("✗ No se pudo subir la foto — intenta de nuevo.", false);
+    }
     setUploadingBefore(false);
   };
 
@@ -14730,9 +14837,17 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
     let afterUrl = null;
     try {
       if (afterPhotoFile) afterUrl = await uploadPhoto(afterPhotoFile, `issue-${iss.equipmentId}`);
-    } catch { /* si falla la foto, igual se guarda la resolución */ }
-    await onResolve(iss, solution.trim(), afterUrl);
-    setOpen(false); setSolution(""); setAfterPhotoFile(null); setAfterPhotoPreview(null); setResolving(false);
+    } catch {
+      showToast("La foto de \"después\" no se pudo subir, pero se va a guardar la resolución igual.", false);
+    }
+    try {
+      await onResolve(iss, solution.trim(), afterUrl);
+      setOpen(false); setSolution(""); setAfterPhotoFile(null); setAfterPhotoPreview(null);
+    } catch (e) {
+      showToast("✗ No se pudo guardar la resolución — revisa tu conexión e intenta de nuevo.", false);
+    } finally {
+      setResolving(false);
+    }
   };
 
   return (
@@ -14757,7 +14872,7 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
           )}
           <div className="mt-2">
             {iss.beforePhotoUrl ? (
-              <img src={iss.beforePhotoUrl} alt="Foto del daño" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />
+              <img loading="lazy" src={iss.beforePhotoUrl} alt="Foto del daño" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />
             ) : (
               <label className="text-xs font-medium px-2 py-1 rounded-md cursor-pointer inline-flex items-center gap-1" style={{ background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
                 <Camera size={12} /> {uploadingBefore ? "Subiendo…" : "Agregar foto del daño"}
@@ -14769,7 +14884,7 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
         </div>
         {!open && (
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => onCheckIn(iss)}>Sigue igual</Button>
+            <Button size="sm" variant="ghost" onClick={() => { onCheckIn(iss).catch(() => showToast("✗ No se pudo guardar — intenta de nuevo.", false)); }}>Sigue igual</Button>
             <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>Marcar resuelto</Button>
           </div>
         )}
@@ -14787,7 +14902,7 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
               <input type="file" accept="image/*" capture="environment" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; setAfterPhotoFile(f || null); setAfterPhotoPreview(f ? URL.createObjectURL(f) : null); }} />
             </label>
-            {afterPhotoPreview && <img src={afterPhotoPreview} alt="Vista previa" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 80, maxHeight: 60 }} />}
+            {afterPhotoPreview && <img loading="lazy" src={afterPhotoPreview} alt="Vista previa" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 80, maxHeight: 60 }} />}
           </div>
           <div className="flex items-center gap-2 mt-2">
             <Button size="sm" icon={CheckCircle2} disabled={!solution.trim() || resolving} onClick={doResolve}>
@@ -14814,9 +14929,9 @@ function BeforeAfterSlider({ beforeUrl, afterUrl }) {
   return (
     <div>
       <div className="relative rounded-md overflow-hidden select-none" style={{ maxWidth: 320, aspectRatio: "4/3", background: "#000" }}>
-        <img src={beforeUrl} alt="Antes" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+        <img loading="lazy" src={beforeUrl} alt="Antes" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos}%` }}>
-          <img src={afterUrl} alt="Después" className="h-full object-cover" style={{ width: "320px", maxWidth: "none" }} draggable={false} />
+          <img loading="lazy" src={afterUrl} alt="Después" className="h-full object-cover" style={{ width: "320px", maxWidth: "none" }} draggable={false} />
         </div>
         <div className="absolute top-0 bottom-0" style={{ left: `${pos}%`, width: 2, background: "#fff", transform: "translateX(-1px)" }} />
         <div className="absolute top-1.5 left-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>Después</div>
@@ -14881,7 +14996,7 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
   const doOpenMailClient = () => {
     if (!emailTo.trim()) { setSendMsg({ ok: false, text: "Escribe un correo destino." }); return; }
     const text = buildReportText(activeIssues, issueHistory, roundsIndex);
-    const subject = `Informe de equipos - Pisos Mecánicos (${todayStr()})`;
+    const subject = `Informe de equipos - QuinTech (${todayStr()})`;
     const body = text.length > 1500 ? text.slice(0, 1500) + "\n\n(Resumen. Descarga el PDF completo con todos los pisos desde la app y adjúntalo aquí.)" : text;
     window.open(`mailto:${encodeURIComponent(emailTo.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, "_blank");
     onLogSent({ to: emailTo.trim(), method: "mailto (borrador manual)", ok: true, message: "Borrador abierto en el cliente de correo del dispositivo.", sentBy: currentUser, sentAt: nowIso() });
@@ -15077,8 +15192,8 @@ function ReportsView({ issueHistory, roundsIndex, activeIssues, latestValues, mt
               )}
               {(h.beforePhotoUrl || h.afterPhotoUrl) && !(h.beforePhotoUrl && h.afterPhotoUrl) && (
                 <div className="mt-2 flex gap-2">
-                  {h.beforePhotoUrl && <img src={h.beforePhotoUrl} alt="Antes" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />}
-                  {h.afterPhotoUrl && <img src={h.afterPhotoUrl} alt="Después" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />}
+                  {h.beforePhotoUrl && <img loading="lazy" src={h.beforePhotoUrl} alt="Antes" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />}
+                  {h.afterPhotoUrl && <img loading="lazy" src={h.afterPhotoUrl} alt="Después" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />}
                 </div>
               )}
             </div>
@@ -16340,7 +16455,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
           <p className="text-sm py-10 text-center" style={{ color: C.gray }}>Todavía no hay diagramas cargados.</p>
         ) : diagrams.map(d => (
           <button key={d.id} onClick={() => setSelectedId(d.id)} className="w-full text-left rounded-lg border p-3 mb-2 flex items-center gap-3" style={{ borderColor: C.line, background: C.panel }}>
-            {d.imagenUrl ? <img src={d.imagenUrl} alt="" className="w-14 h-14 object-cover rounded-md shrink-0" /> : <div className="w-14 h-14 rounded-md shrink-0 flex items-center justify-center" style={{ background: C.bg }}><Layers size={20} color={C.gray} /></div>}
+            {d.imagenUrl ? <img loading="lazy" src={d.imagenUrl} alt="" className="w-14 h-14 object-cover rounded-md shrink-0" /> : <div className="w-14 h-14 rounded-md shrink-0 flex items-center justify-center" style={{ background: C.bg }}><Layers size={20} color={C.gray} /></div>}
             <div className="min-w-0">
               <div className="text-sm font-semibold" style={{ color: C.ink }}>{d.nombre}</div>
               <div className="text-xs" style={{ color: C.gray }}>{d.componentes.length} componentes · {procedures.filter(p => p.diagramId === d.id).length} secuencia{procedures.filter(p => p.diagramId === d.id).length === 1 ? "" : "s"} guardada{procedures.filter(p => p.diagramId === d.id).length === 1 ? "" : "s"}</div>
@@ -16394,7 +16509,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
             <div className="text-xs rounded-md p-2 mb-2" style={{ background: C.blueSoft, color: "#274c6e" }}>Toca en el plano exactamente dónde está "{positioningCodigo}".</div>
           )}
           <div className="relative rounded-lg border overflow-hidden" style={{ borderColor: C.line, background: C.bg }}>
-            <img src={selected.imagenUrl} alt={selected.nombre}
+            <img loading="lazy" src={selected.imagenUrl} alt={selected.nombre}
               onClick={e => {
                 if (positioningMode && positioningCodigo) {
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -16468,7 +16583,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>QR para pegar en el sitio</div>
           {qrDataUrl ? (
             <>
-              <img src={qrDataUrl} alt="QR" className="w-32 h-32 mb-2" />
+              <img loading="lazy" src={qrDataUrl} alt="QR" className="w-32 h-32 mb-2" />
               <a href={qrDataUrl} download={`diagrama-${normalizeSearchText(selected.nombre).replace(/\s+/g, "-")}.png`} className="text-xs font-semibold" style={{ color: C.amber }}>Descargar imagen</a>
             </>
           ) : <div className="text-xs py-8" style={{ color: C.gray }}>Generando…</div>}
@@ -16653,9 +16768,9 @@ function buildReportHtml(activeIssues, issueHistory, roundsIndex) {
   const rowsRounds = roundsIndex.length
     ? roundsIndex.slice(0, 30).map(r => `<div style="font-size:12px;border-bottom:1px solid #ddd;padding:6px 0;">${escHtml(r.floorName)} · ${fmtDT(r.savedAt)} · Turno ${escHtml(r.shift)} · ${escHtml(r.user)} · ${r.itemCount} equipos${r.damagedCount ? `, ${r.damagedCount} dañados` : ""}</div>`).join("")
     : `<p style="font-size:12px;">Sin registros.</p>`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Informe de Equipos - Pisos Mecánicos</title></head>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Informe de Equipos - QuinTech</title></head>
 <body style="font-family:Arial, Helvetica, sans-serif; padding:32px; color:#111; max-width:800px; margin:0 auto;">
-<h1 style="font-size:20px;">Informe de Equipos — Pisos Mecánicos</h1>
+<h1 style="font-size:20px;">Informe de Equipos — QuinTech</h1>
 <p style="font-size:12px;color:#555;">Generado: ${fmtDT(nowIso())}</p>
 <h2 style="font-size:15px;margin-top:20px;">Equipos fuera de servicio actualmente (${active.length})</h2>
 ${rowsActive}
@@ -16761,7 +16876,7 @@ function pdfLetterhead(doc, title, metaLines) {
   doc.setFont(undefined, "bold"); doc.setFontSize(16);
   doc.text(title, 14, 12.5);
   doc.setFont(undefined, "normal"); doc.setFontSize(8.5);
-  doc.text("Pisos Mecánicos · Revisión Diaria de Equipos", 14, 18.5);
+  doc.text("QuinTech · Revisión Diaria de Equipos", 14, 18.5);
   doc.setFontSize(7.8);
   doc.text(metaLines.join("   ·   "), 14, 23.8);
   doc.setTextColor(...PDF_C.ink);
@@ -16796,7 +16911,7 @@ function pdfFooterAll(doc) {
     doc.line(14, pageH - 13, pageW - 14, pageH - 13);
     doc.setFontSize(7.3);
     doc.setTextColor(...PDF_C.gray);
-    doc.text(`Generado ${fmtDT(nowIso())} · Pisos Mecánicos`, 14, pageH - 8.5);
+    doc.text(`Generado ${fmtDT(nowIso())} · QuinTech`, 14, pageH - 8.5);
     doc.text(`Página ${i} de ${pages}`, pageW - 14, pageH - 8.5, { align: "right" });
     doc.setTextColor(...PDF_C.ink);
   }
@@ -17031,7 +17146,7 @@ async function sendCustomReportEmailAuto(to, selectedIds, data, generatedBy) {
       method: "POST",
       headers: await authHeaders(),
       body: JSON.stringify({
-        to, subject: `Reporte personalizado — Pisos Mecánicos (${todayStr()})`,
+        to, subject: `Reporte personalizado — QuinTech (${todayStr()})`,
         text: "Se adjunta el reporte personalizado que armaste.", pdfBase64,
         filename: `reporte-personalizado-${todayStr().replace(/\//g, "-")}.pdf`,
       }),
@@ -17123,7 +17238,7 @@ async function generateFullReportPdf(latestValues, activeIssues, issueHistory, r
 function buildTourText(tour) {
   if (!tour) return "";
   const L = [];
-  L.push("ENTREGA DE TURNO — Pisos Mecánicos");
+  L.push("ENTREGA DE TURNO — QuinTech");
   L.push(`Turno ${tour.shift} · ${tour.date} · Recorrido realizado por ${tour.user}`);
   L.push(`Equipos revisados: ${tour.itemCount}${tour.damagedCount ? ` · Fuera de servicio: ${tour.damagedCount}` : " · Todo en orden"}`);
   L.push("");
@@ -17237,7 +17352,7 @@ async function sendFullReportEmailAuto(to, latestValues, activeIssues, issueHist
       headers: await authHeaders(),
       body: JSON.stringify({
         to,
-        subject: `Informe de equipos - Pisos Mecánicos (${todayStr()})`,
+        subject: `Informe de equipos - QuinTech (${todayStr()})`,
         text: buildReportText(activeIssues, issueHistory, roundsIndex),
         pdfBase64,
         filename: `informe-equipos-${todayStr().replace(/\//g, "-")}.pdf`,
@@ -17310,7 +17425,7 @@ async function sendWeeklySummaryEmailAuto(to, summaryText, weekLabel, generatedB
       method: "POST",
       headers: await authHeaders(),
       body: JSON.stringify({
-        to, subject: `Resumen semanal — Pisos Mecánicos (${weekLabel})`,
+        to, subject: `Resumen semanal — QuinTech (${weekLabel})`,
         text: summaryText, pdfBase64, filename: `resumen-semanal-${todayStr().replace(/\//g, "-")}.pdf`,
       }),
     });
@@ -17333,7 +17448,7 @@ function PrintableReport({ activeIssues, issueHistory, roundsIndex, onClose }) {
         <Button icon={Save} onClick={() => window.print()}>Imprimir / Guardar como PDF</Button>
         <Button variant="ghost" icon={X} onClick={onClose}>Cerrar</Button>
       </div>
-      <h1 style={{ fontSize: 20, fontWeight: 700 }}>Informe de Equipos — Pisos Mecánicos</h1>
+      <h1 style={{ fontSize: 20, fontWeight: 700 }}>Informe de Equipos — QuinTech</h1>
       <p style={{ fontSize: 12, color: "#555" }}>Generado: {fmtDT(nowIso())}</p>
 
       <h2 style={{ fontSize: 15, fontWeight: 700, marginTop: 20 }}>Equipos fuera de servicio actualmente ({active.length})</h2>
@@ -17678,7 +17793,7 @@ function ProfileView({ currentUser, mySignature, onSaveSignature, employees, lin
         {mySignature && !draft && (
           <div className="mb-3">
             <div className="text-xs mb-1" style={{ color: C.gray }}>Firma actual:</div>
-            <img src={mySignature} alt="Tu firma" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 240, background: "#fff" }} />
+            <img loading="lazy" src={mySignature} alt="Tu firma" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 240, background: "#fff" }} />
           </div>
         )}
 
@@ -17881,7 +17996,7 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Firma de quien entrega el turno</div>
         {mySignature ? (
           <div>
-            <img src={mySignature} alt="Tu firma" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 200, background: "#fff" }} />
+            <img loading="lazy" src={mySignature} alt="Tu firma" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 200, background: "#fff" }} />
             <div className="text-xs mt-1" style={{ color: C.gray }}>
               Esta es la firma guardada en tu perfil — se incluye sola en el PDF. <button onClick={onGoToProfile} className="underline" style={{ color: C.blue }}>Cambiarla</button>
             </div>
@@ -18065,7 +18180,7 @@ async function sendAnalyticsEmailAuto(to, stats, rangeLabel, summary, generatedB
       headers: await authHeaders(),
       body: JSON.stringify({
         to,
-        subject: `Análisis de fallas - Pisos Mecánicos (${todayStr()})`,
+        subject: `Análisis de fallas - QuinTech (${todayStr()})`,
         text: textLines.join("\n"),
         pdfBase64,
         filename: `analisis-fallas-${todayStr().replace(/\//g, "-")}.pdf`,
@@ -19128,25 +19243,53 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
   const [transferMsg, setTransferMsg] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [roleMsg, setRoleMsg] = useState(null); // { text, ok } — feedback de cambios de rol/permiso que sí pueden fallar
 
   const baseRole = acc.is_almacenista ? "almacenista" : acc.is_gerencia ? "gerencia" : "operador";
   const isLastAdmin = acc.is_admin && adminCount === 1;
 
-  const setBaseRole = async (next) => {
-    setBusy(true);
+  // Antes estas acciones no revisaban si el servidor las había rechazado (sesión vencida, columna
+  // faltante en Supabase, etc.) — el checkbox se quedaba como si nada, sin ningún aviso de que no
+  // se guardó. Ahora sí se revisa el resultado y, si falla, se le muestra el motivo al admin.
+  const runRoleAction = async (fn, ...args) => {
+    setBusy(true); setRoleMsg(null);
     try {
-      if (next !== "almacenista" && acc.is_almacenista) await onToggleAlmacenista(uid);
-      if (next !== "gerencia" && acc.is_gerencia) await onToggleGerencia(uid);
-      if (next === "almacenista" && !acc.is_almacenista) await onToggleAlmacenista(uid);
-      if (next === "gerencia" && !acc.is_gerencia) await onToggleGerencia(uid);
+      const res = await fn(...args);
+      if (res && res.ok === false) {
+        setRoleMsg({ text: res.message || "No se pudo guardar el cambio.", ok: false });
+        showToast(res.message || "No se pudo guardar el cambio.", false);
+      }
+    } catch (e) {
+      setRoleMsg({ text: "No se pudo guardar el cambio — revisa tu conexión e intenta de nuevo.", ok: false });
+      showToast("No se pudo guardar el cambio.", false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setBaseRole = async (next) => {
+    setBusy(true); setRoleMsg(null);
+    try {
+      if (next !== "almacenista" && acc.is_almacenista) { const r = await onToggleAlmacenista(uid); if (r?.ok === false) throw new Error(r.message); }
+      if (next !== "gerencia" && acc.is_gerencia) { const r = await onToggleGerencia(uid); if (r?.ok === false) throw new Error(r.message); }
+      if (next === "almacenista" && !acc.is_almacenista) { const r = await onToggleAlmacenista(uid); if (r?.ok === false) throw new Error(r.message); }
+      if (next === "gerencia" && !acc.is_gerencia) { const r = await onToggleGerencia(uid); if (r?.ok === false) throw new Error(r.message); }
+    } catch (e) {
+      setRoleMsg({ text: e.message || "No se pudo cambiar el rol.", ok: false });
+      showToast(e.message || "No se pudo cambiar el rol.", false);
     } finally {
       setBusy(false);
     }
   };
 
   const doReset = async () => {
-    if (!newPw || newPw.length < 4) { setResetMsg("La contraseña debe tener al menos 4 caracteres."); return; }
-    await onResetPassword(uid, newPw);
+    if (!newPw || newPw.length < 8) { setResetMsg("La contraseña debe tener al menos 8 caracteres."); return; }
+    const res = await onResetPassword(uid, newPw);
+    if (res && res.ok === false) {
+      setResetMsg(`✗ No se pudo cambiar la contraseña: ${res.message || "intenta de nuevo."}`);
+      showToast("✗ No se pudo cambiar la contraseña.", false);
+      return;
+    }
     setResetMsg(`✓ Contraseña actualizada. Avísale la nueva clave a ${acc.display_name || acc.email}.`);
     showToast("✓ Contraseña actualizada.", true);
     setNewPw("");
@@ -19162,7 +19305,7 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
             <div className="text-sm font-semibold" style={{ color: C.ink }}>{acc.display_name || acc.email}</div>
             <div className="text-xs" style={{ color: C.gray }}>{acc.email}</div>
           </div>
-          <button onClick={onClose} className="p-1"><X size={16} color={C.gray} /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="p-1"><X size={16} color={C.gray} /></button>
         </div>
 
         <div className="p-4">
@@ -19170,7 +19313,7 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
 
           <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Acciones rápidas</div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <input value={newPw} onChange={e => { setNewPw(e.target.value); setResetMsg(""); }} type="text" placeholder="Nueva contraseña (mín. 4 caracteres)"
+            <input value={newPw} onChange={e => { setNewPw(e.target.value); setResetMsg(""); }} type="text" placeholder="Nueva contraseña (mín. 8 caracteres)"
               className="flex-1 min-w-[180px] text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}
               onKeyDown={e => { if (e.key === "Enter") doReset(); }} />
             <Button size="sm" variant="ghost" onClick={doReset}>Restablecer contraseña</Button>
@@ -19210,15 +19353,16 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
               <div className="text-sm" style={{ color: C.ink }}>Es administrador</div>
               <div className="text-[11px]" style={{ color: C.gray }}>Acceso total a todos los módulos, incluido este panel.</div>
             </div>
-            <input type="checkbox" checked={!!acc.is_admin} disabled={isLastAdmin} onChange={() => onToggleAdmin(uid)} />
+            <input type="checkbox" checked={!!acc.is_admin} disabled={isLastAdmin || busy} onChange={() => runRoleAction(onToggleAdmin, uid)} />
           </label>
           {isLastAdmin && <div className="text-[11px] mb-2" style={{ color: C.red }}>No puedes quitarle admin — es el único administrador que queda.</div>}
 
           <div className="text-xs font-semibold uppercase tracking-wide mt-4 mb-2" style={{ color: C.inkSoft }}>Permisos específicos</div>
           <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
             <span className="text-sm" style={{ color: C.ink }}>Editar horarios (sin ser admin)</span>
-            <input type="checkbox" checked={!!acc.can_manage_schedule} disabled={acc.is_admin} onChange={() => onToggleScheduleManager(uid)} />
+            <input type="checkbox" checked={!!acc.can_manage_schedule} disabled={acc.is_admin || busy} onChange={() => runRoleAction(onToggleScheduleManager, uid)} />
           </label>
+          {roleMsg && <div className="text-xs mt-1" style={{ color: roleMsg.ok === false ? C.red : C.green }}>{roleMsg.text}</div>}
 
           <div className="mt-5 pt-3 border-t" style={{ borderColor: C.line }}>
             {confirmDelete ? (
@@ -20011,9 +20155,15 @@ export default function App() {
     const newHistory = [rec, ...issueHistory].slice(0, 500);
     const newActive = { ...activeIssues };
     delete newActive[rec.equipmentId];
+    const prevHistory = issueHistory, prevActive = activeIssues;
     setIssueHistory(newHistory); setActiveIssues(newActive);
-    await sSet("issue-history", newHistory, true);
-    await sSet("active-issues", newActive, true);
+    try {
+      await sSet("issue-history", newHistory, true);
+      await sSet("active-issues", newActive, true);
+    } catch (e) {
+      setIssueHistory(prevHistory); setActiveIssues(prevActive);
+      throw e;
+    }
   };
 
   /** Guarda una foto de "cómo está ahora" mientras el daño sigue activo (el "antes" para el

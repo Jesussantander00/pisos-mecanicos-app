@@ -67,21 +67,30 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, warning: "El perfil se eliminó, pero no se pudo borrar la cuenta de acceso del todo. Si esa persona tenía la app abierta, se le va a cerrar la sesión sola en menos de un minuto." });
         return;
       }
-    } else if (action === "toggle-admin") {
-      const { data: t } = await supabaseAdmin.from("profiles").select("is_admin").eq("id", targetUserId).maybeSingle();
-      await supabaseAdmin.from("profiles").update({ is_admin: !t?.is_admin }).eq("id", targetUserId);
-    } else if (action === "toggle-almacenista") {
-      const { data: t } = await supabaseAdmin.from("profiles").select("is_almacenista").eq("id", targetUserId).maybeSingle();
-      await supabaseAdmin.from("profiles").update({ is_almacenista: !t?.is_almacenista }).eq("id", targetUserId);
-    } else if (action === "toggle-gerencia") {
-      const { data: t } = await supabaseAdmin.from("profiles").select("is_gerencia").eq("id", targetUserId).maybeSingle();
-      await supabaseAdmin.from("profiles").update({ is_gerencia: !t?.is_gerencia }).eq("id", targetUserId);
-    } else if (action === "toggle-schedule-manager") {
-      const { data: t } = await supabaseAdmin.from("profiles").select("can_manage_schedule").eq("id", targetUserId).maybeSingle();
-      await supabaseAdmin.from("profiles").update({ can_manage_schedule: !t?.can_manage_schedule }).eq("id", targetUserId);
+    } else if (action === "toggle-admin" || action === "toggle-almacenista" || action === "toggle-gerencia" || action === "toggle-schedule-manager") {
+      // Las cuatro casillas de rol/permiso comparten la misma forma: leer el valor actual y
+      // apagarlo/prenderlo. Antes esto no revisaba errores de Supabase (por ejemplo si la columna
+      // no existiera, o la fila no se encontrara) y respondía "ok" igual, dejando el checkbox del
+      // panel sin ningún cambio real y sin ninguna pista de por qué. Ahora si algo falla en
+      // cualquiera de los dos pasos, se lo decimos al que llama en vez de fingir que funcionó.
+      const column = { "toggle-admin": "is_admin", "toggle-almacenista": "is_almacenista", "toggle-gerencia": "is_gerencia", "toggle-schedule-manager": "can_manage_schedule" }[action];
+      const { data: t, error: selErr } = await supabaseAdmin.from("profiles").select(column).eq("id", targetUserId).maybeSingle();
+      if (selErr) {
+        res.status(500).json({ ok: false, message: `No se pudo leer el estado actual (${selErr.message}). Si la columna "${column}" no existe todavía en la tabla "profiles" de Supabase, hay que agregarla primero.` });
+        return;
+      }
+      if (!t) {
+        res.status(404).json({ ok: false, message: "No se encontró esa cuenta." });
+        return;
+      }
+      const { error: updErr } = await supabaseAdmin.from("profiles").update({ [column]: !t[column] }).eq("id", targetUserId);
+      if (updErr) {
+        res.status(500).json({ ok: false, message: `No se pudo guardar el cambio (${updErr.message}).` });
+        return;
+      }
     } else if (action === "reset-password") {
-      if (!newPassword || newPassword.length < 4) {
-        res.status(400).json({ ok: false, message: "La contraseña debe tener al menos 4 caracteres." });
+      if (!newPassword || newPassword.length < 8) {
+        res.status(400).json({ ok: false, message: "La contraseña debe tener al menos 8 caracteres." });
         return;
       }
       const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, { password: newPassword });

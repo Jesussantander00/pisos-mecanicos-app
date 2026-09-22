@@ -6701,8 +6701,9 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-6">
           <img src="/icon-192.png" alt="QuinTech" className="mx-auto w-12 h-12 rounded-lg mb-3 object-cover" />
-          <h1 className="text-white text-lg font-semibold tracking-tight">Innovación Tecnológica</h1>
-          <p className="text-sm" style={{ color: "#8fa3b8" }}>QuinTech · {mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
+          <h1 className="text-white text-lg font-semibold tracking-tight">QuinTech</h1>
+          <p className="text-sm" style={{ color: "#8fa3b8" }}>{mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
+          <p className="text-white text-base font-bold tracking-tight mt-1">Innovación Tecnológica</p>
         </div>
         <div className="rounded-xl p-5" style={{ background: C.panel }}>
           <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>

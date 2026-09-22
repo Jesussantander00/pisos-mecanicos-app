@@ -71,7 +71,7 @@ export default async function handler(req, res) {
   webpush.setVapidDetails(subject, publicKey, privateKey);
 
   const payload = JSON.stringify({
-    title: title || "FacilitaSys",
+    title: title || "QuinTech",
     body: body || "Tienes una notificación nueva.",
     url: url || "/",
   });

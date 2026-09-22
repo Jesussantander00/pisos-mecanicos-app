@@ -44,7 +44,7 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 
 /** Cuando llega una notificación push real (aunque la app esté cerrada), la muestra. */
 self.addEventListener("push", (event) => {
-  let data = { title: "FacilitaSys", body: "Tienes una notificación nueva.", url: "/" };
+  let data = { title: "QuinTech", body: "Tienes una notificación nueva.", url: "/" };
   try { if (event.data) data = { ...data, ...event.data.json() }; } catch { /* noop */ }
 
   event.waitUntil(

@@ -8824,7 +8824,7 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
             {task.fotosAntes && task.fotosAntes.length > 0 && (
               <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
                 {task.fotosAntes.slice(0, 3).map((url, i) => (
-                  <button key={i} onClick={() => onZoom(url)}>
+                  <button key={i} onClick={() => onZoom(url)} aria-label="Ver foto ampliada">
                     <img loading="lazy" src={url} alt="" className="w-7 h-7 object-cover rounded border" style={{ borderColor: C.line }} />
                   </button>
                 ))}
@@ -8857,7 +8857,10 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   const stateColors = TASK_STATE_COLORS[estado];
   const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : "Sin asignar";
   const linkedEquipo = task.equipoId && equipos ? equipos.find(e => e.id === task.equipoId) : null;
-  const equipoHistory = linkedEquipo ? (mttoLog || []).filter(r => r.equipoId === linkedEquipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 5) : [];
+  const equipoHistory = useMemo(
+    () => linkedEquipo ? (mttoLog || []).filter(r => r.equipoId === linkedEquipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 5) : [],
+    [linkedEquipo, mttoLog]
+  );
 
   const doClose = async () => {
     if (closePhotos.length === 0) { setCloseMsg({ ok: false, text: "Necesitas al menos una foto de cómo quedó, para poder cerrarla." }); return; }
@@ -8973,7 +8976,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
               <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Fotos — antes</div>
               <div className="flex items-center gap-2 flex-wrap">
                 {task.fotosAntes.map((url, pi) => (
-                  <button key={pi} onClick={() => onZoom(url)}>
+                  <button key={pi} onClick={() => onZoom(url)} aria-label="Ver foto ampliada">
                     <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line }} />
                   </button>
                 ))}
@@ -9016,7 +9019,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                   <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.green }}>Fotos — después</div>
                   <div className="flex items-center gap-2 flex-wrap">
                     {task.fotosDespues.map((url, pi) => (
-                      <button key={pi} onClick={() => onZoom(url)}>
+                      <button key={pi} onClick={() => onZoom(url)} aria-label="Ver foto ampliada">
                         <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.green }} />
                       </button>
                     ))}
@@ -9053,7 +9056,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onDeleteTask }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
@@ -9136,7 +9139,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   };
 
   const doCreate = async (skipDupCheck = false) => {
-    if (!form.titulo.trim()) return;
+    if (!form.titulo.trim()) { setSaveMsg({ ok: false, text: "Escribe qué hay que hacer antes de crear la tarea." }); return; }
     if (!skipDupCheck) {
       const dup = findDuplicateTask(form.titulo, form.equipoId);
       if (dup) { setDupWarning(dup); return; }
@@ -9186,24 +9189,48 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
 
   const bulkMove = async (code) => {
     setBulkBusy(true);
-    for (const id of selectedIds) {
-      const t = tasks.find(x => x.id === id);
-      if (t) await onUpdateTask(id, { estado: code, finishedAt: code === "finalizada" ? nowIso() : t.finishedAt });
+    try {
+      const patches = {};
+      selectedIds.forEach(id => {
+        const t = tasks.find(x => x.id === id);
+        if (t) patches[id] = { estado: code, finishedAt: code === "finalizada" ? nowIso() : t.finishedAt };
+      });
+      await onUpdateTasksBatch(patches);
+      showToast(`✓ ${Object.keys(patches).length} tarea(s) actualizada(s).`, true);
+      exitSelectMode();
+    } catch (e) {
+      showToast("✗ No se pudo actualizar las tareas seleccionadas — intenta de nuevo.", false);
+    } finally {
+      setBulkBusy(false);
     }
-    setBulkBusy(false);
-    exitSelectMode();
   };
   const bulkReassign = async (username) => {
     setBulkBusy(true);
-    for (const id of selectedIds) await onUpdateTask(id, { asignadoA: username, assignedAt: nowIso() });
-    setBulkBusy(false);
-    exitSelectMode();
+    try {
+      const patches = {};
+      selectedIds.forEach(id => { patches[id] = { asignadoA: username, assignedAt: nowIso() }; });
+      await onUpdateTasksBatch(patches);
+      showToast(`✓ ${Object.keys(patches).length} tarea(s) reasignada(s).`, true);
+      exitSelectMode();
+    } catch (e) {
+      showToast("✗ No se pudo reasignar las tareas seleccionadas — intenta de nuevo.", false);
+    } finally {
+      setBulkBusy(false);
+    }
   };
   const bulkPriority = async (prioridad) => {
     setBulkBusy(true);
-    for (const id of selectedIds) await onUpdateTask(id, { prioridad });
-    setBulkBusy(false);
-    exitSelectMode();
+    try {
+      const patches = {};
+      selectedIds.forEach(id => { patches[id] = { prioridad }; });
+      await onUpdateTasksBatch(patches);
+      showToast(`✓ Prioridad actualizada en ${Object.keys(patches).length} tarea(s).`, true);
+      exitSelectMode();
+    } catch (e) {
+      showToast("✗ No se pudo cambiar la prioridad — intenta de nuevo.", false);
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const turnoOf = (fecha) => {
@@ -9228,7 +9255,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   };
 
   const priorityOrder = { alta: 0, media: 1, baja: 2 };
-  const filtered = tasks
+  const filtered = useMemo(() => tasks
     .filter(t => !onlyMine || t.asignadoA === currentUsername)
     .filter(t => !filterEstado || normalizeTaskState(t.estado) === filterEstado)
     .filter(t => {
@@ -9244,25 +9271,32 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       if (filterPrioridad && t.prioridad !== filterPrioridad) return false;
       return true;
     })
-    .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt)));
+    .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt))),
+    [tasks, onlyMine, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad]
+  );
 
-  const counts = TASK_STATES.reduce((acc, s) => { acc[s.code] = tasks.filter(t => normalizeTaskState(t.estado) === s.code).length; return acc; }, {});
+  const counts = useMemo(
+    () => TASK_STATES.reduce((acc, s) => { acc[s.code] = tasks.filter(t => normalizeTaskState(t.estado) === s.code).length; return acc; }, {}),
+    [tasks]
+  );
 
   // ===== KPIs compactos =====
   const totalTareas = tasks.length;
-  const cerradas = tasks.filter(t => normalizeTaskState(t.estado) === "finalizada");
+  const cerradas = useMemo(() => tasks.filter(t => normalizeTaskState(t.estado) === "finalizada"), [tasks]);
   const tiempoCierrePromedio = useMemo(() => {
     const dur = cerradas.filter(t => t.assignedAt && t.finishedAt).map(t => hoursBetween(t.assignedAt, t.finishedAt));
     return dur.length ? dur.reduce((s, v) => s + v, 0) / dur.length : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks]);
-  const criticasVencidas = tasks.filter(t => {
+  }, [cerradas]);
+  const criticasVencidas = useMemo(() => tasks.filter(t => {
     const estado = normalizeTaskState(t.estado);
     if (estado === "finalizada" || t.prioridad !== "alta" || !t.assignedAt) return false;
     return hoursBetween(t.assignedAt, nowIso()) > 24;
-  }).length;
+  }).length, [tasks]);
   const cumplimientoPct = totalTareas > 0 ? Math.round((cerradas.length / totalTareas) * 100) : 100;
-  const misTareasAbiertas = tasks.filter(t => t.asignadoA === currentUsername && normalizeTaskState(t.estado) !== "finalizada").length;
+  const misTareasAbiertas = useMemo(
+    () => tasks.filter(t => t.asignadoA === currentUsername && normalizeTaskState(t.estado) !== "finalizada").length,
+    [tasks, currentUsername]
+  );
 
   // ===== Sparkline: tareas creadas por día, últimos 7 días =====
   const sparkCreadas = useMemo(() => {
@@ -9337,27 +9371,36 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   };
 
   const doCloseTask = async (t, photos, note) => {
-    const res = await saveRecordWithPhotos(
-      "task-close",
-      { taskId: t.id, notaCierre: note },
-      photos,
-      async (payload, urls) => {
-        await onUpdateTask(payload.taskId, {
-          estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
-          timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
-        });
-        // Si la tarea está vinculada a un equipo, el cierre también queda como su mantenimiento
-        // realizado — así el cronograma "reinicia el contador" solo, sin doble trabajo.
-        if (t.equipoId && onLogMaintenance) {
-          await onLogMaintenance(t.equipoId, {
-            tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
-            descripcion: `${t.titulo}${payload.notaCierre ? " — " + payload.notaCierre : ""}`,
-            fotos: urls,
+    try {
+      const res = await saveRecordWithPhotos(
+        "task-close",
+        { taskId: t.id, notaCierre: note },
+        photos,
+        async (payload, urls) => {
+          await onUpdateTask(payload.taskId, {
+            estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
+            timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
           });
+          // Si la tarea está vinculada a un equipo, el cierre también queda como su mantenimiento
+          // realizado — así el cronograma "reinicia el contador" solo, sin doble trabajo.
+          if (t.equipoId && onLogMaintenance) {
+            await onLogMaintenance(t.equipoId, {
+              tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
+              descripcion: `${t.titulo}${payload.notaCierre ? " — " + payload.notaCierre : ""}`,
+              fotos: urls,
+            });
+          }
         }
-      }
-    );
-    if (res.queued) setSaveMsg({ ok: true, text: "✓ Cierre guardado en este celular — no había señal. Se sube solo apenas vuelva." });
+      );
+      // El drawer se cierra apenas se llama a esto, así que un mensaje que solo viva dentro del
+      // panel "Nueva tarea" nunca se llega a ver — por eso el aviso va por toast, que se ve sin
+      // importar qué pantalla esté abierta.
+      if (res.queued) showToast("✓ Cierre guardado en este celular — no había señal. Se sube solo apenas vuelva.", true);
+      else showToast("✓ Tarea cerrada.", true);
+    } catch (e) {
+      showToast("✗ No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo.", false);
+      throw e; // el drawer (TaskDrawer.doClose) también atrapa esto para no cerrarse solo y mostrar su propio mensaje
+    }
   };
 
   const doDownloadReport = async (t) => {
@@ -9365,7 +9408,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     try {
       const doc = await generateTaskReportPdf(t, accounts[t.asignadoA]?.display_name || t.asignadoA || "Sin asignar");
       doc.save(`reporte-novedad-${t.titulo.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 40)}.pdf`);
-    } catch { setSaveMsg({ ok: false, text: "No se pudo generar el reporte (revisa la conexión — necesita descargar las fotos)." }); }
+    } catch {
+      showToast("✗ No se pudo generar el reporte — revisa la conexión (necesita descargar las fotos).", false);
+    }
     setDownloadingReportId(null);
   };
 
@@ -9533,8 +9578,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                 </div>
               )}
               <div className="flex items-center gap-1 mb-2">
-                <input value={form.titulo} onChange={e => { setForm(f => ({ ...f, titulo: e.target.value })); setDupWarning(null); }} placeholder="¿Qué hay que hacer?"
-                  className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <input value={form.titulo} onChange={e => { setForm(f => ({ ...f, titulo: e.target.value })); setDupWarning(null); }} placeholder="¿Qué hay que hacer? *" aria-label="¿Qué hay que hacer? (obligatorio)"
+                  className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: !form.titulo.trim() && saveMsg?.ok === false ? C.red : C.line, background: C.panel, color: C.ink }} />
                 <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
               </div>
               <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
@@ -9645,7 +9690,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       <div className="rounded-xl border p-3 mb-4 flex items-end gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Operario</div>
-          <select value={filterOperario} onChange={e => setFilterOperario(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+          <select value={filterOperario} onChange={e => setFilterOperario(e.target.value)} aria-label="Filtrar por operario" className={filterSelectClass} style={filterSelectStyle}>
             <option value="">Todos</option>
             {Object.keys(accounts || {}).map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
           </select>
@@ -9654,22 +9699,22 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Prioridad</div>
-              <select value={filterPrioridad} onChange={e => setFilterPrioridad(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+              <select value={filterPrioridad} onChange={e => setFilterPrioridad(e.target.value)} aria-label="Filtrar por prioridad" className={filterSelectClass} style={filterSelectStyle}>
                 <option value="">Todas</option>
                 {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
               </select>
             </div>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Desde</div>
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} aria-label="Filtrar desde esta fecha" className={filterSelectClass} style={filterSelectStyle} />
             </div>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Hasta</div>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={filterSelectClass} style={filterSelectStyle} />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} aria-label="Filtrar hasta esta fecha" className={filterSelectClass} style={filterSelectStyle} />
             </div>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Turno</div>
-              <select value={filterTurno} onChange={e => setFilterTurno(e.target.value)} className={filterSelectClass} style={filterSelectStyle}>
+              <select value={filterTurno} onChange={e => setFilterTurno(e.target.value)} aria-label="Filtrar por turno" className={filterSelectClass} style={filterSelectStyle}>
                 <option value="">Todos</option>
                 <option value="Mañana">Mañana</option>
                 <option value="Tarde">Tarde</option>
@@ -9721,7 +9766,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   const taskId = e.dataTransfer.getData("text/plain");
                   const task = tasks.find(t => t.id === taskId);
                   if (!task || normalizeTaskState(task.estado) === col.code) return;
-                  if (!(isAdmin || task.asignadoA === currentUsername)) return;
+                  if (!(isAdmin || task.asignadoA === currentUsername)) { showToast("Solo puedes mover tus propias tareas.", false); return; }
                   if (col.code === "finalizada") setDrawerTaskId(task.id);
                   else transitionTask(task, col.code);
                 }}>
@@ -10978,23 +11023,12 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState(null);
   const [successToast, setSuccessToast] = useState(null);
+  const [confirmApprove, setConfirmApprove] = useState(false);
   const sentinelRef = useRef(null);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setVisibleCount(20); }, [search, filterTipo, sort]); // si cambian los filtros, vuelve a empezar
-  useEffect(() => { setReviewComment(""); }, [selectedId]); // no arrastrar el comentario de un registro al siguiente
-
-  // Scroll infinito: cuando el "centinela" invisible al final de la lista entra en pantalla,
-  // se cargan 20 más — así nunca se descargan los cientos de reportes de una sola vez.
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) setVisibleCount(v => v + 20);
-    }, { rootMargin: "200px" });
-    obs.observe(el);
-    return () => obs.disconnect();
-  });
+  useEffect(() => { setReviewComment(""); setConfirmApprove(false); }, [selectedId]); // no arrastrar el comentario de un registro al siguiente
 
   const rows = useMemo(() => {
     return mttoLog.map(r => {
@@ -11018,6 +11052,24 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const selected = filtered.find(r => r.id === selectedId) || rows.find(r => r.id === selectedId);
   const selectedIndex = mttoLog.findIndex(r => r.id === selectedId);
   const shortId = (id) => "#MT-" + (id || "").replace(/[^0-9]/g, "").slice(-4).padStart(4, "0");
+
+  // Scroll infinito: cuando el "centinela" invisible al final de la lista entra en pantalla,
+  // se cargan 20 más — así nunca se descargan los cientos de reportes de una sola vez.
+  // Antes este efecto no tenía arreglo de dependencias, así que se volvía a ejecutar después de
+  // CADA render (no solo al montar). Como observe() dispara su callback casi de inmediato con el
+  // estado actual de intersección, si el centinela seguía visible en pantalla cada re-render
+  // volvía a sumar 20 más — anulando por completo el scroll infinito (se cargaba todo de golpe).
+  // Ahora solo se reconstruye cuando en verdad hace falta seguir cargando.
+  useEffect(() => {
+    if (visibleCount >= filtered.length) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setVisibleCount(v => v + 20);
+    }, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [visibleCount, filtered.length]);
 
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
@@ -11060,7 +11112,15 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
       const data = await resp.json().catch(() => ({}));
       setMsg({ ok: resp.ok, text: data?.message || (resp.ok ? "Enviado." : "El servidor rechazó el envío.") });
       onLogSent?.({ to: emailTo.trim(), method: "Mantenimientos realizados (correo con Excel)", ok: resp.ok, message: data?.message, sentBy: currentUser, sentAt: nowIso() });
-      if (resp.ok) setShowExportModal(false);
+      // Antes esto cerraba el modal en el mismo instante en que se ponía el mensaje de éxito —
+      // como las dos actualizaciones de estado caen en el mismo render de React, el modal (que es
+      // donde vive el mensaje) desaparecía antes de que nadie alcanzara a leer "Enviado.". El
+      // toast se ve sin importar qué esté abierto, y el cierre se retrasa un poco para que
+      // también alcance a verse el mensaje dentro del modal.
+      if (resp.ok) {
+        showToast("✓ Enviado por correo.", true);
+        setTimeout(() => setShowExportModal(false), 900);
+      }
     } catch {
       setMsg({ ok: false, text: "No se pudo enviar. Revisa la conexión." });
     }
@@ -11083,7 +11143,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           <option value="">Todos los tipos</option>
           {MTTO_TIPOS.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
         </select>
-        <button onClick={() => setShowExportModal(true)} title="Descargar o enviar en Excel" className="p-2 rounded-md shrink-0" style={{ background: C.bg }}>
+        <button onClick={() => setShowExportModal(true)} title="Descargar o enviar en Excel" aria-label="Descargar o enviar en Excel" className="p-2 rounded-md shrink-0" style={{ background: C.bg }}>
           <Download size={16} color={C.ink} />
         </button>
       </div>
@@ -11136,7 +11196,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           <div className="w-full sm:w-96 rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="text-base font-bold" style={{ color: C.ink }}>Descargar / enviar en Excel</div>
-              <button onClick={() => setShowExportModal(false)}><X size={18} color={C.gray} /></button>
+              <button onClick={() => setShowExportModal(false)} aria-label="Cerrar"><X size={18} color={C.gray} /></button>
             </div>
             <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
             <div className="flex items-center gap-2 flex-wrap mt-3">
@@ -11280,27 +11340,53 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
                 className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: reviewError ? C.red : C.line, background: C.panel, color: C.ink }} />
               {reviewError && <p className="text-xs mb-2" style={{ color: C.red }}>{reviewError}</p>}
               <div className="space-y-2">
-                <div className="[&>button]:w-full [&>button]:justify-center">
-                  <Button variant="green" disabled={reviewing} onClick={async () => {
-                    setReviewing(true);
-                    await onReview(selected.id, "aprobado", reviewComment);
-                    setReviewComment(""); setReviewing(false);
-                    setSelectedId(null);
-                    setSuccessToast("✓ Mantenimiento aprobado y cerrado.");
-                    setTimeout(() => setSuccessToast(null), 4000);
-                  }}>
-                    ✔️ Aprobar y Cerrar Ticket
-                  </Button>
-                </div>
+                {confirmApprove ? (
+                  <div className="rounded-md p-2.5 text-xs" style={{ background: C.greenSoft, color: C.green }}>
+                    <div className="font-semibold mb-2">¿Confirmas aprobar y cerrar este ticket? No se puede deshacer desde aquí.</div>
+                    <div className="flex items-center gap-2">
+                      <button disabled={reviewing} onClick={async () => {
+                        setReviewing(true); setReviewError(null);
+                        try {
+                          await onReview(selected.id, "aprobado", reviewComment);
+                          setReviewComment(""); setConfirmApprove(false);
+                          setSelectedId(null);
+                          setSuccessToast("✓ Mantenimiento aprobado y cerrado.");
+                          setTimeout(() => setSuccessToast(null), 4000);
+                        } catch (e) {
+                          setReviewError(e.message || "No se pudo aprobar — revisa tu conexión e intenta de nuevo.");
+                        } finally {
+                          setReviewing(false);
+                        }
+                      }} className="flex-1 text-xs font-semibold px-2 py-1.5 rounded" style={{ background: C.green, color: "#fff" }}>
+                        {reviewing ? "Guardando…" : "Sí, aprobar y cerrar"}
+                      </button>
+                      <button disabled={reviewing} onClick={() => setConfirmApprove(false)} className="text-xs font-semibold px-2 py-1.5" style={{ color: C.gray }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="[&>button]:w-full [&>button]:justify-center">
+                    <Button variant="green" disabled={reviewing} onClick={() => setConfirmApprove(true)}>
+                      ✔️ Aprobar y Cerrar Ticket
+                    </Button>
+                  </div>
+                )}
                 <div className="[&>button]:w-full [&>button]:justify-center">
                   <Button variant="amber" disabled={reviewing} onClick={async () => {
                     if (!reviewComment.trim()) { setReviewError("Escribe el motivo antes de devolverlo — el técnico necesita saber qué corregir."); return; }
-                    setReviewing(true);
-                    await onReview(selected.id, "rechazado", reviewComment);
-                    setReviewComment(""); setReviewing(false);
-                    setSelectedId(null);
-                    setSuccessToast("↩ Devuelto al técnico, con notificación enviada.");
-                    setTimeout(() => setSuccessToast(null), 4000);
+                    setReviewing(true); setReviewError(null);
+                    try {
+                      await onReview(selected.id, "rechazado", reviewComment);
+                      setReviewComment("");
+                      setSelectedId(null);
+                      setSuccessToast("↩ Devuelto al técnico, con notificación enviada.");
+                      setTimeout(() => setSuccessToast(null), 4000);
+                    } catch (e) {
+                      setReviewError(e.message || "No se pudo devolver el registro — revisa tu conexión e intenta de nuevo.");
+                    } finally {
+                      setReviewing(false);
+                    }
                   }}>
                     ↩️ Rechazar / Devolver
                   </Button>
@@ -12274,7 +12360,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
                 {lastReal.fotos && lastReal.fotos.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap mt-2">
                     {lastReal.fotos.map((url, i) => (
-                      <button key={i} onClick={() => onZoom(url)}>
+                      <button key={i} onClick={() => onZoom(url)} aria-label="Ver foto ampliada">
                         <img loading="lazy" src={url} alt="" className="w-14 h-14 object-cover rounded-md border" style={{ borderColor: C.line }} />
                       </button>
                     ))}
@@ -19104,7 +19190,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
           <div className="w-full sm:w-96 rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="text-base font-bold" style={{ color: C.ink }}>PDF de este reporte ({rangeLabel})</div>
-              <button onClick={() => setShowExportModal(false)}><X size={18} color={C.gray} /></button>
+              <button onClick={() => setShowExportModal(false)} aria-label="Cerrar"><X size={18} color={C.gray} /></button>
             </div>
             <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadPdf}>
               {downloading ? "Generando…" : "Descargar PDF"}
@@ -20969,6 +21055,35 @@ export default function App() {
     }
   };
 
+  /** Igual que updateTask, pero para varias tareas a la vez (acciones masivas del panel de
+   *  Tareas — mover, reasignar, cambiar prioridad de una selección). Aplica todos los cambios
+   *  en un solo `map`/`setTasks`/`sSet` en vez de llamar a updateTask una vez por tarea: antes,
+   *  llamar a updateTask en un ciclo hacía que cada llamada partiera del MISMO arreglo "tasks"
+   *  (el de cuando se abrió el panel), así que cada guardado sobreescribía por completo la lista
+   *  con solo SU propio cambio — perdiendo en silencio los cambios de las tareas anteriores del
+   *  mismo lote. patchesById: { [taskId]: { ...camposACambiar } }. */
+  const updateTasksBatch = async (patchesById) => {
+    const ts = nowIso();
+    const ids = Object.keys(patchesById);
+    if (ids.length === 0) return;
+    const befores = {};
+    ids.forEach(id => { befores[id] = tasks.find(t => t.id === id); });
+    const next = tasks.map(t => patchesById[t.id] ? { ...t, ...patchesById[t.id], updatedAt: ts } : t);
+    setTasks(next);
+    await sSet("tasks", next, true);
+    ids.forEach(id => {
+      const before = befores[id];
+      const patch = patchesById[id];
+      if (before && patch.estado && patch.estado !== before.estado) {
+        logGeneralEdit({
+          kind: "tarea", entityLabel: before.titulo, field: "Estado",
+          before: TASK_STATES.find(s => s.code === normalizeTaskState(before.estado))?.label || before.estado,
+          after: TASK_STATES.find(s => s.code === normalizeTaskState(patch.estado))?.label || patch.estado,
+        });
+      }
+    });
+  };
+
   /** Pasa todas las tareas abiertas (no finalizadas) de una persona a otra de un jalón — por
    *  ejemplo si alguien sale de vacaciones o cambia de turno fijo. Deja registro en la
    *  cronología de cada tarea y en el historial de auditoría general. */
@@ -22193,7 +22308,7 @@ export default function App() {
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
-              onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
+              onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

@@ -9066,6 +9066,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [assignDate, setAssignDate] = useState(() => localDateIso(new Date()));
   const [assignShift, setAssignShift] = useState(SHIFTS[0]);
   const [showAllForAssign, setShowAllForAssign] = useState(false);
+  const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState(null);
 
   const usernames = Object.keys(accounts || {});
   // Quién está trabajando en este preciso momento, según la hora real de entrada/salida de cada
@@ -9815,7 +9816,19 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   </Button>
                 )}
                 {canDelete && (
-                  <button onClick={() => onDeleteTask(t.id)} aria-label="Eliminar tarea" className="p-1"><Trash2 size={14} color={C.gray} /></button>
+                  confirmDeleteTaskId === t.id ? (
+                    <div className="flex items-center gap-1 rounded-md px-1.5 py-1" style={{ background: C.redSoft }}>
+                      <span className="text-[11px]" style={{ color: C.red }}>¿Borrar?</span>
+                      <button onClick={() => { onDeleteTask(t.id).catch(() => showToast("✗ No se pudo eliminar la tarea.", false)); setConfirmDeleteTaskId(null); }} className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: C.red, color: "#fff" }}>
+                        Sí, borrar
+                      </button>
+                      <button onClick={() => setConfirmDeleteTaskId(null)} className="text-[10px] font-semibold px-1" style={{ color: C.gray }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteTaskId(t.id)} aria-label="Eliminar tarea" className="p-1"><Trash2 size={14} color={C.gray} /></button>
+                  )
                 )}
               </div>
             </div>
@@ -21529,6 +21542,15 @@ export default function App() {
   const hotsosExistingOrderIds = useMemo(() => new Set(tasks.filter(t => t.hotsosOrderId).map(t => t.hotsosOrderId)), [tasks]);
   const hotsosTaskCount = useMemo(() => tasks.filter(t => t.origen === "hotsos").length, [tasks]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);
+  // Antes esto se calculaba en línea, sin memoizar, directo en las props de HomeView — se
+  // recalculaba en CADA render de toda la app (que es un solo componente gigante), no solo
+  // cuando cambiaban las tareas o el historial de mantenimiento.
+  const mttoWeekCount = useMemo(() => mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length, [mttoLog]);
+  const tasksTodayForHome = useMemo(
+    () => tasks.filter(t => localDateIso(new Date(t.createdAt)) === localDateIso(new Date()) && (t.asignadoA === currentUser || t.createdBy === displayName)),
+    [tasks, currentUser, displayName]
+  );
+  const openTasksCount = useMemo(() => tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, [tasks]);
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
     [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex]
@@ -22051,10 +22073,10 @@ export default function App() {
               tourProgress={{ done: tourProgressCount, total: FLOORS.length }}
               lowStockDetail={lowStockItems}
               activeIssuesList={Object.values(activeIssues)}
-              mttoWeekCount={mttoLog.filter(m => (new Date() - new Date(m.fecha || m.createdAt)) / 864e5 <= 7).length}
-              tasksToday={tasks.filter(t => localDateIso(new Date(t.createdAt)) === localDateIso(new Date()) && (t.asignadoA === currentUser || t.createdBy === displayName))}
+              mttoWeekCount={mttoWeekCount}
+              tasksToday={tasksTodayForHome}
               changelogEntries={changelogEntries}
-              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount }} />
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: openTasksCount, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}

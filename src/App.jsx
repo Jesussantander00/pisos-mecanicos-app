@@ -6696,8 +6696,28 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
     }
   };
 
+  const circuitBg = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'>
+      <g fill='none' stroke='rgba(56,189,248,0.16)' stroke-width='1.5'>
+        <path d='M0 30 H45 V90 H160' />
+        <path d='M100 0 V50 H160' />
+        <path d='M0 120 H60 V160' />
+        <path d='M130 60 V160' />
+        <path d='M60 90 H100' />
+      </g>
+      <g fill='rgba(56,189,248,0.28)'>
+        <circle cx='45' cy='30' r='2.6' />
+        <circle cx='45' cy='90' r='2.6' />
+        <circle cx='100' cy='50' r='2.6' />
+        <circle cx='60' cy='120' r='2.6' />
+        <circle cx='130' cy='60' r='2.6' />
+        <circle cx='60' cy='90' r='2.6' />
+        <circle cx='100' cy='90' r='2.6' />
+      </g>
+    </svg>`
+  )}")`;
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: "#0b1622" }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#0b1622", backgroundImage: circuitBg, backgroundRepeat: "repeat" }}>
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-6">
           <img src="/icon-192.png" alt="QuinTech" className="mx-auto w-12 h-12 rounded-lg mb-3 object-cover" />

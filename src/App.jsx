@@ -6697,7 +6697,7 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: C.steelDark }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "#0b1622" }}>
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-6">
           <img src="/icon-192.png" alt="QuinTech" className="mx-auto w-12 h-12 rounded-lg mb-3 object-cover" />
@@ -6705,45 +6705,45 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
           <p className="text-sm" style={{ color: "#8fa3b8" }}>{mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
           <p className="text-white text-base font-bold tracking-tight mt-1">Innovación Tecnológica</p>
         </div>
-        <div className="rounded-xl p-5" style={{ background: C.panel }}>
-          <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="rounded-xl p-5" style={{ background: "#d1d5db" }}>
+          <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: "#9ca3af", background: "#d1d5db" }}>
             <button onClick={() => setMode("login")} className="flex-1 py-2 text-sm font-medium"
-              style={{ background: mode === "login" ? C.steel : C.bg, color: mode === "login" ? "#fff" : C.inkSoft }}>Iniciar sesión</button>
+              style={{ background: mode === "login" ? "#1f2937" : "#d1d5db", color: mode === "login" ? "#fff" : "#4b5563" }}>Iniciar sesión</button>
             <button onClick={() => setMode("register")} className="flex-1 py-2 text-sm font-medium"
-              style={{ background: mode === "register" ? C.steel : C.bg, color: mode === "register" ? "#fff" : C.inkSoft }}>Crear cuenta</button>
+              style={{ background: mode === "register" ? "#1f2937" : "#d1d5db", color: mode === "register" ? "#fff" : "#4b5563" }}>Crear cuenta</button>
           </div>
 
           <div className="space-y-2.5">
             {mode === "register" && (
               <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Tu nombre completo"
                 autoComplete="name"
-                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }} />
             )}
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Correo" type="email"
               autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="email"
-              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }} />
             <div className="relative">
               <input value={password} onChange={e => setPassword(e.target.value)} type={showPw ? "text" : "password"} placeholder="Contraseña"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
-                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}
+                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }}
                 onKeyDown={e => { if (e.key === "Enter" && mode === "login") submit(); }} />
               <button type="button" onClick={() => setShowPw(v => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium px-1.5 py-1" style={{ color: C.gray }}>
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium px-1.5 py-1" style={{ color: "#6b7280" }}>
                 {showPw ? "Ocultar" : "Mostrar"}
               </button>
             </div>
             {mode === "register" && (
               <input value={password2} onChange={e => setPassword2(e.target.value)} type={showPw ? "text" : "password"} placeholder="Confirmar contraseña"
                 autoComplete="new-password"
-                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}
+                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }}
                 onKeyDown={e => { if (e.key === "Enter") submit(); }} />
             )}
             {mode === "register" && password2 && password !== password2 && (
-              <div className="text-xs" style={{ color: C.red }}>Las contraseñas no coinciden.</div>
+              <div className="text-xs" style={{ color: "#dc2626" }}>Las contraseñas no coinciden.</div>
             )}
-            {error && <div className="text-xs" style={{ color: C.red }}>{error}</div>}
+            {error && <div className="text-xs" style={{ color: "#dc2626" }}>{error}</div>}
             {mode === "register" && (
-              <div className="text-xs rounded-md p-2" style={{ background: C.amberSoft, color: "#7a5405" }}>
+              <div className="text-xs rounded-md p-2" style={{ background: "#fef3c7", color: "#92400e" }}>
                 Tu cuenta queda pendiente de aprobación por un administrador (salvo que seas la primera persona en registrarse en todo el sistema).
               </div>
             )}
@@ -6751,13 +6751,13 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
               {mode === "login" ? "Entrar" : "Crear cuenta"}
             </Button>
             {mode === "login" && (
-              <p className="text-xs text-center" style={{ color: C.gray }}>
+              <p className="text-xs text-center" style={{ color: "#6b7280" }}>
                 ¿Olvidaste tu contraseña? Pídele a un administrador que te la restablezca desde el Panel de administrador.
               </p>
             )}
           </div>
         </div>
-        <p className="text-center text-xs mt-4" style={{ color: "#657c92" }}>
+        <p className="text-center text-xs mt-4" style={{ color: "#8b98a8" }}>
           Acceso por correo y contraseña para identificar cada recorrido. No sustituye un sistema de seguridad corporativo.
           Una vez inicias sesión en este navegador, queda recordada aquí — no hace falta volver a entrar cada vez que abres la página,
           salvo que borres los datos de navegación o uses una pestaña de incógnito.

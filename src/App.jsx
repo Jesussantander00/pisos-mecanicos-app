@@ -8917,7 +8917,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
     <>
       <div className="fixed inset-0" style={{ background: "rgba(10,14,20,0.5)", zIndex: 150 }} onClick={onClose} />
       <div className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] overflow-y-auto pm-stagger-in" style={{ background: C.panel, zIndex: 151, boxShadow: "-8px 0 24px rgba(0,0,0,0.15)" }}>
-        <div className="sticky top-0 flex items-start justify-between gap-2 p-4 border-b" style={{ background: C.panel, borderColor: C.line }}>
+        <div className="pm-safe-top sticky top-0 flex items-start justify-between gap-2 p-4 border-b" style={{ background: C.panel, borderColor: C.line }}>
           <div className="min-w-0">
             <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: stateColors.bg, color: stateColors.fg }}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</span>
             <div className="text-base font-semibold mt-1" style={{ color: C.ink }}>{task.titulo}</div>
@@ -12385,7 +12385,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
     <>
       <div className="fixed inset-0" style={{ background: "rgba(10,14,20,0.5)", zIndex: 150 }} onClick={onClose} />
       <div className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] overflow-y-auto pm-stagger-in" style={{ background: C.panel, zIndex: 151, boxShadow: "-8px 0 24px rgba(0,0,0,0.15)" }}>
-        <div className="sticky top-0 flex items-start justify-between gap-2 p-4 border-b" style={{ background: C.panel, borderColor: C.line }}>
+        <div className="pm-safe-top sticky top-0 flex items-start justify-between gap-2 p-4 border-b" style={{ background: C.panel, borderColor: C.line }}>
           <div className="min-w-0">
             <div className="text-base font-semibold" style={{ color: C.ink }}>{equipo.nombre}</div>
             <div className="text-xs" style={{ color: C.gray }}>{equipo.sistema} · {MESES_LABELS[mesNum - 1]} {year}</div>

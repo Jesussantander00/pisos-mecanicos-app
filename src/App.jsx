@@ -19980,6 +19980,9 @@ export default function App() {
     (async () => { try { setAiUsageStats((await sGet("ai-usage-stats", true)) || {}); } catch { /* noop */ } })();
   }, [view]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // El menú lateral en celular/tablet no tenía fondo oscuro ni se cerraba con "atrás" — quedaba
+  // abierto sobre el contenido sin que se notara bien, dando la sensación de que "no pasa nada".
+  useBackCloseModal(sidebarOpen, () => setSidebarOpen(false));
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
   const [justFinished, setJustFinished] = useState(false);
@@ -22051,6 +22054,13 @@ export default function App() {
             if (confirm("Esto va a recargar la app para tomar la versión nueva. Si tienes algo escrito sin guardar (una ronda, una lectura), guárdalo primero. ¿Continuar?")) updateServiceWorker(true);
           }}>Actualizar ahora</Button>
         </div>
+      )}
+      {/* Fondo oscuro detrás del menú lateral en celular/tablet — antes no existía, así que al
+          abrir el menú el resto de la pantalla se veía igual y parecía que "no pasaba nada" o que
+          quedaba trabado; ahora se ve claramente que hay un menú abierto y se puede tocar afuera
+          para cerrarlo, como cualquier menú de app. */}
+      {sidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-20 transition-opacity duration-200" style={{ background: "rgba(10,14,20,0.5)" }} onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
       {/* SIDEBAR */}
       <aside className={`fixed lg:static z-20 top-0 left-0 w-64 shrink-0 transition-transform duration-200 flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}

@@ -865,6 +865,7 @@ function scrollToItem(itemId) {
 
 /** Aviso de "faltan estos equipos", con cada nombre clickeable para saltar directo a esa fila. */
 function PendingItemsAlert({ msg, onClose }) {
+  useBackCloseModal(!!msg, onClose);
   if (!msg) return null;
   const jumpTo = (id) => {
     onClose();
@@ -7387,7 +7388,7 @@ function MeterRow({ meter, entry, onChange, previous }) {
                   style={{ borderColor: confirmed ? C.green : C.line, borderWidth: confirmed ? 2 : 1, background: confirmed ? C.greenSoft : C.panel, color: C.ink }} />
                 <label className="flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer shrink-0" style={{ background: C.blueSoft, color: C.blue }}>
                   {reading === sub ? "…" : <Camera size={13} />}
-                  <input type="file" accept="image/*" className="hidden" disabled={reading !== null}
+                  <input type="file" accept="image/*" capture="environment" className="hidden" disabled={reading !== null}
                     onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) doRead(sub, f); }} />
                 </label>
               </div>
@@ -8739,7 +8740,9 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   const [menuOpen, setMenuOpen] = useState(false);
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
   const swiping = useRef(false);
+  const swipeDecided = useRef(null); // null = todavía no se sabe, "h" = horizontal (swipe de acción), "v" = vertical (scroll normal)
   const estado = normalizeTaskState(task.estado);
   const assigneeName = task.asignadoA ? (accounts[task.asignadoA]?.display_name || task.asignadoA) : null;
   const linkedEquipo = task.equipoId && equipos ? equipos.find(e => e.id === task.equipoId) : null;
@@ -8747,19 +8750,38 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   const SWIPE_THRESHOLD = 80;
   const canSwipe = canAct && estado !== "finalizada" && !selectMode;
 
-  const onTouchStart = (e) => { if (!canSwipe) return; touchStartX.current = e.touches[0].clientX; swiping.current = false; };
+  const onTouchStart = (e) => {
+    if (!canSwipe) return;
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    swiping.current = false;
+    swipeDecided.current = null;
+  };
   const onTouchMove = (e) => {
     if (!canSwipe || touchStartX.current == null) return;
     const dx = e.touches[0].clientX - touchStartX.current;
-    if (Math.abs(dx) > 8) swiping.current = true; // distingue de un simple toque
+    const dy = e.touches[0].clientY - touchStartY.current;
+    // Antes esto solo miraba el movimiento horizontal, así que un scroll vertical con el dedo
+    // apenas inclinado ya desplazaba la tarjeta (y podía disparar "Completar"/"Pausar" sin
+    // querer) — ahora, apenas hay suficiente movimiento para saber la intención, se decide UNA
+    // vez si esto es un swipe de acción o un scroll normal, y si es scroll no se toca swipeX.
+    if (swipeDecided.current === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      swipeDecided.current = Math.abs(dx) > Math.abs(dy) * 1.5 ? "h" : "v";
+    }
+    if (swipeDecided.current === "v") return; // deja que la página scrollee normal
+    if (swipeDecided.current === "h") swiping.current = true;
     setSwipeX(Math.max(-120, Math.min(120, dx)));
   };
   const onTouchEnd = () => {
     if (!canSwipe) return;
-    if (swipeX > SWIPE_THRESHOLD) onMove(task, "finalizada"); // derecha → completar
-    else if (swipeX < -SWIPE_THRESHOLD) onMove(task, estado === "pausada" ? "asignada" : "pausada"); // izquierda → pausar (o reanudar)
+    if (swipeDecided.current === "h") {
+      if (swipeX > SWIPE_THRESHOLD) onMove(task, "finalizada"); // derecha → completar
+      else if (swipeX < -SWIPE_THRESHOLD) onMove(task, estado === "pausada" ? "asignada" : "pausada"); // izquierda → pausar (o reanudar)
+    }
     setSwipeX(0);
     touchStartX.current = null;
+    touchStartY.current = null;
+    swipeDecided.current = null;
   };
 
   return (
@@ -8840,6 +8862,7 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
 }
 
 function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed }) {
+  useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
   const [closeSaving, setCloseSaving] = useState(false);
@@ -9872,7 +9895,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => setConfirmDeleteTaskId(t.id)} aria-label="Eliminar tarea" className="p-1"><Trash2 size={14} color={C.gray} /></button>
+                    <button onClick={() => setConfirmDeleteTaskId(t.id)} aria-label="Eliminar tarea" className="flex items-center justify-center" style={{ minWidth: 40, minHeight: 40 }}><Trash2 size={14} color={C.gray} /></button>
                   )
                 )}
               </div>
@@ -10264,6 +10287,26 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSe
 
 function PhotoPicker({ photos, onChange, max = 2 }) {
   const inputRef = useRef(null);
+  // Antes esto llamaba a URL.createObjectURL(f) directo en el render — como ese render se repite
+  // con cada tecla que se escribe en el resto del formulario (descripción, notas, etc.), se creaba
+  // una URL nueva de memoria por cada foto en CADA render, sin liberar nunca las anteriores. En un
+  // celular de gama baja, tras varios equipos seguidos en el mismo turno, esto podía degradar el
+  // rendimiento o forzar a recargar la pestaña (perdiendo el formulario a medio llenar). Ahora se
+  // crea una sola vez por archivo y se libera cuando la foto se quita o el formulario se cierra.
+  const urlMapRef = useRef(new Map());
+  useEffect(() => {
+    const map = urlMapRef.current;
+    photos.forEach(f => { if (typeof f !== "string" && !map.has(f)) map.set(f, URL.createObjectURL(f)); });
+    for (const [file, url] of map) {
+      if (!photos.includes(file)) { URL.revokeObjectURL(url); map.delete(file); }
+    }
+  }, [photos]);
+  useEffect(() => () => {
+    urlMapRef.current.forEach(url => URL.revokeObjectURL(url));
+    urlMapRef.current.clear();
+  }, []);
+  const urlFor = (f) => typeof f === "string" ? f : (urlMapRef.current.get(f) || URL.createObjectURL(f));
+
   const onFiles = (e) => {
     const files = Array.from(e.target.files || []).slice(0, max - photos.length);
     onChange([...photos, ...files]);
@@ -10276,7 +10319,7 @@ function PhotoPicker({ photos, onChange, max = 2 }) {
       <div className="flex items-center gap-2 flex-wrap mb-2">
         {photos.map((f, i) => (
           <div key={i} className="relative">
-            <img loading="lazy" src={typeof f === "string" ? f : URL.createObjectURL(f)} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+            <img loading="lazy" src={urlFor(f)} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
             <button type="button" onClick={() => removeAt(i)} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 flex items-center justify-center text-xs"
               style={{ background: C.red, color: "#fff" }}>×</button>
           </div>
@@ -11025,6 +11068,8 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const [successToast, setSuccessToast] = useState(null);
   const [confirmApprove, setConfirmApprove] = useState(false);
   const sentinelRef = useRef(null);
+  useBackCloseModal(!!selectedId, () => setSelectedId(null));
+  useBackCloseModal(showExportModal, () => setShowExportModal(false));
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setVisibleCount(20); }, [search, filterTipo, sort]); // si cambian los filtros, vuelve a empezar
@@ -12296,6 +12341,7 @@ function cronogramaCellVisual(c, mesNum, now) {
  * reprogramar el estado/fecha de esa celda o registrar un mantenimiento extraordinario.
  */
 function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onClose, onReprogram, onLogExtraordinary, onZoom }) {
+  useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [reprogramming, setReprogramming] = useState(false);
   const [newEstado, setNewEstado] = useState(entry?.estado || "pendiente");
   const [newFecha, setNewFecha] = useState(entry?.fechaEjecucion || "");
@@ -12718,7 +12764,7 @@ function EmployeeManagePanel({ employees, onCreateEmployee, onUpdateEmployee, on
                   placeholder="Hrs. reducción/día" title="Cuántas horas se le acumulan por cada día trabajado (ej. 1 si trabaja 8h en vez de las 7h reducidas). Vacío = no acumula."
                   className="text-xs border rounded-md px-1.5 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, width: 100 }} />
                 <Button size="sm" variant="ghost" onClick={() => onUpdateEmployee(emp.id, { active: !emp.active })}>{emp.active ? "Desactivar" : "Activar"}</Button>
-                <button onClick={() => onDeleteEmployee(emp.id)} className="p-1"><Trash2 size={14} color={C.gray} /></button>
+                <button onClick={() => onDeleteEmployee(emp.id)} aria-label="Eliminar empleado" className="flex items-center justify-center" style={{ minWidth: 40, minHeight: 40 }}><Trash2 size={14} color={C.gray} /></button>
               </div>
             </div>
           ))}
@@ -13453,6 +13499,7 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  useBackCloseModal(mobileOpen, () => { setMobileOpen(false); setQ(""); });
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -13595,6 +13642,7 @@ function AiAssistantWidget({ contextSummary }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
+  useBackCloseModal(open, () => setOpen(false));
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -13696,6 +13744,7 @@ function NetworkStatusIndicator({ pendingCount = 0 }) {
 
 function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
+  useBackCloseModal(open, () => setOpen(false));
   const shortcuts = {
     "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms", "Equipos de Gimnasio": "fichas-tecnicas",
     "Check List Caldera": "fichas-tecnicas", "Equipos de Lavandería": "fichas-tecnicas",
@@ -13839,6 +13888,7 @@ const ONBOARDING_STEPS = [
    ESCÁNER DE QR (con la cámara, para saltar directo a un equipo/estantería)
    ============================================================ */
 function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
+  useBackCloseModal(true, onClose); // sin esto, el atrás del celular podía dejar la cámara encendida
   const videoRef = useRef(null);
   const rafRef = useRef(null);
   const streamRef = useRef(null);
@@ -14463,9 +14513,84 @@ function Avatar({ name, cargo, size = 28 }) {
   );
 }
 
+/**
+ * Hace que el botón/gesto de "atrás" del celular cierre un modal, panel o pantalla en vez de
+ * salir de la app entera (o de no hacer nada) — que era el bug reportado de "entro a una tarea,
+ * la lleno, y no puedo volver". La app nunca usaba el historial del navegador, así que para el
+ * sistema operativo cualquier drawer/lightbox/modal abierto no existía: el botón atrás no tenía
+ * nada que deshacer dentro de la propia página, y en una PWA instalada eso puede cerrar la app
+ * de un de una, con lo que se llevaba escrito sin guardar.
+ *
+ * Cómo funciona: cuando algo se abre (isOpen pasa a true), se deja una "migaja" en el historial
+ * del navegador (history.pushState) y punto — no se navega a ningún lado, la pantalla no cambia.
+ * Si luego el usuario presiona atrás, el navegador dispara "popstate" y AHÍ es cuando cerramos lo
+ * que esté abierto, en vez de dejar que el navegador decida. Una pila global (fuera de React)
+ * asegura que un solo toque de "atrás" cierre solo lo último que se abrió (por ejemplo: si hay
+ * una foto ampliada sobre un panel de tarea, atrás cierra primero la foto, no las dos cosas a la
+ * vez ni salta directo a Inicio).
+ */
+let __pmBackStack = [];
+let __pmScrollLockCount = 0;
+function useBackClose(isOpen, onClose) {
+  const idRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = {};
+    idRef.current = id;
+    __pmBackStack.push(id);
+    try { window.history.pushState({ pmBack: true }, ""); } catch { /* noop */ }
+    return () => {
+      __pmBackStack = __pmBackStack.filter(x => x !== id);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = () => {
+      // Si esto ya no es lo último que se abrió (ej. hay una foto ampliada encima), el atrás le
+      // toca a esa capa, no a esta — se ignora y se deja que su propio listener actúe.
+      const top = __pmBackStack[__pmBackStack.length - 1];
+      if (top === idRef.current) {
+        __pmBackStack.pop();
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, [isOpen]);
+}
+
+/**
+ * Igual que useBackClose, pero además bloquea el scroll de lo que está DETRÁS mientras esto está
+ * abierto. Es para overlays de verdad (drawer, modal, foto ampliada) que flotan ENCIMA de una
+ * pantalla que se queda montada debajo — sin esto, en el celular se puede arrastrar esa pantalla
+ * de fondo con el dedo (sobre todo en iOS, con el "rebote" de goma que deja ver un hueco en
+ * blanco detrás), lo cual se siente roto. NO usar esto para la navegación principal (cambiar de
+ * sección con `view`): ahí no hay nada "detrás" que deba quedar congelado — la sección ES la
+ * pantalla, y bloquear el scroll ahí dejaría a la sección misma sin poder desplazarse.
+ * Un contador (no true/false) porque puede haber más de una capa abierta a la vez (ej. una foto
+ * ampliada sobre un panel de tarea) — el scroll solo se vuelve a permitir al cerrar la última.
+ */
+function useBackCloseModal(isOpen, onClose) {
+  useBackClose(isOpen, onClose);
+  useEffect(() => {
+    if (!isOpen) return;
+    __pmScrollLockCount++;
+    if (__pmScrollLockCount === 1) document.body.style.overflow = "hidden";
+    return () => {
+      __pmScrollLockCount = Math.max(0, __pmScrollLockCount - 1);
+      if (__pmScrollLockCount === 0) document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+}
+
 /** Visor de foto a pantalla completa — se abre al tocar cualquier miniatura, se cierra tocando
  * afuera o la X. */
 function Lightbox({ url, onClose }) {
+  useBackCloseModal(!!url, onClose);
   if (!url) return null;
   return (
     <div className="fixed inset-0 flex items-center justify-center p-6" style={{ background: "rgba(10,14,20,0.85)", zIndex: 200 }} onClick={onClose}>
@@ -14479,6 +14604,7 @@ function Lightbox({ url, onClose }) {
 
 
 function OnboardingTour({ onClose }) {
+  useBackCloseModal(true, onClose); // se desmonta solo cuando el padre deja de mostrarlo
   const [step, setStep] = useState(0);
   const s = ONBOARDING_STEPS[step];
   const isLast = step === ONBOARDING_STEPS.length - 1;
@@ -14919,6 +15045,13 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
   const [uploadingBefore, setUploadingBefore] = useState(false);
   const [resolving, setResolving] = useState(false);
   const checkins = iss.checkins || [];
+
+  // Libera la vista previa anterior cada vez que se reemplaza o se quita, y también al cerrar la
+  // tarjeta — sin esto, cada foto que el técnico probaba antes de decidirse quedaba en memoria
+  // sin liberar (URL.createObjectURL sin su URL.revokeObjectURL).
+  useEffect(() => {
+    return () => { if (afterPhotoPreview) URL.revokeObjectURL(afterPhotoPreview); };
+  }, [afterPhotoPreview]);
 
   const doAttachBefore = async (file) => {
     if (!file) return;
@@ -15698,6 +15831,7 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
   const [firma, setFirma] = useState(null);
   const [saving, setSaving] = useState(false);
   const [checkingOutId, setCheckingOutId] = useState(null);
+  useBackCloseModal(!!checkingOutId, () => setCheckingOutId(null));
   const [firmaSalida, setFirmaSalida] = useState(null);
   const [search, setSearch] = useState("");
 
@@ -16465,6 +16599,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const [positioningMode, setPositioningMode] = useState(false);
   const [positioningCodigo, setPositioningCodigo] = useState("");
   const [tappedComponent, setTappedComponent] = useState(null);
+  useBackCloseModal(!!tappedComponent, () => setTappedComponent(null));
 
   const selected = diagrams.find(d => d.id === selectedId);
   const diagramProcedures = procedures.filter(p => p.diagramId === selectedId);
@@ -17736,6 +17871,24 @@ function GeneralHistoryView({ entries }) {
   const [filter, setFilter] = useState("all"); // all | empleado | inventario | tarea
   const filtered = filter === "all" ? entries : entries.filter(e => e.kind === filter);
 
+  // Antes se renderizaban hasta 300 filas de golpe en cuanto se entraba a esta pantalla o se
+  // cambiaba el filtro — en un celular de gama media/baja eso se siente con tirones al abrir o
+  // al hacer scroll. Ahora se cargan de a 40, y se piden más solas cuando el centinela invisible
+  // al final entra en pantalla (mismo patrón que ya se usa en Historial de mantenimientos).
+  const [visibleCount, setVisibleCount] = useState(40);
+  useEffect(() => { setVisibleCount(40); }, [filter]);
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    if (visibleCount >= Math.min(filtered.length, 300)) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((ents) => {
+      if (ents[0].isIntersecting) setVisibleCount(v => v + 40);
+    }, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [visibleCount, filtered.length]);
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Historial de cambios</h2>
@@ -17756,7 +17909,7 @@ function GeneralHistoryView({ entries }) {
         <p className="text-sm py-8 text-center" style={{ color: C.gray }}>No hay cambios registrados todavía.</p>
       ) : (
         <div className="space-y-1.5">
-          {filtered.slice(0, 300).map(e => {
+          {filtered.slice(0, 300).slice(0, visibleCount).map(e => {
             const action = e.action || "edicion";
             const actionColor = AUDIT_ACTION_COLORS[action];
             const kindColor = AUDIT_KIND_COLORS[e.kind];
@@ -17781,6 +17934,7 @@ function GeneralHistoryView({ entries }) {
               </div>
             );
           })}
+          {visibleCount < Math.min(filtered.length, 300) && <div ref={sentinelRef} style={{ height: 1 }} />}
         </div>
       )}
     </div>
@@ -17827,7 +17981,7 @@ function ChangelogView({ entries, isAdmin, currentUser, onAddEntry, onDeleteEntr
           <div key={e.id} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
             <div className="flex items-start justify-between gap-2">
               <div className="text-sm font-semibold" style={{ color: C.ink }}>{e.title}</div>
-              {isAdmin && <button onClick={() => onDeleteEntry(e.id)} className="p-1"><X size={14} color={C.gray} /></button>}
+              {isAdmin && <button onClick={() => onDeleteEntry(e.id)} aria-label="Eliminar" className="flex items-center justify-center" style={{ minWidth: 40, minHeight: 40 }}><X size={14} color={C.gray} /></button>}
             </div>
             {e.description && <p className="text-sm mt-1" style={{ color: C.inkSoft }}>{e.description}</p>}
             <div className="text-xs mt-2" style={{ color: C.gray }}>{fmtDT(e.at)} {e.by ? `· ${e.by}` : ""}</div>
@@ -18971,6 +19125,7 @@ function EquipmentAnalyticsView({ issueHistory, activeIssues, reportEmail, onLog
   const [filterTecnico, setFilterTecnico] = useState("");
   const [showAdvFilters, setShowAdvFilters] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  useBackCloseModal(showExportModal, () => setShowExportModal(false));
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -19336,6 +19491,7 @@ function BackupButton() {
  * ahí mismo para cuando se agreguen más permisos finos (hoy solo hay uno real: editar horarios). */
 function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, currentUsername, onClose,
   onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleScheduleManager, onDeleteAccount, onResetPassword, onTransferTasks }) {
+  useBackCloseModal(true, onClose); // se desmonta solo cuando el padre deja de mostrarlo
   const [newPw, setNewPw] = useState("");
   const [resetMsg, setResetMsg] = useState("");
   const [transferTo, setTransferTo] = useState("");
@@ -19646,6 +19802,11 @@ export default function App() {
     setViewRaw(v);
     try { localStorage.setItem("pm-local:last-view", v); } catch { /* noop */ }
   }, []);
+  // El botón/gesto de "atrás" del celular ahora regresa a Inicio en vez de salir de la app (o no
+  // hacer nada) cuando se está en cualquier otra sección — ver useBackClose más abajo para el
+  // porqué. Cambiar de una sección a otra sin pasar por Inicio no apila más "atrases": basta un
+  // solo toque de atrás para volver a Inicio desde donde sea.
+  useBackClose(view !== "home", () => setView("home"));
   const [nowClock, setNowClock] = useState(() => new Date());
   // Detecta cuándo hay una versión nueva de la app lista para usar (así no hace falta borrar
   // e instalar de nuevo cada vez que se sube una actualización) — revisa cada 30 min mientras
@@ -19673,6 +19834,7 @@ export default function App() {
     undoTimerRef.current = setTimeout(() => setUndoToast(null), 10000);
   };
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  useBackCloseModal(showProfileMenu, () => setShowProfileMenu(false));
   const closeOnboarding = () => {
     setShowOnboarding(false);
     try { localStorage.setItem("pm-local:onboarded", "1"); } catch { /* noop */ }

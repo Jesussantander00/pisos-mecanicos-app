@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
-import { sGet, sSet, uploadPhoto, uploadVideo, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount } from "./lib/storage";
+import { sGet, sSet, uploadPhoto, uploadVideo, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount, getPendingPhotoQueue } from "./lib/storage";
 import { supabase } from "./lib/supabaseClient";
 
 /* ============================================================
@@ -39,7 +39,7 @@ const DARK_COLORS = {
   bg: "#0f1720",
   panel: "#1a2531",
   ink: "#e7edf3",
-  inkSoft: "#a7b6c4",
+  inkSoft: "#b7c4d0",
   steel: "#0c1a28",
   steelDark: "#0a1521",
   line: "#2b3947",
@@ -51,7 +51,7 @@ const DARK_COLORS = {
   redSoft: "#3a1c17",
   blue: "#6ea3d8",
   blueSoft: "#182634",
-  gray: "#8695a3",
+  gray: "#9fb0bf",
   cardAlt: "#1f2b38",
   white: "#1a2531",
 };
@@ -1468,6 +1468,20 @@ const TASK_PRIORITIES = [
   { code: "baja", label: "Baja" },
 ];
 const TASK_PRIORITY_COLORS = { alta: "#D93025", media: "#D97706", baja: "#5C6B7A" };
+/** Palabras que casi siempre significan que algo es urgente de verdad — si aparecen en el título
+ *  o la descripción de una tarea nueva, se sugiere Prioridad Alta automáticamente (la persona
+ *  puede cambiarla igual; es solo una sugerencia, no obliga a nada). */
+const TASK_EMERGENCY_KEYWORDS = [
+  "fuga", "incendio", "fuego", "humo", "corto circuito", "cortocircuito", "corto electrico", "corto eléctrico",
+  "inundacion", "inundación", "explosion", "explosión", "chispa", "electrocut", "quemad", "derrame",
+  "emergencia", "se esta incendiando", "se está incendiando", "huele a gas", "fuga de gas", "no hay agua",
+  "sin energia", "sin energía", "se cayo el ascensor", "se cayó el ascensor", "atrapado", "atrapada",
+];
+function suggestsHighPriority(text) {
+  const norm = normalizeSearchText(text || "");
+  if (!norm.trim()) return false;
+  return TASK_EMERGENCY_KEYWORDS.some(k => norm.includes(normalizeSearchText(k)));
+}
 const TASK_RECURRENCES = [
   { code: "", label: "No se repite" },
   { code: "semanal", label: "Cada semana" },
@@ -1676,14 +1690,19 @@ const SPECIAL_CODES = [
   { code: "LIC_PAT", label: "Licencia de paternidad" },
   { code: "COMP", label: "Compensatorio (día ganado por horas de reducción)" },
 ];
-const SPECIAL_CODE_COLORS = {
-  VAC: { bg: "#dff5e3", fg: "#1c7a34" },
-  LIBRE: { bg: "#eef1f4", fg: "#5c6b7a" },
-  INC: { bg: "#ffe3ea", fg: "#a31245" },
-  ALT: { bg: "#fff3d6", fg: "#8a5a00" },
-  LIC_PAT: { bg: "#e0ecff", fg: "#1e4fa3" },
-  COMP: { bg: "#e8e0fb", fg: "#6b21a8" },
-};
+// Función (no objeto fijo) para que los colores de cada código especial se adapten al modo
+// oscuro — se leen de C en el momento en que se llama, no una sola vez al cargar la página.
+function getSpecialCodeColors() {
+  const dark = C.bg === DARK_COLORS.bg;
+  return {
+    VAC: { bg: C.greenSoft, fg: C.green },
+    LIBRE: { bg: C.line, fg: C.gray },
+    INC: { bg: C.redSoft, fg: C.red },
+    ALT: { bg: C.amberSoft, fg: C.amber },
+    LIC_PAT: { bg: C.blueSoft, fg: C.blue },
+    COMP: { bg: dark ? "#2a2140" : "#e8e0fb", fg: dark ? "#c9a8f0" : "#6b21a8" },
+  };
+}
 /**
  * Horas que se guardan por cada día trabajado (para quien tiene turnos de 8h en vez de las 7h
  * "reducidas" que trabaja la mayoría) y cuántas horas juntas hacen un día de descanso completo.
@@ -6725,6 +6744,30 @@ function Button({ children, onClick, variant = "primary", size = "md", disabled,
   );
 }
 
+/**
+ * Reemplazo propio del confirm() nativo del navegador — ese cuadro siempre sale con el estilo del
+ * sistema operativo (blanco, sin importar el modo oscuro de la app) y no se puede tocar desde CSS.
+ * Este sí respeta el tema y el botón de "atrás" del celular, igual que el resto de los diálogos.
+ */
+function ConfirmDialog({ open, title, message, confirmLabel = "Sí, continuar", cancelLabel = "Cancelar", danger = true, onConfirm, onCancel }) {
+  useBackCloseModal(open, onCancel);
+  if (!open) return null;
+  return (
+    <>
+      <div className="fixed inset-0" style={{ background: "rgba(10,14,20,0.5)", zIndex: 300 }} onClick={onCancel} />
+      <div className="fixed left-1/2 top-1/2 w-[90%] max-w-sm rounded-xl border p-4"
+        style={{ transform: "translate(-50%, -50%)", background: C.panel, borderColor: C.line, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 301 }}>
+        {title && <div className="text-sm font-semibold mb-1.5" style={{ color: C.ink }}>{title}</div>}
+        <div className="text-sm mb-4" style={{ color: C.inkSoft }}>{message}</div>
+        <div className="flex items-center justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onCancel}>{cancelLabel}</Button>
+          <Button size="sm" variant={danger ? "red" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ============================================================
    AUTENTICACIÓN (usuario + contraseña)
    Nota de seguridad real: las contraseñas se guardan como hash SHA-256
@@ -8861,10 +8904,11 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   );
 }
 
-function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed }) {
+function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
+  const [closeWitness, setCloseWitness] = useState("");
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
   const [showMttoForm, setShowMttoForm] = useState(false);
@@ -8887,9 +8931,13 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
 
   const doClose = async () => {
     if (closePhotos.length === 0) { setCloseMsg({ ok: false, text: "Necesitas al menos una foto de cómo quedó, para poder cerrarla." }); return; }
+    if (estado !== "finalizada" && task.prioridad === "alta" && !closeWitness.trim()) {
+      setCloseMsg({ ok: false, text: "Por ser Prioridad Alta, necesitas el nombre de un testigo que verificó cómo quedó, antes de cerrarla." });
+      return;
+    }
     setCloseSaving(true); setCloseMsg(null);
     try {
-      await onCloseTask(task, closePhotos, closeNote.trim());
+      await onCloseTask(task, closePhotos, closeNote.trim(), closeWitness.trim());
       onClose();
     } catch (e) {
       setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo." });
@@ -8964,17 +9012,20 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                 <div className="rounded-md p-2 mt-1" style={{ background: C.panel }}>
                   <div className="flex items-center gap-2 mb-2">
                     <select value={mttoForm.tipo} onChange={e => setMttoForm(f => ({ ...f, tipo: e.target.value }))}
-                      className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, color: C.ink }}>
+                      className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                       <option value="preventivo">Preventivo</option>
                       <option value="correctivo">Correctivo</option>
                     </select>
                     <input type="number" value={mttoForm.costo} onChange={e => setMttoForm(f => ({ ...f, costo: e.target.value }))} placeholder="Costo (opcional)"
-                      className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, color: C.ink }} />
+                      className="text-sm border rounded-md px-2 py-1.5 outline-none w-28" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   </div>
                   <MaintenanceTextSuggestions sistema={linkedEquipo.sistema} tipo={mttoForm.tipo} onPick={t => setMttoForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
                   <EquipoHistorySuggestions equipoId={linkedEquipo.id} mttoLog={mttoLog} onPick={t => setMttoForm(f => ({ ...f, descripcion: f.descripcion.trim() ? `${f.descripcion.trim()} ${t}` : t }))} />
-                  <textarea value={mttoForm.descripcion} onChange={e => setMttoForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
-                    className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, color: C.ink }} />
+                  <div className="flex items-start gap-1.5">
+                    <textarea value={mttoForm.descripcion} onChange={e => setMttoForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Qué se hizo"
+                      className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                    <VoiceInputButton onResult={text => setMttoForm(f => ({ ...f, descripcion: (f.descripcion ? f.descripcion + " " : "") + text }))} />
+                  </div>
                   <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Fotos (al menos una)</div>
                   <PhotoPicker photos={mttoForm.fotos} onChange={fotos => setMttoForm(f => ({ ...f, fotos }))} max={6} />
                   {invItems && (
@@ -9048,6 +9099,12 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                     ))}
                   </div>
                   {task.notaCierre && <div className="text-xs mt-2 italic" style={{ color: C.inkSoft }}>"{task.notaCierre}"</div>}
+                  {task.testigoCierre && <div className="text-xs mt-1 font-medium" style={{ color: C.gray }}>✓ Verificado por: {task.testigoCierre}</div>}
+                  {hasPendingUpload && (
+                    <div className="text-xs mt-1.5 font-semibold px-1.5 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>
+                      <Camera size={11} /> Fotos aún esperando a subirse (sin señal)
+                    </div>
+                  )}
                 </div>
               )}
               <Button icon={Download} disabled={downloadingReport} onClick={() => onDownloadReport(task)} className="w-full justify-center">
@@ -9066,6 +9123,13 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                 <PhotoPicker photos={closePhotos} onChange={setClosePhotos} max={4} />
                 <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                {task.prioridad === "alta" && (
+                  <div className="mt-2">
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: C.red }}>Testigo que verificó cómo quedó (obligatorio por ser Prioridad Alta) *</label>
+                    <input value={closeWitness} onChange={e => setCloseWitness(e.target.value)} placeholder="Nombre de quien verificó"
+                      className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  </div>
+                )}
                 {closeMsg && <div className="text-xs mt-1.5" style={{ color: closeMsg.ok ? C.green : C.red }}>{closeMsg.text}</div>}
                 <Button size="sm" disabled={closeSaving} onClick={doClose} className="w-full justify-center mt-2">{closeSaving ? "Guardando…" : "✓ Confirmar cierre"}</Button>
               </div>
@@ -9079,13 +9143,17 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, mySignature, signerCargo, pendingTaskCloseIds }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newTab, setNewTab] = useState("manual"); // "manual" | "sugerencias"
   const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
+  // Si la persona ya tocó el selector de prioridad a mano, no se lo volvemos a cambiar solos —
+  // la sugerencia automática por palabras clave solo actúa mientras no se haya intervenido.
+  const prioridadManualRef = useRef(false);
+  const [prioritySuggested, setPrioritySuggested] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [assignMode, setAssignMode] = useState("now"); // "now" (por defecto) | "manual"
@@ -9178,6 +9246,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         async (payload, urls) => { await onCreateTask({ ...payload, fotosAntes: urls }); }
       );
       setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
+      prioridadManualRef.current = false; setPrioritySuggested(false);
       setShowNew(false); setNewTab("manual"); setDupWarning(null);
       if (res.queued) { setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." }); showToast("Tarea guardada en este celular — se sube sola apenas vuelva la señal.", true); }
       else showToast("✓ Tarea creada.", true);
@@ -9268,6 +9337,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [onlyMine, setOnlyMine] = useState(() => {
     try { const saved = localStorage.getItem(`pm-local:tasks-only-mine:${currentUsername}`); return saved != null ? saved === "1" : !isAdmin; } catch { return !isAdmin; }
   });
+  // Si se llegó aquí desde la tarjeta "Mis tareas vencidas" de Inicio, arranca ya con ese
+  // filtro activo (y "Solo lo mío" forzado) — se consume una sola vez, no queda pegado si
+  // luego se navega a Tareas por cualquier otro lado.
+  const [onlyVencidas, setOnlyVencidas] = useState(() => {
+    if (__pmTasksEntryFilter === "vencidas") { __pmTasksEntryFilter = null; return true; }
+    return false;
+  });
   const toggleOnlyMine = () => {
     setOnlyMine(v => {
       const next = !v;
@@ -9280,6 +9356,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const priorityOrder = { alta: 0, media: 1, baja: 2 };
   const filtered = useMemo(() => tasks
     .filter(t => !onlyMine || t.asignadoA === currentUsername)
+    .filter(t => !onlyVencidas || (normalizeTaskState(t.estado) !== "finalizada" && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24))
     .filter(t => !filterEstado || normalizeTaskState(t.estado) === filterEstado)
     .filter(t => {
       const d = new Date(t.createdAt);
@@ -9295,7 +9372,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       return true;
     })
     .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt))),
-    [tasks, onlyMine, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad]
+    [tasks, onlyMine, onlyVencidas, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad]
   );
 
   const counts = useMemo(
@@ -9393,15 +9470,16 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     onUpdateTask(t.id, { vistoPor: next });
   };
 
-  const doCloseTask = async (t, photos, note) => {
+  const doCloseTask = async (t, photos, note, witness) => {
     try {
       const res = await saveRecordWithPhotos(
         "task-close",
-        { taskId: t.id, notaCierre: note },
+        { taskId: t.id, notaCierre: note, testigoCierre: witness || null },
         photos,
         async (payload, urls) => {
           await onUpdateTask(payload.taskId, {
             estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
+            testigoCierre: payload.testigoCierre,
             timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
           });
           // Si la tarea está vinculada a un equipo, el cierre también queda como su mantenimiento
@@ -9429,12 +9507,45 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const doDownloadReport = async (t) => {
     setDownloadingReportId(t.id);
     try {
-      const doc = await generateTaskReportPdf(t, accounts[t.asignadoA]?.display_name || t.asignadoA || "Sin asignar");
+      const doc = await generateTaskReportPdf(t, accounts[t.asignadoA]?.display_name || t.asignadoA || "Sin asignar", mySignature, signerCargo);
       doc.save(`reporte-novedad-${t.titulo.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 40)}.pdf`);
     } catch {
       showToast("✗ No se pudo generar el reporte — revisa la conexión (necesita descargar las fotos).", false);
     }
     setDownloadingReportId(null);
+  };
+
+  // Exportar a Excel las tareas CERRADAS dentro del rango de fechas que ya está filtrado arriba
+  // (Desde / Hasta) — para armar informes de un período sin tener que copiar tarea por tarea.
+  const [exportingRange, setExportingRange] = useState(false);
+  const doExportClosedRange = () => {
+    setExportingRange(true);
+    try {
+      const cerradasRango = filtered.filter(t => normalizeTaskState(t.estado) === "finalizada");
+      if (cerradasRango.length === 0) {
+        showToast("No hay tareas cerradas en el rango/filtros actuales.", false);
+        setExportingRange(false);
+        return;
+      }
+      const header = ["Título", "Descripción", "Prioridad", "Asignado a", "Creada", "Asignada", "Cerrada", "Horas de resolución", "Nota de cierre", "Verificado por"];
+      const rows = cerradasRango.map(t => [
+        t.titulo, t.descripcion || "", TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label || t.prioridad,
+        accounts[t.asignadoA]?.display_name || t.asignadoA || "Sin asignar",
+        fmtDT(t.createdAt), t.assignedAt ? fmtDT(t.assignedAt) : "", t.finishedAt ? fmtDT(t.finishedAt) : "",
+        (t.assignedAt && t.finishedAt) ? hoursBetween(t.assignedAt, t.finishedAt).toFixed(1) : "",
+        t.notaCierre || "", t.testigoCierre || "",
+      ]);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+      ws["!cols"] = [{ wch: 30 }, { wch: 40 }, { wch: 10 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 30 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Tareas cerradas");
+      const rangeLabel = `${dateFrom || "inicio"}_${dateTo || "hoy"}`.replace(/\//g, "-");
+      XLSX.writeFile(wb, `tareas-cerradas-${rangeLabel}.xlsx`);
+      showToast(`✓ ${cerradasRango.length} tarea(s) cerrada(s) exportada(s).`, true);
+    } catch {
+      showToast("✗ No se pudo generar el Excel.", false);
+    }
+    setExportingRange(false);
   };
 
   const drawerTask = drawerTaskId ? tasks.find(t => t.id === drawerTaskId) : null;
@@ -9451,6 +9562,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         <div className="flex items-center gap-2">
           <button onClick={toggleOnlyMine} className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
             {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
+          </button>
+          <button onClick={() => setOnlyVencidas(v => !v)} title="Sin cerrar y abiertas hace más de 24 horas" className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyVencidas ? C.red : C.panel, color: onlyVencidas ? "#fff" : C.inkSoft, borderColor: onlyVencidas ? C.red : C.line, minHeight: 36 }}>
+            {onlyVencidas ? "✓ Vencidas" : "Vencidas"}
           </button>
           <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
             <button onClick={() => setViewMode("kanban")} className="px-2.5 font-semibold" style={{ background: viewMode === "kanban" ? C.steelDark : C.panel, color: viewMode === "kanban" ? "#fff" : C.inkSoft, minHeight: 36 }}>Kanban</button>
@@ -9480,6 +9594,12 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento</div>
               <div className="text-lg font-bold tabular-nums" style={{ color: cumplimientoPct >= 80 ? C.green : C.amber }}>{totalTareas > 0 ? `${cumplimientoPct}%` : "—"}</div>
+            </div>
+          </div>
+          <div className="rounded-xl border p-3 col-span-2" style={{ borderColor: C.line, background: C.panel }} title="Promedio de horas entre que se asigna una tarea y se cierra, sobre todas las tareas ya cerradas">
+            <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Tiempo promedio de resolución</div>
+            <div className="text-lg font-bold tabular-nums" style={{ color: C.ink }}>
+              {tiempoCierrePromedio == null ? "—" : tiempoCierrePromedio < 24 ? `${tiempoCierrePromedio.toFixed(1)} h` : `${(tiempoCierrePromedio / 24).toFixed(1)} d`}
             </div>
           </div>
         </div>
@@ -9601,12 +9721,37 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                 </div>
               )}
               <div className="flex items-center gap-1 mb-2">
-                <input value={form.titulo} onChange={e => { setForm(f => ({ ...f, titulo: e.target.value })); setDupWarning(null); }} placeholder="¿Qué hay que hacer? *" aria-label="¿Qué hay que hacer? (obligatorio)"
+                <input value={form.titulo} onChange={e => {
+                  const titulo = e.target.value;
+                  setForm(f => {
+                    if (!prioridadManualRef.current && f.prioridad !== "alta" && suggestsHighPriority(titulo + " " + f.descripcion)) {
+                      setPrioritySuggested(true);
+                      return { ...f, titulo, prioridad: "alta" };
+                    }
+                    return { ...f, titulo };
+                  });
+                  setDupWarning(null);
+                }} placeholder="¿Qué hay que hacer? *" aria-label="¿Qué hay que hacer? (obligatorio)"
                   className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: !form.titulo.trim() && saveMsg?.ok === false ? C.red : C.line, background: C.panel, color: C.ink }} />
                 <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
               </div>
-              <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Detalles (opcional)"
+              <textarea value={form.descripcion} onChange={e => {
+                const descripcion = e.target.value;
+                setForm(f => {
+                  if (!prioridadManualRef.current && f.prioridad !== "alta" && suggestsHighPriority(f.titulo + " " + descripcion)) {
+                    setPrioritySuggested(true);
+                    return { ...f, descripcion, prioridad: "alta" };
+                  }
+                  return { ...f, descripcion };
+                });
+              }} rows={2} placeholder="Detalles (opcional)"
                 className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              {prioritySuggested && (
+                <div className="rounded-md p-2 mb-2 text-xs flex items-center justify-between gap-2" style={{ background: C.redSoft, color: C.red }}>
+                  <span>🔺 Se puso Prioridad Alta sola porque suena urgente — cámbiala abajo si no lo es.</span>
+                  <button type="button" onClick={() => setPrioritySuggested(false)} className="font-semibold shrink-0">Ok</button>
+                </div>
+              )}
               <div className="rounded-md p-2 mb-2" style={{ background: C.bg }}>
             <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
               <div className="text-xs font-medium" style={{ color: C.inkSoft }}>¿A quién se la vas a asignar?</div>
@@ -9659,7 +9804,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <select value={form.prioridad} onChange={e => setForm(f => ({ ...f, prioridad: e.target.value }))}
+            <select value={form.prioridad} onChange={e => { prioridadManualRef.current = true; setPrioritySuggested(false); setForm(f => ({ ...f, prioridad: e.target.value })); }}
               className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
               {TASK_PRIORITIES.map(p => <option key={p.code} value={p.code}>Prioridad {p.label}</option>)}
             </select>
@@ -9772,6 +9917,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             <X size={13} /> Limpiar filtros
           </button>
         )}
+        <button onClick={doExportClosedRange} disabled={exportingRange} title="Exporta a Excel las tareas cerradas dentro del rango de fechas y filtros de arriba" className="text-xs font-semibold px-2.5 py-1.5 rounded-md flex items-center gap-1" style={{ color: C.blue }}>
+          <Download size={13} /> {exportingRange ? "Generando…" : "Exportar cerradas"}
+        </button>
         <button onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)} className="text-xs font-semibold px-2.5 py-1.5 rounded-md ml-auto flex items-center gap-1" style={{ color: selectMode ? C.red : C.amber }}>
           {selectMode ? <><X size={13} /> Cancelar selección</> : <><ClipboardCheck size={13} /> Seleccionar varias</>}
         </button>
@@ -9856,6 +10004,11 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                     <span>{assigneeName || "Sin asignar"} · {fmtDT(t.createdAt)}</span>
                     {t.recurrencia && <span>🔁 {t.recurrencia === "semanal" ? "Semanal" : "Mensual"}</span>}
                     <TaskTimer assignedAt={t.assignedAt} finishedAt={t.finishedAt} estado={estado} />
+                    {pendingTaskCloseIds && pendingTaskCloseIds.has(t.id) && (
+                      <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }} title="Este cierre tiene fotos esperando a subirse cuando haya señal">
+                        <Camera size={11} /> Fotos pendientes de subir
+                      </span>
+                    )}
                   </div>
                   {t.fotosAntes && t.fotosAntes.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-1.5" onClick={e => e.stopPropagation()}>
@@ -9934,7 +10087,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask} onMarkViewed={markTaskViewed}
-          onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl} />
+          onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl}
+          hasPendingUpload={pendingTaskCloseIds && pendingTaskCloseIds.has(drawerTask.id)} />
       )}
       <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
@@ -10217,7 +10371,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
   );
 }
 
-function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSelectEquipo, onDeleteEquipo }) {
+function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSelectEquipo, onDeleteEquipo, pendingMaintenanceEquipoIds }) {
   const [search, setSearch] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const q = search.trim().toLowerCase();
@@ -10251,6 +10405,11 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSe
                     {status.outOfService && <Pill tone="red">Fuera de servicio</Pill>}
                   </div>
                   <div className="text-xs mt-1" style={{ color: C.gray }}>{stats.total} mantenimiento{stats.total !== 1 ? "s" : ""} registrado{stats.total !== 1 ? "s" : ""}</div>
+                  {pendingMaintenanceEquipoIds && pendingMaintenanceEquipoIds.has(eq.id) && (
+                    <div className="text-[11px] mt-1 font-semibold flex items-center gap-1" style={{ color: C.amber }}>
+                      <Camera size={11} /> Fotos pendientes de subir
+                    </div>
+                  )}
                   {!status.outOfService && prevent.configured && (prevent.overdue || prevent.dueSoon) && (
                     <div className="text-[11px] mt-1 font-semibold flex items-center gap-1" style={{ color: prevent.overdue ? "#7a5405" : C.amber }}>
                       <AlertTriangle size={11} />
@@ -10951,35 +11110,46 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
         )}
       </div>
 
-      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Historial</div>
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Historial — línea de tiempo</div>
       {records.length === 0 ? (
         <p className="text-sm py-6 text-center" style={{ color: C.gray }}>Sin mantenimientos registrados todavía.</p>
-      ) : records.map(r => (
-        <div key={r.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: r.estado === "fuera-de-servicio" ? C.red : C.line, background: r.estado === "fuera-de-servicio" ? C.redSoft : C.panel }}>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-xs font-semibold" style={{ color: C.ink }}>
-              {MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo} · {fmtDT(r.fecha)}
-            </div>
-            <Pill tone={r.estado === "fuera-de-servicio" ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
-          </div>
-          <div className="text-sm mt-1" style={{ color: C.inkSoft }}>{r.descripcion}</div>
-          <div className="text-xs mt-1 flex items-center gap-1.5" style={{ color: C.gray }}><Avatar name={r.tecnico} size={16} /> Por {r.tecnico}{r.costo ? ` · Costo: ${r.costo.toLocaleString("es-CO")}` : ""}</div>
-          {r.fotos && r.fotos.length > 0 && (
-            <div className="flex items-center gap-2 mt-2">
-              {r.fotos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                </a>
-              ))}
-            </div>
-          )}
+      ) : (
+        <div className="relative pl-5">
+          <div className="absolute top-1 bottom-1 w-0.5" style={{ left: 5, background: C.line }} />
+          {records.map(r => {
+            const fueraDeServicio = r.estado === "fuera-de-servicio";
+            return (
+              <div key={r.id} className="relative mb-3">
+                <div className="absolute rounded-full border-2" style={{ left: -20, top: 5, width: 11, height: 11, background: fueraDeServicio ? C.red : C.green, borderColor: C.panel }} />
+                <div className="rounded-lg border p-3" style={{ borderColor: fueraDeServicio ? C.red : C.line, background: fueraDeServicio ? C.redSoft : C.panel }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-xs font-semibold" style={{ color: C.ink }}>
+                      {MTTO_TIPOS.find(t => t.code === r.tipo)?.label || r.tipo} · {fmtDT(r.fecha)}
+                    </div>
+                    <Pill tone={fueraDeServicio ? "red" : "green"}>{MTTO_ESTADOS.find(s => s.code === r.estado)?.label || r.estado}</Pill>
+                  </div>
+                  <div className="text-sm mt-1" style={{ color: C.inkSoft }}>{r.descripcion}</div>
+                  <div className="text-xs mt-1 flex items-center gap-1.5" style={{ color: C.gray }}><Avatar name={r.tecnico} size={16} /> Por {r.tecnico}{r.costo ? ` · Costo: ${r.costo.toLocaleString("es-CO")}` : ""}</div>
+                  {r.fotos && r.fotos.length > 0 && (
+                    <div className="flex items-center gap-2 mt-2">
+                      {r.fotos.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noreferrer">
+                          <img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = isAdmin || isAlmacenista;
@@ -11001,14 +11171,15 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
 
   if (selectedSistema) {
     const eqs = equipos.filter(e => e.sistema === selectedSistema && e.active !== false);
-    return <SistemaEquiposView sistema={selectedSistema} equipos={eqs} mttoLog={mttoLog} canManage={canManage} onBack={() => setSelectedSistema(null)} onSelectEquipo={setSelectedEquipoId} onDeleteEquipo={onDeleteEquipo} />;
+    return <SistemaEquiposView sistema={selectedSistema} equipos={eqs} mttoLog={mttoLog} canManage={canManage} onBack={() => setSelectedSistema(null)} onSelectEquipo={setSelectedEquipoId} onDeleteEquipo={onDeleteEquipo} pendingMaintenanceEquipoIds={pendingMaintenanceEquipoIds} />;
   }
 
   return (
     <>
       {isAdmin && <RequiredFieldsSettings value={mttoRequiredFields} onChange={onUpdateRequiredFields} />}
       <SistemasListView equipos={equipos} mttoLog={mttoLog} canManage={canManage}
-        onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog} />
+        onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog}
+        pendingMaintenanceEquipoIds={pendingMaintenanceEquipoIds} />
     </>
   );
 }
@@ -13424,7 +13595,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
                           const comp = computeCompBalance(emp, scheduleEntries);
                           return (
                             <span className="text-[10px] font-normal ml-1.5 px-1.5 py-0.5 rounded-full" title="Horas de reducción acumuladas (informativo — no se asigna sola, la das tú a mano poniendo el código COMP en el día que elijas)"
-                              style={{ background: comp.fullDays >= 1 ? "#fde68a" : "#eef1f4", color: comp.fullDays >= 1 ? "#78350f" : "#5c6b7a" }}>
+                              style={{ background: comp.fullDays >= 1 ? C.amberSoft : C.line, color: comp.fullDays >= 1 ? C.amber : C.gray }}>
                               {comp.fullDays >= 1 ? `¡${comp.fullDays} día(s) ganado(s)!` : `${comp.hours}h acum.`}
                             </span>
                           );
@@ -13434,10 +13605,10 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
                       {daysIso.map(d => {
                         const entry = entries[d];
                         const isDraftCell = draftActive && !!draftOverrides[scheduleKey(emp.id, d)];
-                        const colors = entry?.code ? SPECIAL_CODE_COLORS[entry.code] : null;
+                        const colors = entry?.code ? getSpecialCodeColors()[entry.code] : null;
                         return (
                           <td key={d} className="px-0.5 py-1 text-center" style={{
-                            background: isDraftCell ? "#fdf0da" : (colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : "transparent")),
+                            background: isDraftCell ? C.amberSoft : (colors?.bg || (isSundayOrHoliday(d) ? C.redSoft : "transparent")),
                             boxShadow: isDraftCell ? `inset 0 0 0 1px ${C.amber}` : "none",
                           }}>
                             {canEdit ? (
@@ -14531,6 +14702,9 @@ function Avatar({ name, cargo, size = 28 }) {
  */
 let __pmBackStack = [];
 let __pmScrollLockCount = 0;
+// Mensajero de una sola vía entre la tarjeta "Mis tareas vencidas" de Inicio y la pantalla de
+// Tareas: se pone justo antes de navegar y TasksView lo lee (y lo borra) una sola vez al montarse.
+let __pmTasksEntryFilter = null;
 function useBackClose(isOpen, onClose) {
   const idRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -14810,6 +14984,18 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       {/* PILAR 1 — Widgets vivos: el tablero de instrumentos del día, no solo accesos directos */}
       {!gerenciaLocked && !searchNorm && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
+          {counts.misTareasVencidas > 0 && (
+            <button onClick={() => { __pmTasksEntryFilter = "vencidas"; onNavigate("tasks"); }} title="Tareas asignadas a ti, sin cerrar, que llevan más de 24 horas abiertas"
+              className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md col-span-2 lg:col-span-1" style={{ borderColor: C.red, background: C.redSoft }}>
+              <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: C.panel }}>
+                <AlertTriangle size={22} color={C.red} />
+              </div>
+              <div>
+                <div className="text-lg font-bold leading-none" style={{ color: C.red }}>{counts.misTareasVencidas}</div>
+                <div className="text-xs mt-0.5" style={{ color: C.red }}>Mis tareas vencidas — más de 24h</div>
+              </div>
+            </button>
+          )}
           <button onClick={() => onNavigate("ronda")} title="Pisos ya revisados en la ronda de hoy, sobre el total de pisos mecánicos" className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md" style={{ borderColor: C.line, background: C.panel }}>
             <MiniGauge value={tourProgress.done} max={tourProgress.total} color={tourProgress.done >= tourProgress.total ? C.green : C.amber} />
             <div>
@@ -14830,7 +15016,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 
           <button onClick={() => onNavigate("issues")} title="Equipos marcados como dañados que siguen sin resolverse" className="text-left rounded-xl border p-3 flex items-center gap-3 transition hover:-translate-y-0.5 hover:shadow-md"
             style={{ borderColor: activeIssuesList.length ? C.red : C.line, background: activeIssuesList.length ? C.redSoft : C.panel }}>
-            <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: activeIssuesList.length ? "#fff" : C.greenSoft }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: activeIssuesList.length ? C.panel : C.greenSoft }}>
               {activeIssuesList.length ? <AlertTriangle size={22} color={C.red} /> : <CheckCircle2 size={22} color={C.green} />}
             </div>
             <div>
@@ -15834,6 +16020,7 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
   useBackCloseModal(!!checkingOutId, () => setCheckingOutId(null));
   const [firmaSalida, setFirmaSalida] = useState(null);
   const [search, setSearch] = useState("");
+  const [confirmDeleteVisitId, setConfirmDeleteVisitId] = useState(null);
 
   const inputCls = "text-sm border rounded-md px-3 py-2.5 outline-none w-full";
   const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
@@ -15965,7 +16152,7 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
             </div>
           </div>
           {isAdmin && (
-            <button onClick={() => { if (confirm("¿Borrar este registro de visita?")) onDeleteVisit(v.id); }} title="Borrar">
+            <button onClick={() => setConfirmDeleteVisitId(v.id)} title="Borrar">
               <Trash2 size={14} color={C.gray} />
             </button>
           )}
@@ -15987,6 +16174,10 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
           </div>
         </div>
       )}
+      <ConfirmDialog open={!!confirmDeleteVisitId} title="Borrar registro de visita"
+        message="¿Seguro que quieres borrar este registro de visita? No se puede deshacer."
+        onConfirm={() => { onDeleteVisit(confirmDeleteVisitId); setConfirmDeleteVisitId(null); }}
+        onCancel={() => setConfirmDeleteVisitId(null)} />
     </div>
   );
 }
@@ -16004,6 +16195,7 @@ function WikiView({ pages, isAdmin, onSave, onDelete }) {
   const [editing, setEditing] = useState(null); // null | "new" | id
   const [form, setForm] = useState({ titulo: "", categoria: WIKI_CATEGORIAS[0], contenido: "" });
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const searchNorm = normalizeSearchText(search.trim());
   const filtered = pages.filter(p => !searchNorm || normalizeSearchText(`${p.titulo} ${p.contenido}`).includes(searchNorm));
@@ -16058,7 +16250,7 @@ function WikiView({ pages, isAdmin, onSave, onDelete }) {
           {isAdmin && (
             <div className="flex items-center gap-3 shrink-0">
               <button onClick={() => startEdit(selected)} className="text-xs font-semibold" style={{ color: C.amber }}>Editar</button>
-              <button onClick={() => { if (confirm("¿Borrar esta página de la wiki?")) { onDelete(selected.id); setSelectedId(null); } }} className="text-xs font-semibold" style={{ color: C.red }}>Borrar</button>
+              <button onClick={() => setConfirmDelete(true)} className="text-xs font-semibold" style={{ color: C.red }}>Borrar</button>
             </div>
           )}
         </div>
@@ -16067,6 +16259,10 @@ function WikiView({ pages, isAdmin, onSave, onDelete }) {
         <div className="text-xs mt-6 pt-3 border-t" style={{ color: C.gray, borderColor: C.line }}>
           Última edición: {fmtDT(selected.updatedAt)} · {selected.updatedBy}
         </div>
+        <ConfirmDialog open={confirmDelete} title="Borrar página de la wiki"
+          message="¿Seguro que quieres borrar esta página? No se puede deshacer."
+          onConfirm={() => { onDelete(selected.id); setSelectedId(null); setConfirmDelete(false); }}
+          onCancel={() => setConfirmDelete(false)} />
       </div>
     );
   }
@@ -16586,6 +16782,8 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const [diagramImageFile, setDiagramImageFile] = useState(null);
   const [savingDiagram, setSavingDiagram] = useState(false);
 
+  const [confirmDeleteDiagram, setConfirmDeleteDiagram] = useState(false);
+  const [confirmDeleteProcedure, setConfirmDeleteProcedure] = useState(false);
   const [showNewProcedure, setShowNewProcedure] = useState(false);
   const [procForm, setProcForm] = useState({ nombre: "", color: PROCEDURE_COLORS[0].value, componentePrincipal: "" });
   const [procSteps, setProcSteps] = useState([]);
@@ -16712,7 +16910,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
       </button>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
         <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{selected.nombre}</h2>
-        {isAdmin && <Button size="sm" variant="ghost" onClick={() => { if (confirm("¿Borrar este diagrama y todas sus secuencias guardadas?")) { onDeleteDiagram(selected.id); setSelectedId(null); } }} style={{ color: C.red }}>Borrar diagrama</Button>}
+        {isAdmin && <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteDiagram(true)} style={{ color: C.red }}>Borrar diagrama</Button>}
       </div>
 
       {activeProcedure && (
@@ -16887,7 +17085,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
             </div>
           </div>
           {isAdmin && (
-            <button onClick={() => { if (confirm("¿Borrar esta secuencia?")) { onDeleteProcedure(activeProcedure.id); setActiveProcedure(null); } }} className="text-xs font-semibold mb-3" style={{ color: C.red }}>Borrar esta secuencia</button>
+            <button onClick={() => setConfirmDeleteProcedure(true)} className="text-xs font-semibold mb-3" style={{ color: C.red }}>Borrar esta secuencia</button>
           )}
 
           <div className="grid sm:grid-cols-3 gap-4">
@@ -16957,6 +17155,14 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
       )}
 
       <Lightbox url={zoomImage} onClose={() => setZoomImage(null)} />
+      <ConfirmDialog open={confirmDeleteDiagram} title="Borrar diagrama"
+        message="¿Seguro que quieres borrar este diagrama y todas sus secuencias guardadas? No se puede deshacer."
+        onConfirm={() => { onDeleteDiagram(selected.id); setSelectedId(null); setConfirmDeleteDiagram(false); }}
+        onCancel={() => setConfirmDeleteDiagram(false)} />
+      <ConfirmDialog open={confirmDeleteProcedure} title="Borrar secuencia"
+        message="¿Seguro que quieres borrar esta secuencia? No se puede deshacer."
+        onConfirm={() => { onDeleteProcedure(activeProcedure.id); setActiveProcedure(null); setConfirmDeleteProcedure(false); }}
+        onCancel={() => setConfirmDeleteProcedure(false)} />
     </div>
   );
 }
@@ -17223,7 +17429,7 @@ async function urlToDataUrl(url) {
  * Las fotos se intentan insertar de verdad en el PDF; si alguna falla al descargar, se omite
  * sin romper el resto del reporte.
  */
-async function generateTaskReportPdf(task, assigneeName) {
+async function generateTaskReportPdf(task, assigneeName, signatureDataUrl, signerCargo) {
   const jsPDFCtor = await loadPdfLibs();
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();
@@ -17280,6 +17486,19 @@ async function generateTaskReportPdf(task, assigneeName) {
     const noteLines = doc.splitTextToSize(task.notaCierre, 180);
     doc.text(noteLines, 14, y);
     y += noteLines.length * 4.5;
+  }
+  if (task.testigoCierre) {
+    doc.setFontSize(9); doc.setFont(undefined, "bold");
+    doc.text(`Verificado por: ${task.testigoCierre}`, 14, y);
+    doc.setFont(undefined, "normal");
+    y += 6;
+  }
+
+  // Firma de quien cerró la tarea (la misma que ya se usa en entrega de turno) — si todavía no
+  // ha guardado una en Mi Perfil, el reporte sale igual, solo que sin ese bloque al final.
+  if (signatureDataUrl) {
+    const signerLine = `${assigneeName || ""}${signerCargo ? ` — ${signerCargo}` : ""} — ${fmtDT(nowIso())}`;
+    y = pdfSignatureBlock(doc, y, pageH, signatureDataUrl, signerLine);
   }
 
   pdfFooterAll(doc);
@@ -17475,6 +17694,15 @@ function buildTourText(tour) {
   L.push("ENTREGA DE TURNO — QuinTech");
   L.push(`Turno ${tour.shift} · ${tour.date} · Recorrido realizado por ${tour.user}`);
   L.push(`Equipos revisados: ${tour.itemCount}${tour.damagedCount ? ` · Fuera de servicio: ${tour.damagedCount}` : " · Todo en orden"}`);
+  if (tour.shiftSummary) {
+    const s = tour.shiftSummary;
+    L.push("");
+    L.push("— Resumen del turno —");
+    L.push(`Tareas cerradas por ${tour.user} en este turno: ${s.tasksClosedCount}`);
+    if (s.tasksClosedTitles?.length) s.tasksClosedTitles.forEach(t => L.push(`  · ${t}`));
+    L.push(`Tareas abiertas en total (todo el equipo): ${s.openTasksCount}`);
+    L.push(`Daños/incidencias activas: ${s.activeIssuesCount}`);
+  }
   L.push("");
   tour.floors.forEach(f => {
     L.push(`— ${f.floorName} —`);
@@ -17513,6 +17741,11 @@ async function generateTourPdf(tour, signatureDataUrl, signerCargo) {
   y = pdfStatBoxes(doc, y, [
     { label: "Equipos revisados", value: String(tour.itemCount) },
     { label: "Fuera de servicio", value: String(tour.damagedCount), color: tour.damagedCount ? PDF_C.red : PDF_C.green },
+    ...(tour.shiftSummary ? [
+      { label: "Tareas cerradas (turno)", value: String(tour.shiftSummary.tasksClosedCount) },
+      { label: "Tareas abiertas (total)", value: String(tour.shiftSummary.openTasksCount) },
+      { label: "Daños activos", value: String(tour.shiftSummary.activeIssuesCount), color: tour.shiftSummary.activeIssuesCount ? PDF_C.amber : PDF_C.green },
+    ] : []),
   ]);
 
   tour.floors.forEach(f => {
@@ -18139,11 +18372,11 @@ function MyScheduleView({ employee, scheduleEntries, onGoToProfile }) {
         {daysIso.map(d => {
           const dd = new Date(d + "T00:00:00");
           const entry = entries[d];
-          const colors = entry?.code ? SPECIAL_CODE_COLORS[entry.code] : null;
+          const colors = entry?.code ? getSpecialCodeColors()[entry.code] : null;
           const label = SPECIAL_CODES.find(s => s.code === entry?.code)?.label;
           return (
             <div key={d} className="rounded-lg border px-3 py-2 flex items-center justify-between"
-              style={{ borderColor: C.line, background: colors?.bg || (isSundayOrHoliday(d) ? "#fdf2f2" : C.panel) }}>
+              style={{ borderColor: C.line, background: colors?.bg || (isSundayOrHoliday(d) ? C.redSoft : C.panel) }}>
               <div>
                 <div className="text-sm font-medium capitalize" style={{ color: C.ink }}>
                   {dd.toLocaleDateString("es-CO", { weekday: "short", day: "numeric" })}
@@ -18699,7 +18932,7 @@ async function generateSchedulePdf(monthLabel, employees, daysIso, entriesByEmpl
           return;
         }
         const raw = String(data.cell.raw || "");
-        const colors = SPECIAL_CODE_COLORS[raw];
+        const colors = getSpecialCodeColors()[raw];
         if (colors) data.cell.styles.fillColor = hexToRgb(colors.bg);
       },
     });
@@ -19846,6 +20079,19 @@ export default function App() {
     setThemeOverride(next ? "dark" : "light"); // a partir de aquí ya no sigue la hora sola — quedó fijo
     try { localStorage.setItem("pm-local:theme", next ? "dark" : "light"); } catch { /* noop */ }
   };
+  // Letra grande — escala TODO el texto de la app de una sola vez, cambiando el tamaño base del
+  // documento (los tamaños de Tailwind son relativos a eso), sin tener que tocar cada componente.
+  const [largeText, setLargeText] = useState(() => { try { return localStorage.getItem("pm-local:large-text") === "1"; } catch { return false; } });
+  useEffect(() => {
+    document.documentElement.style.fontSize = largeText ? "118%" : "";
+  }, [largeText]);
+  const toggleLargeText = () => {
+    setLargeText(v => {
+      const next = !v;
+      try { localStorage.setItem("pm-local:large-text", next ? "1" : "0"); } catch { /* noop */ }
+      return next;
+    });
+  };
   // Mientras nadie haya fijado el modo a mano, revisa la hora cada vez que el reloj de la app se
   // refresca (cada 30s) y cambia solo de claro a oscuro al anochecer, y de vuelta al amanecer.
   useEffect(() => {
@@ -19892,29 +20138,53 @@ export default function App() {
 
   // ---- Cola de registros con fotos pendientes (ej. mantenimientos guardados sin señal) ----
   const [pendingPhotoRecords, setPendingPhotoRecords] = useState(() => getPendingPhotoRecordsCount());
+  const [pendingPhotoQueue, setPendingPhotoQueue] = useState(() => getPendingPhotoQueue());
   const [justSyncedPhotos, setJustSyncedPhotos] = useState(false);
   const tryFlushPhotos = useCallback(async () => {
     const res = await flushPhotoRecordQueue({
       maintenance: async (payload, urls) => { await logMaintenance(payload.equipoId, { ...payload, fotos: urls }); },
+      // Antes no había manejador para "task-close": al volver la señal, la cola subía las fotos
+      // pero como flushPhotoRecordQueue solo llama al handler "if (handler)" y sigue contando el
+      // ítem como sincronizado aunque no exista, el cierre de la tarea (estado, nota, testigo)
+      // se perdía en silencio — la tarea quedaba abierta para siempre aunque las fotos sí se subieran.
+      "task-close": async (payload, urls) => {
+        const t = tasks.find(x => x.id === payload.taskId);
+        await updateTask(payload.taskId, {
+          estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
+          testigoCierre: payload.testigoCierre,
+          timeLog: [...((t && t.timeLog) || []), { estado: "finalizada", at: nowIso() }],
+        });
+        if (t && t.equipoId) {
+          await logMaintenance(t.equipoId, {
+            tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
+            descripcion: `${t.titulo}${payload.notaCierre ? " — " + payload.notaCierre : ""}`,
+            fotos: urls,
+          });
+        }
+      },
     });
     const remaining = getPendingPhotoRecordsCount();
     setPendingPhotoRecords(remaining);
+    setPendingPhotoQueue(getPendingPhotoQueue());
     if (res.synced > 0 && remaining === 0) {
       setJustSyncedPhotos(true);
       setTimeout(() => setJustSyncedPhotos(false), 4000);
     }
     return res;
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
   useEffect(() => {
     let cancelled = false;
     const run = async () => { if (!cancelled) await tryFlushPhotos(); };
     run(); // por si quedó algo pendiente de una sesión anterior sin señal
     window.addEventListener("online", run);
-    const onPhotoQueueChanged = () => setPendingPhotoRecords(getPendingPhotoRecordsCount());
+    const onPhotoQueueChanged = () => { setPendingPhotoRecords(getPendingPhotoRecordsCount()); setPendingPhotoQueue(getPendingPhotoQueue()); };
     window.addEventListener("pm-photo-queue-changed", onPhotoQueueChanged);
     const id = setInterval(run, 20000);
     return () => { cancelled = true; window.removeEventListener("online", run); window.removeEventListener("pm-photo-queue-changed", onPhotoQueueChanged); clearInterval(id); };
   }, [tryFlushPhotos]);
+  const pendingTaskCloseIds = useMemo(() => new Set(pendingPhotoQueue.filter(q => q.kind === "task-close" && q.payload && q.payload.taskId != null).map(q => q.payload.taskId)), [pendingPhotoQueue]);
+  const pendingMaintenanceEquipoIds = useMemo(() => new Set(pendingPhotoQueue.filter(q => q.kind === "maintenance" && q.payload && q.payload.equipoId != null).map(q => q.payload.equipoId)), [pendingPhotoQueue]);
   const [floorId, setFloorIdRaw] = useState(() => {
     try {
       const saved = localStorage.getItem("pm-local:last-floor");
@@ -19983,6 +20253,7 @@ export default function App() {
   // El menú lateral en celular/tablet no tenía fondo oscuro ni se cerraba con "atrás" — quedaba
   // abierto sobre el contenido sin que se notara bien, dando la sensación de que "no pasa nada".
   useBackCloseModal(sidebarOpen, () => setSidebarOpen(false));
+  const [confirmUpdateApp, setConfirmUpdateApp] = useState(false);
   const [lastTour, setLastTour] = useState(null);
   const [tourHistory, setTourHistory] = useState([]);
   const [justFinished, setJustFinished] = useState(false);
@@ -21547,9 +21818,21 @@ export default function App() {
       }
       const tourItemCount = floorsDone.reduce((a, f) => a + f.itemCount, 0);
       const tourDamagedCount = floorsDone.reduce((a, f) => a + f.damagedCount, 0);
+      // Resumen automático de cierre de turno: además del recorrido piso por piso, se arma un
+      // vistazo rápido de cómo queda todo al cerrar — cuántas tareas cerró esta persona en las
+      // últimas horas, cuántas quedan abiertas en total, y cuántos daños activos hay — para que
+      // el siguiente turno (y quien recibe el correo) no tenga que ir a buscarlo por separado.
+      const shiftCutoff = new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString();
+      const tasksClosedByMe = tasks.filter(t => normalizeTaskState(t.estado) === "finalizada" && t.asignadoA === currentUser && t.finishedAt && t.finishedAt >= shiftCutoff);
+      const shiftSummary = {
+        tasksClosedCount: tasksClosedByMe.length,
+        tasksClosedTitles: tasksClosedByMe.slice(0, 10).map(t => t.titulo),
+        openTasksCount: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length,
+        activeIssuesCount: Object.keys(activeIssues || {}).length,
+      };
       const tourRec = {
         id: `tour-${Date.now()}`, date: todayStr(), shift, user: displayName, finishedAt: nowIso(),
-        floors: floorsDone, itemCount: tourItemCount, damagedCount: tourDamagedCount,
+        floors: floorsDone, itemCount: tourItemCount, damagedCount: tourDamagedCount, shiftSummary,
       };
       const newTourHistory = [tourRec, ...tourHistory].slice(0, 200);
       setLastTour(tourRec);
@@ -21831,6 +22114,14 @@ export default function App() {
     [tasks, currentUser, displayName]
   );
   const openTasksCount = useMemo(() => tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, [tasks]);
+  // Tareas mías, sin cerrar, abiertas hace más de 24h — para el acceso rápido "Mis tareas
+  // vencidas" en Inicio. Usa el mismo criterio de "vencida" que ya existía en Tareas
+  // (Críticas >24h), pero sin exigir prioridad Alta, porque aquí es "lo mío que se está
+  // demorando", no una métrica gerencial de criticidad.
+  const misTareasVencidas = useMemo(
+    () => tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && t.asignadoA === currentUser && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24).length,
+    [tasks, currentUser]
+  );
   const shiftAlerts = useMemo(
     () => computeShiftCompletionAlerts(nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex),
     [nowClock, roundsIndex, meterRoundsIndex, coldRoundsIndex, gymRoundsIndex, lavanderiaRoundsIndex, calderaRoundsIndex]
@@ -21860,6 +22151,46 @@ export default function App() {
     try { localStorage.setItem(dedupKey, JSON.stringify([...already, ...toSend.map(t => t.tag)])); } catch { /* noop */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shiftAlerts, maintenanceDue, isAdmin, pushSubscriptions]);
+
+  // ---- Respaldo automático programado ----
+  // No hay un servidor propio corriendo 24/7 solo para esto, así que el "automático" real es:
+  // cuando un admin abre la app y ya pasó una semana desde el último respaldo enviado por correo,
+  // se genera solo (sin que nadie toque nada) y se manda al correo de reportes configurado, igual
+  // que ya pasa con los demás reportes automáticos (entrega de turno, etc.). Si nadie abre la app
+  // en toda una semana, se manda en cuanto alguien vuelva a entrar.
+  useEffect(() => {
+    if (!isAdmin || !reportEmail || !currentUser) return;
+    const KEY = "pm-local:last-auto-backup";
+    let last = null;
+    try { last = localStorage.getItem(KEY); } catch { /* noop */ }
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    if (last && (Date.now() - new Date(last).getTime()) < weekMs) return;
+    (async () => {
+      try {
+        const rows = await exportFullBackup();
+        const backup = { exportedAt: nowIso(), keyCount: rows.length, data: {} };
+        rows.forEach(r => { backup.data[r.key] = r.value; });
+        const base64 = bufferToBase64(new TextEncoder().encode(JSON.stringify(backup)));
+        const resp = await fetch("/api/send-report", {
+          method: "POST",
+          headers: await authHeaders(),
+          body: JSON.stringify({
+            to: reportEmail,
+            subject: `Respaldo automático semanal - QuinTech (${todayStr()})`,
+            text: `Respaldo automático de la app (${rows.length} secciones de datos). Se genera solo cada semana, sin necesidad de que nadie lo pida.`,
+            attachmentBase64: base64,
+            filename: `respaldo-automatico-${todayStr().replace(/\//g, "-")}.json`,
+          }),
+        });
+        const ok = resp.ok;
+        try { localStorage.setItem(KEY, nowIso()); } catch { /* noop */ }
+        logSentReport?.({ to: reportEmail, method: "Respaldo automático semanal (correo con JSON)", ok, sentBy: currentUser, sentAt: nowIso() });
+      } catch {
+        // Sin señal o falló — se reintentará la próxima vez que un admin abra la app.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, reportEmail, currentUser]);
 
   useEffect(() => {
     if (currentUser) checkRecurringTasks();
@@ -22050,11 +22381,13 @@ export default function App() {
         <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
           style={{ background: C.steelDark, borderTop: `2px solid ${C.amber}` }}>
           <span className="text-sm text-white">🔄 Hay una versión nueva de la app lista para usar.</span>
-          <Button size="sm" onClick={() => {
-            if (confirm("Esto va a recargar la app para tomar la versión nueva. Si tienes algo escrito sin guardar (una ronda, una lectura), guárdalo primero. ¿Continuar?")) updateServiceWorker(true);
-          }}>Actualizar ahora</Button>
+          <Button size="sm" onClick={() => setConfirmUpdateApp(true)}>Actualizar ahora</Button>
         </div>
       )}
+      <ConfirmDialog open={confirmUpdateApp} title="Actualizar la app" danger={false} confirmLabel="Sí, actualizar"
+        message="Esto va a recargar la app para tomar la versión nueva. Si tienes algo escrito sin guardar (una ronda, una lectura), guárdalo primero."
+        onConfirm={() => { setConfirmUpdateApp(false); updateServiceWorker(true); }}
+        onCancel={() => setConfirmUpdateApp(false)} />
       {/* Fondo oscuro detrás del menú lateral en celular/tablet — antes no existía, así que al
           abrir el menú el resto de la pantalla se veía igual y parecía que "no pasaba nada" o que
           quedaba trabado; ahora se ve claramente que hay un menú abierto y se puede tocar afuera
@@ -22292,6 +22625,9 @@ export default function App() {
               <button onClick={toggleTheme} className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
                 {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.gray} />} {darkMode ? "Modo claro" : "Modo oscuro"}
               </button>
+              <button onClick={toggleLargeText} className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
+                <span className="font-bold" style={{ fontSize: largeText ? 18 : 12 }}>A</span> {largeText ? "Letra normal" : "Letra grande"}
+              </button>
               {isAdmin && (
                 <div className="px-1 py-2"><PushEnableButton onEnable={enablePushNotifications} /></div>
               )}
@@ -22363,7 +22699,7 @@ export default function App() {
               mttoWeekCount={mttoWeekCount}
               tasksToday={tasksTodayForHome}
               changelogEntries={changelogEntries}
-              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: openTasksCount, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount }} />
+              counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: openTasksCount, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount, misTareasVencidas }} />
           )}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
@@ -22445,6 +22781,7 @@ export default function App() {
               onSetFotoMaestra={setEquipoFotoMaestra}
               onUpdateEquipoInfo={updateMttoEquipoInfo} tasks={tasks}
               mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={updateMttoRequiredFields}
+              pendingMaintenanceEquipoIds={pendingMaintenanceEquipoIds}
               initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (
@@ -22480,7 +22817,8 @@ export default function App() {
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
-              onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} />
+              onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask}
+              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

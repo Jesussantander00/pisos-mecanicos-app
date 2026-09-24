@@ -120,12 +120,18 @@ export async function exportFullBackup() {
  * en 150-300 KB, sin que se note mucho a simple vista — así el espacio gratis de Supabase
  * Storage (1 GB) alcanza para miles de fotos en vez de unos cientos.
  */
+const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB — el techo que pidió el equipo
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+}
+
 function compressImage(file, maxWidth = 1280, quality = 0.7) {
   return new Promise((resolve) => {
     if (!file.type || !file.type.startsWith("image/")) { resolve(file); return; }
     const img = new Image();
     const url = URL.createObjectURL(file);
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(url);
       const scale = Math.min(1, maxWidth / img.width);
       const w = Math.round(img.width * scale);
@@ -134,10 +140,18 @@ function compressImage(file, maxWidth = 1280, quality = 0.7) {
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0, w, h);
-      canvas.toBlob((blob) => {
-        if (!blob) { resolve(file); return; }
-        resolve(new File([blob], (file.name || "foto").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }));
-      }, "image/jpeg", quality);
+
+      // Si con la calidad normal todavía pesa más de 500 KB (fotos muy detalladas, buena luz,
+      // etc.), se va bajando la calidad en pasos hasta que quepa — sin bajar de 0.4, para que
+      // la foto no quede ilegible solo por cumplir el límite de peso.
+      let q = quality;
+      let blob = await canvasToBlob(canvas, q);
+      while (blob && blob.size > MAX_PHOTO_BYTES && q > 0.4) {
+        q -= 0.1;
+        blob = await canvasToBlob(canvas, q);
+      }
+      if (!blob) { resolve(file); return; }
+      resolve(new File([blob], (file.name || "foto").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }));
     };
     img.onerror = () => { URL.revokeObjectURL(url); resolve(file); }; // si algo falla, sube la original sin comprimir
     img.src = url;
@@ -212,6 +226,12 @@ function writePhotoQueue(q) {
 /** Cuántos registros con fotos quedaron guardados solo en este celular, esperando poder subirse. */
 export function getPendingPhotoRecordsCount() {
   return readPhotoQueue().length;
+}
+
+/** La cola completa (kind + payload de cada registro pendiente) — para poder mostrar, en cada
+ *  tarea o equipo puntual, si TIENE algo esperando por subir (no solo el número total). */
+export function getPendingPhotoQueue() {
+  return readPhotoQueue();
 }
 
 function fileToDataUrl(file) {

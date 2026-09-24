@@ -20136,7 +20136,58 @@ export default function App() {
     return () => { cancelled = true; window.removeEventListener("online", run); window.removeEventListener("pm-queue-changed", onQueueChanged); clearInterval(id); };
   }, [tryFlush]);
 
+  const [floorId, setFloorIdRaw] = useState(() => {
+    try {
+      const saved = localStorage.getItem("pm-local:last-floor");
+      return saved && FLOORS.some(f => f.id === saved) ? saved : FLOORS[0].id;
+    } catch { return FLOORS[0].id; }
+  });
+  const setFloorId = useCallback((id) => {
+    setFloorIdRaw(id);
+    try { localStorage.setItem("pm-local:last-floor", id); } catch { /* noop */ }
+  }, []);
+  const [activeIssues, setActiveIssues] = useState({});
+  const [issueHistory, setIssueHistory] = useState([]);
+  const [roundsIndex, setRoundsIndex] = useState([]);
+  const [latestValues, setLatestValues] = useState({});
+  const [tankHistory, setTankHistory] = useState({});
+  const [fuelHistory, setFuelHistory] = useState({});
+  const [tools, setTools] = useState([]);
+  const [contractorVisits, setContractorVisits] = useState([]);
+  const [wikiPages, setWikiPages] = useState([]);
+  const [mttoRequiredFields, setMttoRequiredFields] = useState({ foto: false, costo: false, repuestos: false });
+  const [roomTypes, setRoomTypes] = useState([]);
+  const [systemDiagrams, setSystemDiagrams] = useState([]);
+  const [systemProcedures, setSystemProcedures] = useState([]);
+  const [roomBlocks, setRoomBlocks] = useState([]);
+  const [latestColdValues, setLatestColdValues] = useState({});
+  const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
+  const [lastColdRound, setLastColdRound] = useState(null);
+  const [coldHistory, setColdHistory] = useState({});
+  const [latestMeterValues, setLatestMeterValues] = useState({});
+  const [meterHistory, setMeterHistory] = useState({});
+  const [meterRoundsIndex, setMeterRoundsIndex] = useState([]);
+  const [bodegas, setBodegas] = useState([]);
+  const [shelves, setShelves] = useState([]);
+  const [invItems, setInvItems] = useState([]);
+  const [invMovements, setInvMovements] = useState([]);
+  const [pendingShelfId, setPendingShelfId] = useState(() => new URLSearchParams(window.location.search).get("shelf"));
+  const [pendingEquipoId, setPendingEquipoId] = useState(() => new URLSearchParams(window.location.search).get("equipo"));
+  const [pendingDiagramId, setPendingDiagramId] = useState(() => new URLSearchParams(window.location.search).get("diagram"));
+  const [mttoEquipos, setMttoEquipos] = useState([]);
+  const [latestLavanderiaValues, setLatestLavanderiaValues] = useState({});
+  const [lavanderiaRoundsIndex, setLavanderiaRoundsIndex] = useState([]);
+  const [latestGymValues, setLatestGymValues] = useState({});
+  const [gymRoundsIndex, setGymRoundsIndex] = useState([]);
+  const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
+  const [lastCalderaRound, setLastCalderaRound] = useState(null);
+  const [pushSubscriptions, setPushSubscriptions] = useState([]);
+  const [tasks, setTasks] = useState([]);
+
   // ---- Cola de registros con fotos pendientes (ej. mantenimientos guardados sin señal) ----
+  // NOTA: este bloque tiene que ir DESPUÉS de "const [tasks, ...]" de arriba — el arreglo de
+  // dependencias de tryFlushPhotos usa "tasks", y en JS un "const" no se puede leer (ni en su
+  // propio arreglo de dependencias) antes de la línea donde se declara en el mismo render.
   const [pendingPhotoRecords, setPendingPhotoRecords] = useState(() => getPendingPhotoRecordsCount());
   const [pendingPhotoQueue, setPendingPhotoQueue] = useState(() => getPendingPhotoQueue());
   const [justSyncedPhotos, setJustSyncedPhotos] = useState(false);
@@ -20185,53 +20236,7 @@ export default function App() {
   }, [tryFlushPhotos]);
   const pendingTaskCloseIds = useMemo(() => new Set(pendingPhotoQueue.filter(q => q.kind === "task-close" && q.payload && q.payload.taskId != null).map(q => q.payload.taskId)), [pendingPhotoQueue]);
   const pendingMaintenanceEquipoIds = useMemo(() => new Set(pendingPhotoQueue.filter(q => q.kind === "maintenance" && q.payload && q.payload.equipoId != null).map(q => q.payload.equipoId)), [pendingPhotoQueue]);
-  const [floorId, setFloorIdRaw] = useState(() => {
-    try {
-      const saved = localStorage.getItem("pm-local:last-floor");
-      return saved && FLOORS.some(f => f.id === saved) ? saved : FLOORS[0].id;
-    } catch { return FLOORS[0].id; }
-  });
-  const setFloorId = useCallback((id) => {
-    setFloorIdRaw(id);
-    try { localStorage.setItem("pm-local:last-floor", id); } catch { /* noop */ }
-  }, []);
-  const [activeIssues, setActiveIssues] = useState({});
-  const [issueHistory, setIssueHistory] = useState([]);
-  const [roundsIndex, setRoundsIndex] = useState([]);
-  const [latestValues, setLatestValues] = useState({});
-  const [tankHistory, setTankHistory] = useState({});
-  const [fuelHistory, setFuelHistory] = useState({});
-  const [tools, setTools] = useState([]);
-  const [contractorVisits, setContractorVisits] = useState([]);
-  const [wikiPages, setWikiPages] = useState([]);
-  const [mttoRequiredFields, setMttoRequiredFields] = useState({ foto: false, costo: false, repuestos: false });
-  const [roomTypes, setRoomTypes] = useState([]);
-  const [systemDiagrams, setSystemDiagrams] = useState([]);
-  const [systemProcedures, setSystemProcedures] = useState([]);
-  const [roomBlocks, setRoomBlocks] = useState([]);
-  const [latestColdValues, setLatestColdValues] = useState({});
-  const [coldRoundsIndex, setColdRoundsIndex] = useState([]);
-  const [lastColdRound, setLastColdRound] = useState(null);
-  const [coldHistory, setColdHistory] = useState({});
-  const [latestMeterValues, setLatestMeterValues] = useState({});
-  const [meterHistory, setMeterHistory] = useState({});
-  const [meterRoundsIndex, setMeterRoundsIndex] = useState([]);
-  const [bodegas, setBodegas] = useState([]);
-  const [shelves, setShelves] = useState([]);
-  const [invItems, setInvItems] = useState([]);
-  const [invMovements, setInvMovements] = useState([]);
-  const [pendingShelfId, setPendingShelfId] = useState(() => new URLSearchParams(window.location.search).get("shelf"));
-  const [pendingEquipoId, setPendingEquipoId] = useState(() => new URLSearchParams(window.location.search).get("equipo"));
-  const [pendingDiagramId, setPendingDiagramId] = useState(() => new URLSearchParams(window.location.search).get("diagram"));
-  const [mttoEquipos, setMttoEquipos] = useState([]);
-  const [latestLavanderiaValues, setLatestLavanderiaValues] = useState({});
-  const [lavanderiaRoundsIndex, setLavanderiaRoundsIndex] = useState([]);
-  const [latestGymValues, setLatestGymValues] = useState({});
-  const [gymRoundsIndex, setGymRoundsIndex] = useState([]);
-  const [calderaRoundsIndex, setCalderaRoundsIndex] = useState([]);
-  const [lastCalderaRound, setLastCalderaRound] = useState(null);
-  const [pushSubscriptions, setPushSubscriptions] = useState([]);
-  const [tasks, setTasks] = useState([]);
+
   const [trash, setTrash] = useState([]);
   const [loginLog, setLoginLog] = useState([]);
   const [mttoLog, setMttoLog] = useState([]);

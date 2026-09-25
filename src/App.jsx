@@ -147,6 +147,28 @@ function applyTheme(dark) {
   syncCssVars();
 }
 
+/** Tamaño de letra ajustable (item de accesibilidad): como Tailwind usa "rem" para casi todos los
+ * tamaños de texto (text-xs, text-sm, etc.), cambiar el font-size del <html> reescala toda la app
+ * de una vez, sin tener que tocar cada clase una por una. Se guarda en localStorage para que la
+ * elección persista entre sesiones. */
+const FONT_SCALE_OPTS = [
+  { id: "sm", label: "Pequeño", pct: 87.5 },
+  { id: "md", label: "Normal", pct: 100 },
+  { id: "lg", label: "Grande", pct: 112.5 },
+  { id: "xl", label: "Muy grande", pct: 125 },
+];
+function applyFontScale(id) {
+  const opt = FONT_SCALE_OPTS.find(o => o.id === id) || FONT_SCALE_OPTS[1];
+  try {
+    document.documentElement.style.fontSize = `${opt.pct}%`;
+    localStorage.setItem("pm-local:font-scale", opt.id);
+  } catch { /* noop */ }
+}
+try {
+  const savedFontScale = localStorage.getItem("pm-local:font-scale");
+  if (savedFontScale) applyFontScale(savedFontScale);
+} catch { /* noop */ }
+
 const STATUS_OPTS = ["Automático", "Manual", "Apagado"];
 // Vistas a las que SÍ puede entrar una cuenta marcada como "Gerencia" pura (sin admin/almacenista) — todo lo demás queda bloqueado.
 const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics"];
@@ -1024,6 +1046,25 @@ function computeMaintenanceSuggestions(equipos, mttoLog, mttoCronograma, now = n
   return results.filter(r => r.overdueDays > 0).sort((a, b) => b.overdueDays - a.overdueDays);
 }
 
+/** Igual que computeMaintenanceSuggestions, pero para la vista "Próximos 7 días" del cronograma:
+ *  acá interesa también lo que TODAVÍA no está atrasado pero le toca esta semana (overdueDays
+ *  entre -7 y 0), no solo lo que ya se pasó de fecha. */
+function computeUpcoming7Days(equipos, mttoLog, mttoCronograma, now = new Date()) {
+  const activeEquipos = (equipos || []).filter(e => e.active !== false);
+  const results = activeEquipos.map(eq => {
+    const records = (mttoLog || []).filter(r => r.equipoId === eq.id);
+    const last = records.length ? records.reduce((a, b) => new Date(a.fecha) > new Date(b.fecha) ? a : b) : null;
+    const diasSinIntervencion = last ? Math.floor(hoursBetween(last.fecha, now) / 24) : null;
+    const mesesProgramados = new Set((mttoCronograma || []).filter(c => c.equipoId === eq.id && c.programado).map(c => c.mesNum)).size;
+    const frecuenciaEsperadaDias = mesesProgramados > 0 ? Math.round(365 / mesesProgramados) : 90;
+    if (diasSinIntervencion == null) return null; // nunca intervenido — ya sale en "Sugerencias", no hace falta duplicar acá
+    const overdueDays = diasSinIntervencion - frecuenciaEsperadaDias;
+    const diasParaVencer = -overdueDays;
+    return { equipo: eq, diasParaVencer, frecuenciaEsperadaDias, lastDate: last.fecha };
+  }).filter(Boolean);
+  return results.filter(r => r.diasParaVencer <= 7).sort((a, b) => a.diasParaVencer - b.diasParaVencer);
+}
+
 /**
  * Arma un resumen compacto (texto plano, no la base de datos completa) con lo más importante de
  * la operación ahora mismo — esto es lo que se le manda a la IA junto con la pregunta, para que
@@ -1118,6 +1159,39 @@ function matchHotsosAssignee(nombreHotsos, accounts) {
     if (score > bestScore) { bestScore = score; best = uid; }
   });
   return bestScore >= 2 ? best : null;
+}
+
+/** Intenta vincular automáticamente una orden de HotSOS a un equipo real del catálogo, buscando
+ *  el número de habitación/ubicación (ej: "3901") dentro del nombre del equipo — así el gráfico
+ *  "Trabajo abierto por sistema" deja de mostrar casi todo como "Sin equipo vinculado". Solo
+ *  vincula cuando encuentra EXACTAMENTE un equipo activo que calce, para no adivinar mal; si hay
+ *  varios candidatos (ej. dos aires en el mismo cuarto) lo deja sin vincular a propósito. */
+function matchHotsosEquipo(lugar, problema, equipos) {
+  if (!lugar || !equipos || !equipos.length) return null;
+  const roomMatch = /\b(\d{3,5})\b/.exec(lugar);
+  if (!roomMatch) return null;
+  const room = roomMatch[1];
+  const categoria = classifyHotsosProblem(problema);
+  let candidatos = (equipos || []).filter(e => e.active !== false && e.nombre && e.nombre.includes(room));
+  if (candidatos.length > 1 && categoria === "HVAC") {
+    const soloHvac = candidatos.filter(e => e.sistema === "HVAC");
+    if (soloHvac.length >= 1) candidatos = soloHvac;
+  }
+  return candidatos.length === 1 ? candidatos[0].id : null;
+}
+
+/** Heurística para detectar cuentas que probablemente no son una persona real, sino una tarea o
+ *  turno mal registrado como "usuario" (ej: "recorridos y lecturas diarias pisos tecnicos") — no
+ *  es 100% infalible, es una señal para que un administrador la revise y la corrija a mano. */
+function looksLikeGhostAccount(displayName) {
+  const name = (displayName || "").trim();
+  if (!name) return false;
+  const words = name.split(/\s+/);
+  const allLower = name === name.toLowerCase() && /[a-záéíóúñ]/.test(name);
+  const tooManyWords = words.length >= 5;
+  const suspiciousWords = ["diaria", "diarias", "recorrido", "recorridos", "lectura", "lecturas", "ronda", "rondas", "turno", "turnos", "check", "checklist"];
+  const hasSuspiciousWord = suspiciousWords.some(w => normalizeSearchText(name).includes(w));
+  return (tooManyWords && allLower) || (hasSuspiciousWord && tooManyWords);
 }
 
 /* ============================================================
@@ -1502,6 +1576,12 @@ const TASK_STATE_COLORS = {
  * 4 nuevos para que las cuentas y los filtros los sigan reconociendo sin romperse. */
 const TASK_STATE_MIGRATE = { "pendiente": "asignada", "en-progreso": "en-proceso", "espera-repuesto": "pausada", "hecho": "finalizada" };
 function normalizeTaskState(estado) { return TASK_STATE_MIGRATE[estado] || estado || "asignada"; }
+/** Días completos desde que se creó la tarea — para avisar visualmente cuando algo lleva
+ *  demasiado tiempo abierto, aunque no sea "crítica >24h" (ese contador es solo para prioridad alta). */
+function diasTareaAbierta(task) { return Math.floor(hoursBetween(task.createdAt || task.assignedAt || nowIso(), nowIso()) / 24); }
+/** Una tarea "pospuesta" (snooze) sigue existiendo pero se esconde de las listas normales hasta
+ *  la fecha elegida — útil para "esto no se puede hacer hasta que llegue el repuesto el jueves". */
+function isTaskSnoozed(task) { return !!task.snoozedUntil && new Date(task.snoozedUntil) > new Date(); }
 
 const TASK_PRIORITIES = [
   { code: "alta", label: "Alta" },
@@ -8352,9 +8432,9 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
   const openMove = (itemId, mode) => setQtyDraft(prev => ({ ...prev, [itemId]: { mode, qty: "", note: "" } }));
   const closeMove = (itemId) => setQtyDraft(prev => { const n = { ...prev }; delete n[itemId]; return n; });
 
-  const openEdit = (item) => { setEditingId(item.id); setEditForm({ name: item.name, sku: item.sku || "", unit: item.unit, minThreshold: item.minThreshold }); };
+  const openEdit = (item) => { setEditingId(item.id); setEditForm({ name: item.name, sku: item.sku || "", unit: item.unit, minThreshold: item.minThreshold, fechaVencimiento: item.fechaVencimiento || "" }); };
   const doSaveEdit = async (id) => {
-    await onEditItem(id, { name: editForm.name.trim(), sku: editForm.sku.trim(), unit: editForm.unit.trim() || "unidad", minThreshold: Number(editForm.minThreshold) || 0 });
+    await onEditItem(id, { name: editForm.name.trim(), sku: editForm.sku.trim(), unit: editForm.unit.trim() || "unidad", minThreshold: Number(editForm.minThreshold) || 0, fechaVencimiento: editForm.fechaVencimiento || null });
     setEditingId(null);
   };
 
@@ -8427,6 +8507,12 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
                 <div className="text-xs" style={{ color: C.gray }}>Mínimo: {item.minThreshold} {item.unit}</div>
                 {critical && <div className="text-xs font-semibold mt-0.5" style={{ color: C.red }}>⚠ Stock crítico — reponer ya</div>}
                 {low && !critical && <div className="text-xs font-semibold mt-0.5" style={{ color: C.amber }}>Stock bajo — hay que reponer</div>}
+                {item.fechaVencimiento && (() => {
+                  const diasVence = Math.floor((new Date(item.fechaVencimiento) - Date.now()) / 86400000);
+                  if (diasVence < 0) return <div className="text-xs font-semibold mt-0.5" style={{ color: C.red }}>⚠ Vencido desde {fmtDT(item.fechaVencimiento)}</div>;
+                  if (diasVence <= 30) return <div className="text-xs font-semibold mt-0.5" style={{ color: C.amber }}>⏳ Vence en {diasVence} día(s) ({fmtDT(item.fechaVencimiento)})</div>;
+                  return <div className="text-xs mt-0.5" style={{ color: C.gray }}>Vence: {fmtDT(item.fechaVencimiento)}</div>;
+                })()}
                 {item.minThreshold > 0 && (
                   <div className="w-full max-w-[160px] rounded-full overflow-hidden mt-1.5" style={{ background: C.bg, height: 5 }}>
                     <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: tone || C.green, transition: "width 500ms var(--ease-out)" }} />
@@ -8448,7 +8534,12 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
                   <input value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} placeholder="Unidad"
                     className="text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                   <input type="number" min={0} value={editForm.minThreshold} onChange={e => setEditForm(f => ({ ...f, minThreshold: e.target.value }))} placeholder="Mínimo"
-                    className="text-sm border rounded-md px-2 py-1 outline-none col-span-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                    className="text-sm border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <div>
+                    <label className="text-[10px] block mb-0.5" style={{ color: C.gray }}>Vence (opcional)</label>
+                    <input type="date" value={editForm.fechaVencimiento} onChange={e => setEditForm(f => ({ ...f, fechaVencimiento: e.target.value }))}
+                      className="text-sm border rounded-md px-2 py-1 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button size="sm" onClick={() => doSaveEdit(item.id)}>Guardar cambios</Button>
@@ -8514,7 +8605,7 @@ function InventoryHubView(props) {
       )}
       {tab === "movimientos" && (
         <InventoryMovementsView invMovements={props.invMovements} invItems={props.invItems} bodegas={props.bodegas} shelves={props.shelves}
-          reportEmail={props.reportEmail} onLogSent={props.onLogSent} currentUser={props.currentUser} />
+          reportEmail={props.reportEmail} onLogSent={props.onLogSent} currentUser={props.currentUser} tasks={props.tasks} />
       )}
       {tab === "herramientas" && (
         <ToolsView tools={props.tools} accounts={props.accounts} isAdmin={props.isAdmin} onCreateTool={props.onCreateTool} onLendTool={props.onLendTool} onReturnTool={props.onReturnTool} />
@@ -8593,6 +8684,25 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
     bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
     shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
   })), [invItems, invMovements, bodegas, shelves]);
+
+  // ---- Repuestos que nunca se piden: tienen stock pero jamás se ha registrado un retiro. No
+  // significa que sobren de una vez — puede ser un repuesto de emergencia que nunca ha hecho
+  // falta — pero vale la pena revisarlos para no seguir comprando/guardando algo que no se usa. ----
+  const expiringSoon = useMemo(() => {
+    const cutoff = Date.now() + 30 * 86400000;
+    return (invItems || []).filter(it => it.fechaVencimiento && new Date(it.fechaVencimiento).getTime() <= cutoff)
+      .map(it => ({ ...it, bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—", shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—" }))
+      .sort((a, b) => new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento));
+  }, [invItems, bodegas, shelves]);
+  const [showNeverUsed, setShowNeverUsed] = useState(false);
+  const neverUsed = useMemo(() => {
+    const usedIds = new Set((invMovements || []).filter(m => m.type === "retiro").map(m => m.itemId));
+    return (invItems || []).filter(it => it.quantity > 0 && !usedIds.has(it.id)).map(it => ({
+      ...it,
+      bodegaName: bodegas.find(b => b.id === it.bodegaId)?.name || "—",
+      shelfCode: shelves.find(s => s.id === it.shelfId)?.code || "—",
+    }));
+  }, [invItems, invMovements, bodegas, shelves]);
 
   const doGenerateReorderNotes = async () => {
     setReorderGenerating(true); setReorderError(null); setReorderNotes(null);
@@ -8707,6 +8817,53 @@ function StockAlertsView({ invItems, invMovements, bodegas, shelves, reportEmail
                   <div className="text-sm rounded-md p-2 mb-2" style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.ink }}>{reorderNotes}</div>
                   <Button size="sm" variant="ghost" disabled={reorderGenerating} onClick={doGenerateReorderNotes}>Volver a generar</Button>
                 </div>
+              )}
+            </div>
+          )}
+
+          {expiringSoon.length > 0 && (
+            <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.red }}>
+                ⚠️ Repuestos vencidos o por vencer — {expiringSoon.length}
+              </div>
+              <div className="space-y-1">
+                {expiringSoon.map(it => {
+                  const diasVence = Math.floor((new Date(it.fechaVencimiento) - Date.now()) / 86400000);
+                  return (
+                    <div key={it.id} className="text-xs flex items-center justify-between gap-2 py-0.5">
+                      <span style={{ color: C.ink }}>{it.name}{it.sku ? ` · ${it.sku}` : ""} — {it.bodegaName} · {it.shelfCode}</span>
+                      <span className="font-semibold" style={{ color: C.red }}>{diasVence < 0 ? "Vencido" : `${diasVence}d`}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {neverUsed.length > 0 && (
+            <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+              <button onClick={() => setShowNeverUsed(v => !v)} className="w-full flex items-center justify-between text-left">
+                <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>
+                  Repuestos que nunca se han pedido — {neverUsed.length}
+                </div>
+                {showNeverUsed ? <ChevronDown size={14} color={C.gray} /> : <ChevronRight size={14} color={C.gray} />}
+              </button>
+              {showNeverUsed && (
+                <>
+                  <p className="text-xs mt-1.5 mb-2" style={{ color: C.gray }}>
+                    Tienen stock guardado pero nunca se ha registrado un retiro. No quiere decir que sobren de una vez —
+                    puede ser un repuesto de emergencia que nunca ha hecho falta — pero vale la pena revisarlos.
+                  </p>
+                  <div className="space-y-1">
+                    {neverUsed.slice(0, 30).map(it => (
+                      <div key={it.id} className="text-xs flex items-center justify-between gap-2 py-0.5">
+                        <span style={{ color: C.ink }}>{it.name}{it.sku ? ` · ${it.sku}` : ""}</span>
+                        <span style={{ color: C.gray }}>{it.bodegaName} · {it.shelfCode} · {it.quantity} {it.unit}</span>
+                      </div>
+                    ))}
+                    {neverUsed.length > 30 && <div className="text-xs" style={{ color: C.gray }}>y {neverUsed.length - 30} más…</div>}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -8931,6 +9088,26 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
         {linkedEquipo?.sistema && (
           <div className="mb-1.5"><Badge tone={badgeToneFor("sistema", linkedEquipo.sistema)}>{linkedEquipo.sistema}</Badge></div>
         )}
+        {(task.checklist?.length > 0 || task.comments?.length > 0 || (estado !== "finalizada" && diasTareaAbierta(task) >= 3) || isTaskSnoozed(task)) && (
+          <div className="flex items-center gap-2 flex-wrap mb-1.5 text-[9px] font-semibold" style={{ color: C.gray }}>
+            {task.checklist?.length > 0 && (
+              <span className="inline-flex items-center gap-0.5" title="Pasos del checklist">
+                <CheckCircle2 size={10} /> {task.checklist.filter(c => c.done).length}/{task.checklist.length}
+              </span>
+            )}
+            {task.comments?.length > 0 && (
+              <span className="inline-flex items-center gap-0.5" title="Comentarios">💬 {task.comments.length}</span>
+            )}
+            {estado !== "finalizada" && diasTareaAbierta(task) >= 3 && (
+              <span className="inline-flex items-center gap-0.5" style={{ color: diasTareaAbierta(task) >= 7 ? C.red : C.amber }} title="Días abierta desde que se creó">
+                ⏳ {diasTareaAbierta(task)}d
+              </span>
+            )}
+            {isTaskSnoozed(task) && (
+              <span className="inline-flex items-center gap-0.5" style={{ color: C.blue }} title={`Pospuesta hasta ${fmtDT(task.snoozedUntil)}`}>😴 hasta {new Date(task.snoozedUntil).toLocaleDateString("es-CO", { day: "numeric", month: "short" })}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-end justify-between gap-2">
           <div className="flex-1 min-w-0">
             <TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} />
@@ -8952,17 +9129,23 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   );
 }
 
-function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload }) {
+function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
   const [closeWitness, setCloseWitness] = useState("");
+  const [closeWitnessSignature, setCloseWitnessSignature] = useState(null);
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
   const [showMttoForm, setShowMttoForm] = useState(false);
   const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
   const [mttoSaving, setMttoSaving] = useState(false);
   const [mttoMsg, setMttoMsg] = useState(null);
+  const [checklistDraft, setChecklistDraft] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+  const [showSnoozeForm, setShowSnoozeForm] = useState(false);
+  const [snoozeDate, setSnoozeDate] = useState("");
 
   // Deja registro de quién abrió esta tarea — para saber si alguien ya se enteró de algo
   // crítico, aunque todavía no haya actuado. Una vez por persona, no cada vez que la abre.
@@ -8985,7 +9168,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
     }
     setCloseSaving(true); setCloseMsg(null);
     try {
-      await onCloseTask(task, closePhotos, closeNote.trim(), closeWitness.trim());
+      await onCloseTask(task, closePhotos, closeNote.trim(), closeWitness.trim(), closeWitnessSignature);
       onClose();
     } catch (e) {
       setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo." });
@@ -8993,11 +9176,42 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
     setCloseSaving(false);
   };
 
+  const toggleChecklistItem = (id) => {
+    const checklist = (task.checklist || []).map(c => c.id === id ? { ...c, done: !c.done } : c);
+    onUpdateTask(task.id, { checklist });
+  };
+  const addChecklistItem = () => {
+    const text = checklistDraft.trim();
+    if (!text) return;
+    const checklist = [...(task.checklist || []), { id: uid("chk"), text, done: false }];
+    onUpdateTask(task.id, { checklist });
+    setChecklistDraft("");
+  };
+  const removeChecklistItem = (id) => {
+    onUpdateTask(task.id, { checklist: (task.checklist || []).filter(c => c.id !== id) });
+  };
+
+  const postComment = async () => {
+    if (!commentDraft.trim()) return;
+    setPostingComment(true);
+    try { await onAddComment(task.id, commentDraft.trim()); setCommentDraft(""); }
+    catch { showToast("No se pudo enviar el comentario — intenta de nuevo.", false); }
+    setPostingComment(false);
+  };
+
+  const doSnooze = () => {
+    if (!snoozeDate) return;
+    onUpdateTask(task.id, { snoozedUntil: new Date(snoozeDate + "T00:00:00").toISOString() });
+    setShowSnoozeForm(false); setSnoozeDate("");
+    showToast("Tarea pospuesta — se esconde de las listas hasta esa fecha.", true);
+  };
+  const cancelSnooze = () => onUpdateTask(task.id, { snoozedUntil: null });
+
   const doLogMaintenance = async () => {
     if (mttoForm.fotos.length === 0) { setMttoMsg({ ok: false, text: "Adjunta al menos una foto del mantenimiento." }); return; }
     setMttoSaving(true); setMttoMsg(null);
     try {
-      await onLogMaintenance(linkedEquipo.id, mttoForm);
+      await onLogMaintenance(linkedEquipo.id, { ...mttoForm, taskId: task.id });
       setShowMttoForm(false);
       setMttoForm({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
       setMttoMsg({ ok: true, text: "✓ Mantenimiento registrado en la hoja de vida del equipo." });
@@ -9025,7 +9239,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
               </div>
             )}
           </div>
-          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" title="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
         </div>
 
         <div className="p-4 space-y-4">
@@ -9041,6 +9255,45 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Descripción</div>
             <div className="text-sm" style={{ color: C.ink }}>{task.descripcion || "Sin descripción adicional."}</div>
+          </div>
+
+          {canAct && estado !== "finalizada" && (
+            <div className="rounded-lg border p-2.5" style={{ borderColor: isTaskSnoozed(task) ? C.blue : C.line, background: isTaskSnoozed(task) ? "#eef4fb" : C.panel }}>
+              {isTaskSnoozed(task) ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs" style={{ color: C.blue }}>😴 Pospuesta hasta {fmtDT(task.snoozedUntil)} — no aparece en las listas normales hasta esa fecha.</span>
+                  <button onClick={cancelSnooze} className="text-xs font-semibold shrink-0" style={{ color: C.blue }}>Quitar</button>
+                </div>
+              ) : showSnoozeForm ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input type="date" value={snoozeDate} onChange={e => setSnoozeDate(e.target.value)} min={localDateIso(new Date())}
+                    className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <Button size="sm" onClick={doSnooze} disabled={!snoozeDate}>Posponer</Button>
+                  <button onClick={() => setShowSnoozeForm(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowSnoozeForm(true)} className="text-xs font-semibold" style={{ color: C.inkSoft }}>😴 Posponer hasta una fecha (ej: falta el repuesto)</button>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Checklist {task.checklist?.length > 0 ? `(${task.checklist.filter(c => c.done).length}/${task.checklist.length})` : ""}</div>
+            {(task.checklist || []).map(item => (
+              <label key={item.id} className="flex items-center gap-2 py-1 text-sm cursor-pointer" style={{ color: item.done ? C.gray : C.ink, textDecoration: item.done ? "line-through" : "none" }}>
+                <input type="checkbox" checked={!!item.done} onChange={() => canAct && toggleChecklistItem(item.id)} disabled={!canAct} />
+                <span className="flex-1">{item.text}</span>
+                {canAct && <button onClick={() => removeChecklistItem(item.id)} aria-label="Quitar paso"><X size={12} color={C.gray} /></button>}
+              </label>
+            ))}
+            {canAct && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <input value={checklistDraft} onChange={e => setChecklistDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addChecklistItem(); } }}
+                  placeholder="Agregar paso (ej: desmontar, pedir repuesto, instalar)…"
+                  className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <button onClick={addChecklistItem} className="text-xs font-semibold px-2 py-1.5 rounded-md" style={{ background: C.bg, color: C.inkSoft }}>+</button>
+              </div>
+            )}
           </div>
 
           {linkedEquipo && (
@@ -9128,6 +9381,31 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
             </div>
           </div>
 
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Comentarios {task.comments?.length > 0 ? `(${task.comments.length})` : ""}</div>
+            <div className="space-y-2 mb-2">
+              {(task.comments || []).length === 0 && <p className="text-xs" style={{ color: C.gray }}>Todavía no hay comentarios.</p>}
+              {(task.comments || []).map(c => (
+                <div key={c.id} className="rounded-md p-2" style={{ background: C.bg }}>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-xs font-semibold" style={{ color: C.ink }}>{c.by}</span>
+                    <span className="text-[10px]" style={{ color: C.gray }}>{fmtDT(c.at)}</span>
+                  </div>
+                  <div className="text-sm" style={{ color: C.ink }}>{c.text}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-start gap-1.5">
+              <textarea value={commentDraft} onChange={e => setCommentDraft(e.target.value)} rows={2}
+                placeholder={`Escribe un comentario… usa @${(allUsernames || []).length ? "nombre" : "alguien"} para avisarle a una persona en particular`}
+                className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <VoiceInputButton onResult={text => setCommentDraft(d => (d ? d + " " : "") + text)} />
+            </div>
+            <Button size="sm" variant="ghost" disabled={postingComment || !commentDraft.trim()} onClick={postComment} className="mt-1.5">
+              {postingComment ? "Enviando…" : "Comentar"}
+            </Button>
+          </div>
+
           {task.vistoPor && task.vistoPor.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Visto por</div>
@@ -9183,6 +9461,15 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                     <label className="text-xs font-semibold mb-1 block" style={{ color: C.red }}>Testigo que verificó cómo quedó (obligatorio por ser Prioridad Alta) *</label>
                     <input value={closeWitness} onChange={e => setCloseWitness(e.target.value)} placeholder="Nombre de quien verificó"
                       className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                    <div className="text-[11px] mt-1.5 mb-1" style={{ color: C.gray }}>Firma de conformidad del testigo (opcional, pero deja constancia más fuerte que solo el nombre):</div>
+                    {closeWitnessSignature ? (
+                      <div className="flex items-center gap-2">
+                        <img loading="lazy" src={closeWitnessSignature} alt="Firma del testigo" className="rounded border" style={{ borderColor: C.line, maxWidth: 160, background: "#fff" }} />
+                        <button onClick={() => setCloseWitnessSignature(null)} className="text-xs font-semibold" style={{ color: C.gray }}>Borrar y firmar de nuevo</button>
+                      </div>
+                    ) : (
+                      <SignaturePad onChange={setCloseWitnessSignature} />
+                    )}
                   </div>
                 )}
                 {closeMsg && <div className="text-xs mt-1.5" style={{ color: closeMsg.ok ? C.green : C.red }}>{closeMsg.text}</div>}
@@ -9198,7 +9485,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
@@ -9217,6 +9504,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [assignShift, setAssignShift] = useState(SHIFTS[0]);
   const [showAllForAssign, setShowAllForAssign] = useState(false);
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState(null);
+  const [showSnoozed, setShowSnoozed] = useState(false);
+  const [repeatLastBusy, setRepeatLastBusy] = useState(false);
 
   const usernames = Object.keys(accounts || {});
   // Quién está trabajando en este preciso momento, según la hora real de entrada/salida de cada
@@ -9301,6 +9590,14 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         fotosAntes,
         async (payload, urls) => { await onCreateTask({ ...payload, fotosAntes: urls }); }
       );
+      // Se guarda como plantilla de "repetir última tarea" — así la próxima vez que se dañe lo
+      // mismo (típico en fallas que se repiten) no hay que volver a escribir todo desde cero.
+      try {
+        localStorage.setItem(`pm-local:last-task:${currentUsername}`, JSON.stringify({
+          titulo: rest.titulo.trim(), descripcion: rest.descripcion || "", prioridad: rest.prioridad,
+          equipoId: rest.equipoId || null, etiquetas: rest.etiquetas || [],
+        }));
+      } catch { /* noop */ }
       setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null, etiquetas: [] });
       setTagDraft("");
       prioridadManualRef.current = false; setPrioritySuggested(false);
@@ -9313,6 +9610,16 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       showToast(msg, false);
     }
     setSaving(false);
+  };
+
+  const repeatLastTask = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`pm-local:last-task:${currentUsername}`) || "null");
+      if (!saved) { showToast("Todavía no has creado ninguna tarea desde este celular para repetir.", false); return; }
+      setForm(f => ({ ...f, ...saved, asignadoA: f.asignadoA, recurrencia: "", fotosAntes: [] }));
+      setShowNew(true); setNewTab("manual");
+      showToast("Se rellenó con tu última tarea — revisa y guarda.", true);
+    } catch { /* noop */ }
   };
 
   const [drawerTaskId, setDrawerTaskId] = useState(null);
@@ -9416,6 +9723,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const filtered = useMemo(() => tasks
     .filter(t => !onlyMine || t.asignadoA === currentUsername)
     .filter(t => !onlyVencidas || (normalizeTaskState(t.estado) !== "finalizada" && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24))
+    .filter(t => showSnoozed || !isTaskSnoozed(t))
     .filter(t => !filterEstado || normalizeTaskState(t.estado) === filterEstado)
     .filter(t => {
       const d = new Date(t.createdAt);
@@ -9432,8 +9740,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       return true;
     })
     .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt))),
-    [tasks, onlyMine, onlyVencidas, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad, filterEtiqueta]
+    [tasks, onlyMine, onlyVencidas, showSnoozed, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad, filterEtiqueta]
   );
+  const snoozedCount = useMemo(() => tasks.filter(isTaskSnoozed).length, [tasks]);
 
   const counts = useMemo(
     () => TASK_STATES.reduce((acc, s) => { acc[s.code] = tasks.filter(t => normalizeTaskState(t.estado) === s.code).length; return acc; }, {}),
@@ -9441,8 +9750,18 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   );
 
   // ===== KPIs compactos =====
-  const totalTareas = tasks.length;
-  const cerradas = useMemo(() => tasks.filter(t => normalizeTaskState(t.estado) === "finalizada"), [tasks]);
+  // "Tareas totales · últimos 7 días" y "Cumplimiento" deben mirar SOLO lo creado en los últimos
+  // 7 días (así lo dice la etiqueta) — antes acá se colaba TODO el histórico (incluye años de
+  // órdenes de HotSOS ya cerradas o abandonadas), lo que hacía que el % de cumplimiento saliera
+  // artificialmente bajísimo y no reflejara el trabajo reciente de verdad.
+  const last7Cutoff = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d; }, []);
+  const tasksLast7 = useMemo(
+    () => tasks.filter(t => new Date(t.createdAt || t.assignedAt || 0) >= last7Cutoff),
+    [tasks, last7Cutoff]
+  );
+  const totalTareas = tasksLast7.length;
+  const cerradas = useMemo(() => tasks.filter(t => normalizeTaskState(t.estado) === "finalizada"), [tasks]); // histórico completo — usado para el tiempo promedio de resolución
+  const cerradasLast7 = useMemo(() => tasksLast7.filter(t => normalizeTaskState(t.estado) === "finalizada"), [tasksLast7]);
   const tiempoCierrePromedio = useMemo(() => {
     const dur = cerradas.filter(t => t.assignedAt && t.finishedAt).map(t => hoursBetween(t.assignedAt, t.finishedAt));
     return dur.length ? dur.reduce((s, v) => s + v, 0) / dur.length : null;
@@ -9452,7 +9771,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     if (estado === "finalizada" || t.prioridad !== "alta" || !t.assignedAt) return false;
     return hoursBetween(t.assignedAt, nowIso()) > 24;
   }).length, [tasks]);
-  const cumplimientoPct = totalTareas > 0 ? Math.round((cerradas.length / totalTareas) * 100) : 100;
+  const cumplimientoPct = totalTareas > 0 ? Math.round((cerradasLast7.length / totalTareas) * 100) : 100;
   const misTareasAbiertas = useMemo(
     () => tasks.filter(t => t.asignadoA === currentUsername && normalizeTaskState(t.estado) !== "finalizada").length,
     [tasks, currentUsername]
@@ -9530,7 +9849,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     onUpdateTask(t.id, { vistoPor: next });
   };
 
-  const doCloseTask = async (t, photos, note, witness) => {
+  const doCloseTask = async (t, photos, note, witness, witnessSignature) => {
     try {
       const res = await saveRecordWithPhotos(
         "task-close",
@@ -9539,7 +9858,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         async (payload, urls) => {
           await onUpdateTask(payload.taskId, {
             estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
-            testigoCierre: payload.testigoCierre,
+            testigoCierre: payload.testigoCierre, testigoFirma: witnessSignature || null,
             timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
           });
           // Si la tarea está vinculada a un equipo, el cierre también queda como su mantenimiento
@@ -9626,10 +9945,20 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <button onClick={() => setOnlyVencidas(v => !v)} title="Sin cerrar y abiertas hace más de 24 horas" className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyVencidas ? C.red : C.panel, color: onlyVencidas ? "#fff" : C.inkSoft, borderColor: onlyVencidas ? C.red : C.line, minHeight: 36 }}>
             {onlyVencidas ? "✓ Vencidas" : "Vencidas"}
           </button>
+          {snoozedCount > 0 && (
+            <button onClick={() => setShowSnoozed(v => !v)} title="Tareas pospuestas — escondidas de las listas hasta la fecha elegida" className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: showSnoozed ? C.blue : C.panel, color: showSnoozed ? "#fff" : C.inkSoft, borderColor: showSnoozed ? C.blue : C.line, minHeight: 36 }}>
+              😴 {showSnoozed ? "Ocultar pospuestas" : `Pospuestas (${snoozedCount})`}
+            </button>
+          )}
           <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
             <button onClick={() => setViewMode("kanban")} className="px-2.5 font-semibold" style={{ background: viewMode === "kanban" ? C.steelDark : C.panel, color: viewMode === "kanban" ? "#fff" : C.inkSoft, minHeight: 36 }}>Kanban</button>
             <button onClick={() => setViewMode("list")} className="px-2.5 font-semibold" style={{ background: viewMode === "list" ? C.steelDark : C.panel, color: viewMode === "list" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>Lista</button>
           </div>
+          {!viewerLocked && !showNew && (
+            <button onClick={repeatLastTask} title="Rellena el formulario con la última tarea que creaste, para algo que se repite" className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: C.panel, color: C.inkSoft, borderColor: C.line, minHeight: 36 }}>
+              ↺ Repetir última
+            </button>
+          )}
           {!viewerLocked && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>}
         </div>
       </div>
@@ -9649,10 +9978,10 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: criticasVencidas ? C.red : C.gray }}>Críticas &gt;24h</div>
             <div className="text-2xl font-bold tabular-nums" style={{ color: criticasVencidas ? C.red : C.ink }}>{criticasVencidas}</div>
           </div>
-          <div className="rounded-xl border p-3 flex items-center gap-2" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="rounded-xl border p-3 flex items-center gap-2" style={{ borderColor: C.line, background: C.panel }} title="De las tareas creadas en los últimos 7 días, cuántas ya se cerraron. No incluye el backlog viejo (HotSOS histórico, etc.) — ese se ve en 'Vencidas' y en el Kanban.">
             <MiniGauge value={cumplimientoPct} max={100} size={44} stroke={6} color={cumplimientoPct >= 80 ? C.green : C.amber} />
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>Cumplimiento (últimos 7 días)</div>
               <div className="text-lg font-bold tabular-nums" style={{ color: cumplimientoPct >= 80 ? C.green : C.amber }}>{totalTareas > 0 ? `${cumplimientoPct}%` : "—"}</div>
             </div>
           </div>
@@ -9683,6 +10012,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                           <span className="flex items-center gap-1.5 text-xs font-medium min-w-0" style={{ color: C.ink }}>
                             <span className={`w-2 h-2 rounded-full shrink-0 ${l.activo ? "pm-pulse" : ""}`} style={{ background: l.activo ? C.green : C.gray }} title={l.activo ? "Con una tarea en proceso ahora mismo" : "Sin actividad ahora mismo"} />
                             <span className="truncate">{displayName}</span>
+                            {looksLikeGhostAccount(displayName) && <span title="Este nombre no parece ser el de una persona — revísalo en Panel de administrador." style={{ color: C.red }}>⚠️</span>}
                           </span>
                           <span className="text-xs font-bold tabular-nums shrink-0" style={{ color: C.blue }}>{l.cerradasHoy}</span>
                         </div>
@@ -9795,17 +10125,20 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                   className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: !form.titulo.trim() && saveMsg?.ok === false ? C.red : C.line, background: C.panel, color: C.ink }} />
                 <VoiceInputButton onResult={text => setForm(f => ({ ...f, titulo: (f.titulo ? f.titulo + " " : "") + text }))} />
               </div>
-              <textarea value={form.descripcion} onChange={e => {
-                const descripcion = e.target.value;
-                setForm(f => {
-                  if (!prioridadManualRef.current && f.prioridad !== "alta" && suggestsHighPriority(f.titulo + " " + descripcion)) {
-                    setPrioritySuggested(true);
-                    return { ...f, descripcion, prioridad: "alta" };
-                  }
-                  return { ...f, descripcion };
-                });
-              }} rows={2} placeholder="Detalles (opcional)"
-                className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              <div className="flex items-start gap-1 mb-2">
+                <textarea value={form.descripcion} onChange={e => {
+                  const descripcion = e.target.value;
+                  setForm(f => {
+                    if (!prioridadManualRef.current && f.prioridad !== "alta" && suggestsHighPriority(f.titulo + " " + descripcion)) {
+                      setPrioritySuggested(true);
+                      return { ...f, descripcion, prioridad: "alta" };
+                    }
+                    return { ...f, descripcion };
+                  });
+                }} rows={2} placeholder="Detalles (opcional)"
+                  className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                <VoiceInputButton onResult={text => setForm(f => ({ ...f, descripcion: (f.descripcion ? f.descripcion + " " : "") + text }))} />
+              </div>
               {prioritySuggested && (
                 <div className="rounded-md p-2 mb-2 text-xs flex items-center justify-between gap-2" style={{ background: C.redSoft, color: C.red }}>
                   <span>🔺 Se puso Prioridad Alta sola porque suena urgente — cámbiala abajo si no lo es.</span>
@@ -10189,14 +10522,16 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask} onMarkViewed={markTaskViewed}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl}
-          hasPendingUpload={pendingTaskCloseIds && pendingTaskCloseIds.has(drawerTask.id)} />
+          hasPendingUpload={pendingTaskCloseIds && pendingTaskCloseIds.has(drawerTask.id)}
+          onUpdateTask={onUpdateTask} onAddComment={onAddTaskComment} currentUsername={currentUsername} currentUser={currentUser}
+          allUsernames={Object.keys(accounts || {})} mySignature={mySignature} signerCargo={signerCargo} viewerLocked={viewerLocked} />
       )}
       <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   );
 }
 
-function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, reportEmail, onLogSent, currentUser }) {
+function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, reportEmail, onLogSent, currentUser, tasks }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -10211,14 +10546,16 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
       const item = invItems.find(it => it.id === mv.itemId);
       const shelf = item ? shelves.find(s => s.id === item.shelfId) : null;
       const bodega = item ? bodegas.find(b => b.id === item.bodegaId) : null;
+      const tarea = mv.taskId ? (tasks || []).find(t => t.id === mv.taskId) : null;
       return {
         fecha: mv.at, tipo: mv.type === "retiro" ? "Retiro" : mv.type === "entrada" ? "Entrada" : mv.type,
         repuesto: item?.name || "(repuesto eliminado)", sku: item?.sku || "", bodega: bodega?.name || "—",
         estanteria: shelf?.code || "—", cantidad: mv.quantity, saldo: mv.balanceAfter, por: mv.by, nota: mv.note || "",
+        tarea: tarea?.titulo || (mv.taskId ? "(tarea eliminada)" : ""),
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invMovements, invItems, bodegas, shelves]);
+  }, [invMovements, invItems, bodegas, shelves, tasks]);
 
   const filtered = search.trim()
     ? rows.filter(r => `${r.repuesto} ${r.sku} ${r.bodega} ${r.estanteria} ${r.por}`.toLowerCase().includes(search.toLowerCase()))
@@ -10355,7 +10692,10 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
               <tr key={i} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
                 <td className="px-2 py-1.5" style={{ color: C.inkSoft }}>{fmtDT(r.fecha)}</td>
                 <td className="px-2 py-1.5" style={{ color: r.tipo === "Retiro" ? C.red : C.green, fontWeight: 600 }}>{r.tipo}</td>
-                <td className="px-2 py-1.5" style={{ color: C.ink }}>{r.repuesto}</td>
+                <td className="px-2 py-1.5" style={{ color: C.ink }}>
+                  {r.repuesto}
+                  {r.tarea && <div className="text-[10px]" style={{ color: C.blue }}>🔗 {r.tarea}</div>}
+                </td>
                 <td className="px-2 py-1.5" style={{ color: C.inkSoft }}>{r.bodega} · {r.estanteria}</td>
                 <td className="px-2 py-1.5 text-right" style={{ color: C.ink }}>{r.cantidad}</td>
                 <td className="px-2 py-1.5 text-right font-semibold" style={{ color: C.ink }}>{r.saldo}</td>
@@ -10885,9 +11225,31 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [downloadingQr, setDownloadingQr] = useState(false);
+  const [editingVidaUtil, setEditingVidaUtil] = useState(false);
+  const [fechaInstalacionDraft, setFechaInstalacionDraft] = useState(equipo.fechaInstalacion || "");
+  const [vidaUtilDraft, setVidaUtilDraft] = useState(equipo.vidaUtilAnios || "");
+  const [savingVidaUtil, setSavingVidaUtil] = useState(false);
+  const [editingManual, setEditingManual] = useState(false);
+  const [manualDraft, setManualDraft] = useState(equipo.manualUrl || "");
+  const [savingManual, setSavingManual] = useState(false);
 
   const status = currentEquipoStatus(equipo.id, records);
   const stats = useMemo(() => computeEquipoStats(equipo, records), [equipo, records]);
+  // ===== Vida útil estimada: años transcurridos desde la instalación vs. la vida útil que se
+  // le puso a mano — ninguno de los dos datos existía antes, así que si no se han llenado no
+  // se muestra nada (no se inventa una fecha ni un número). =====
+  const vidaUtilInfo = useMemo(() => {
+    if (!equipo.fechaInstalacion || !equipo.vidaUtilAnios) return null;
+    const years = (Date.now() - new Date(equipo.fechaInstalacion).getTime()) / (365.25 * 86400000);
+    const pct = Math.round((years / Number(equipo.vidaUtilAnios)) * 100);
+    return { years: Math.round(years * 10) / 10, pct, overLife: pct >= 100 };
+  }, [equipo.fechaInstalacion, equipo.vidaUtilAnios]);
+  // ===== Fallas repetidas: 3 o más correctivos en los últimos 60 días — candidato a reemplazo,
+  // no solo a otra reparación más. =====
+  const repeatedFailures = useMemo(() => {
+    const cutoff = Date.now() - 60 * 86400000;
+    return (records || []).filter(r => r.tipo === "correctivo" && new Date(r.fecha).getTime() >= cutoff).length;
+  }, [records]);
   const preventiveStatus = useMemo(() => computePreventiveStatus(equipo, records), [equipo, records]);
   const partsChanged = useMemo(() => detectPartsChanged(records), [records]);
   const fechaAlta = records.length ? records.reduce((a, b) => new Date(a.fecha) < new Date(b.fecha) ? a : b).fecha : equipo.createdAt;
@@ -11147,6 +11509,80 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
         ) : (
           <p className="text-xs" style={{ color: C.gray }}>Sin video guardado — {isAdmin ? "agrega el enlace de un video corto mostrando cómo se hace el mantenimiento." : "no hay ninguno cargado todavía."}</p>
         ))}
+      </div>
+
+      {repeatedFailures >= 3 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
+          <div className="text-xs font-semibold" style={{ color: C.red }}>⚠️ Falla repetida — {repeatedFailures} correctivos en los últimos 60 días</div>
+          <p className="text-xs mt-0.5" style={{ color: C.ink }}>Este equipo se está dañando seguido. Puede ser candidato a revisión a fondo o reemplazo, no solo a otra reparación más.</p>
+        </div>
+      )}
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Vida útil estimada</div>
+        {editingVidaUtil ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div>
+              <label className="text-[10px] block mb-0.5" style={{ color: C.gray }}>Fecha de instalación</label>
+              <input type="date" value={fechaInstalacionDraft} onChange={e => setFechaInstalacionDraft(e.target.value)}
+                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+            </div>
+            <div>
+              <label className="text-[10px] block mb-0.5" style={{ color: C.gray }}>Vida útil (años)</label>
+              <input type="number" min="1" value={vidaUtilDraft} onChange={e => setVidaUtilDraft(e.target.value)} placeholder="ej: 10"
+                className="text-sm border rounded-md px-2 py-1.5 outline-none w-24" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+            </div>
+            <Button size="sm" disabled={savingVidaUtil} onClick={async () => {
+              setSavingVidaUtil(true);
+              await onUpdateEquipoInfo?.(equipo.id, { fechaInstalacion: fechaInstalacionDraft || null, vidaUtilAnios: vidaUtilDraft ? Number(vidaUtilDraft) : null });
+              setSavingVidaUtil(false); setEditingVidaUtil(false);
+            }}>Guardar</Button>
+            <button onClick={() => setEditingVidaUtil(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+          </div>
+        ) : vidaUtilInfo ? (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 min-w-[160px]">
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: C.bg }}>
+                <div className="h-full" style={{ width: `${Math.min(100, vidaUtilInfo.pct)}%`, background: vidaUtilInfo.overLife ? C.red : vidaUtilInfo.pct > 75 ? C.amber : C.green }} />
+              </div>
+              <div className="text-xs mt-1" style={{ color: vidaUtilInfo.overLife ? C.red : C.inkSoft }}>
+                {vidaUtilInfo.years} años de {equipo.vidaUtilAnios} estimados ({vidaUtilInfo.pct}%){vidaUtilInfo.overLife ? " — ya superó su vida útil estimada" : ""}
+              </div>
+            </div>
+            {isAdmin && <button onClick={() => setEditingVidaUtil(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Editar</button>}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p className="text-xs" style={{ color: C.gray }}>Sin fecha de instalación / vida útil registradas.</p>
+            {isAdmin && <button onClick={() => setEditingVidaUtil(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Agregar</button>}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Manual del fabricante</div>
+        {editingManual ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={manualDraft} onChange={e => setManualDraft(e.target.value)} placeholder="Enlace al manual (PDF en Drive, Dropbox, etc.)"
+              className="flex-1 min-w-[200px] text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+            <Button size="sm" disabled={savingManual} onClick={async () => {
+              setSavingManual(true);
+              await onUpdateEquipoInfo?.(equipo.id, { manualUrl: manualDraft.trim() || null });
+              setSavingManual(false); setEditingManual(false);
+            }}>Guardar</Button>
+            <button onClick={() => setEditingManual(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+          </div>
+        ) : equipo.manualUrl ? (
+          <div className="flex items-center justify-between">
+            <a href={equipo.manualUrl} target="_blank" rel="noreferrer" className="text-sm underline" style={{ color: C.blue }}>Abrir manual del fabricante ↗</a>
+            {isAdmin && <button onClick={() => { setManualDraft(equipo.manualUrl); setEditingManual(true); }} className="text-xs font-semibold" style={{ color: C.amber }}>Cambiar</button>}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p className="text-xs" style={{ color: C.gray }}>Sin manual adjunto.</p>
+            {isAdmin && <button onClick={() => setEditingManual(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Agregar enlace</button>}
+          </div>
+        )}
       </div>
 
       <div className="flex items-start gap-3 flex-wrap mb-4">
@@ -12049,6 +12485,29 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
     return total;
   }, [filteredTasks]);
 
+  // ===== Ranking de técnicos por productividad: tareas cerradas, tiempo promedio de resolución
+  // y % cerradas a tiempo (menos de 24h desde que se asignaron) — respeta los mismos filtros de
+  // fecha/turno/técnico de arriba. Es informativo, no punitivo: pensado para reconocer buen
+  // trabajo, no para castigar (los volúmenes de trabajo no son iguales entre turnos). =====
+  const technicianRanking = useMemo(() => {
+    const byUser = {};
+    filteredTasks.forEach(t => {
+      if (!t.asignadoA) return;
+      const key = t.asignadoA;
+      if (!byUser[key]) byUser[key] = { username: key, cerradas: 0, horasTotal: 0, aTiempo: 0 };
+      byUser[key].cerradas++;
+      if (t.assignedAt && t.finishedAt) {
+        const h = hoursBetween(t.assignedAt, t.finishedAt);
+        byUser[key].horasTotal += h;
+        if (h <= 24) byUser[key].aTiempo++;
+      }
+    });
+    return Object.values(byUser)
+      .map(u => ({ ...u, nombre: accounts?.[u.username]?.display_name || u.username, promedioHoras: u.cerradas ? u.horasTotal / u.cerradas : 0, pctATiempo: u.cerradas ? Math.round((u.aTiempo / u.cerradas) * 100) : 0 }))
+      .sort((a, b) => b.cerradas - a.cerradas)
+      .slice(0, 10);
+  }, [filteredTasks, accounts]);
+
   const DONUT_PALETTE = [C.blue, C.amber, C.green, C.red, C.gray, "#8b5cf6", "#0ea5e9"];
   const costBySistemaTotal = cost.bySistema.reduce((s, [, v]) => s + v, 0);
 
@@ -12131,6 +12590,37 @@ function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, me
           leading={<MiniGauge value={compliance.ronda.pct} max={100} size={40} stroke={5} color={compliance.ronda.pct >= 90 ? C.green : C.red} />}
           trend={<TrendBadge current={compliance.ronda.pct} previous={compliancePrev.ronda.pct} goodDirection="up" />} />
       </div>
+
+      {technicianRanking.length > 0 && (
+        <div className="rounded-xl border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Ranking de técnicos por productividad</div>
+          <p className="text-xs mb-3" style={{ color: C.gray }}>Según los filtros de arriba — es informativo (para reconocer buen trabajo), no punitivo: los turnos no siempre tienen la misma carga.</p>
+          <div className="overflow-x-auto">
+            <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ color: C.gray }}>
+                  <th className="text-left py-1.5">#</th>
+                  <th className="text-left py-1.5">Técnico</th>
+                  <th className="text-right py-1.5">Cerradas</th>
+                  <th className="text-right py-1.5">Tiempo promedio</th>
+                  <th className="text-right py-1.5">% a tiempo (&lt;24h)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {technicianRanking.map((u, i) => (
+                  <tr key={u.username} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <td className="py-1.5" style={{ color: C.gray }}>{i + 1}</td>
+                    <td className="py-1.5 font-medium" style={{ color: C.ink }}>{u.nombre}</td>
+                    <td className="py-1.5 text-right font-semibold" style={{ color: C.blue }}>{u.cerradas}</td>
+                    <td className="py-1.5 text-right" style={{ color: C.inkSoft }}>{fmtHours(u.promedioHoras)}</td>
+                    <td className="py-1.5 text-right" style={{ color: u.pctATiempo >= 80 ? C.green : C.amber }}>{u.pctATiempo}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="mb-5">
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cobertura de trabajo por sistema — todos a la vez</div>
@@ -12659,12 +13149,13 @@ function cronogramaCellVisual(c, mesNum, now) {
  * intervención real de ese mes (técnico, fecha, observaciones, fotos si las hay), y permite
  * reprogramar el estado/fecha de esa celda o registrar un mantenimiento extraordinario.
  */
-function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onClose, onReprogram, onLogExtraordinary, onZoom }) {
+function CronogramaDetailDrawer({ equipo, mesNum, entry, equipoCronograma, mttoLog, invItems, onClose, onReprogram, onLogExtraordinary, onZoom }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [reprogramming, setReprogramming] = useState(false);
   const [newEstado, setNewEstado] = useState(entry?.estado || "pendiente");
   const [newFecha, setNewFecha] = useState(entry?.fechaEjecucion || "");
   const [reprogSaving, setReprogSaving] = useState(false);
+  const [chainRest, setChainRest] = useState(false);
 
   const [showExtra, setShowExtra] = useState(false);
   const [extraForm, setExtraForm] = useState({ descripcion: "", costo: "", fotos: [], repuestos: [] });
@@ -12682,8 +13173,21 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
   const doReprogram = async () => {
     setReprogSaving(true);
     await onReprogram(equipo.id, mesNum, { estado: newEstado, fechaEjecucion: newFecha || null });
+    // "Reprogramar en cadena": si este mes se atrasó (ej. faltó el repuesto), correr también un
+    // mes hacia adelante los meses programados que faltan este año — así no queda el resto del
+    // cronograma anual desfasado sin que nadie se dé cuenta.
+    if (chainRest) {
+      const futuros = (equipoCronograma || []).filter(c => c.programado && c.mesNum > mesNum && c.mesNum <= 12).sort((a, b) => b.mesNum - a.mesNum);
+      for (const c of futuros) {
+        const destino = c.mesNum + 1;
+        if (destino > 12) continue; // no se corre más allá de diciembre de este año
+        await onReprogram(equipo.id, destino, { estado: "pendiente", programado: true, tipo: c.tipo, tecnico: c.tecnico, fechaEjecucion: null });
+        await onReprogram(equipo.id, c.mesNum, { programado: false });
+      }
+    }
     setReprogSaving(false);
     setReprogramming(false);
+    setChainRest(false);
   };
 
   const doExtra = async () => {
@@ -12709,7 +13213,7 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
             <div className="text-base font-semibold" style={{ color: C.ink }}>{equipo.nombre}</div>
             <div className="text-xs" style={{ color: C.gray }}>{equipo.sistema} · {MESES_LABELS[mesNum - 1]} {year}</div>
           </div>
-          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
+          <button onClick={onClose} aria-label="Cerrar" title="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
         </div>
 
         <div className="p-4 space-y-4">
@@ -12756,6 +13260,10 @@ function CronogramaDetailDrawer({ equipo, mesNum, entry, mttoLog, invItems, onCl
                   <input type="date" value={newFecha ? newFecha.slice(0, 10) : ""} onChange={e => setNewFecha(e.target.value)}
                     className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 </div>
+                <label className="flex items-start gap-1.5 text-xs mb-2 cursor-pointer select-none" style={{ color: C.inkSoft }}>
+                  <input type="checkbox" checked={chainRest} onChange={e => setChainRest(e.target.checked)} className="mt-0.5" />
+                  <span>Correr en cadena un mes los mantenimientos programados que faltan este año (ej: se atrasó por falta de repuesto y todo el resto del año se recorre igual)</span>
+                </label>
                 <div className="flex items-center gap-2">
                   <Button size="sm" disabled={reprogSaving} onClick={doReprogram}>{reprogSaving ? "Guardando…" : "Guardar"}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setReprogramming(false)}>Cancelar</Button>
@@ -12818,11 +13326,28 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
   const [selectedCell, setSelectedCell] = useState(null); // { equipo, mesNum } | null
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
-  const [cronoViewMode, setCronoViewMode] = useState("tabla"); // "tabla" | "calendario"
+  const [cronoViewMode, setCronoViewMode] = useState("tabla"); // "tabla" | "calendario" | "semana"
   const now = new Date();
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { if (!sistemaFilter && sistemas.length) setSistemaFilter(sistemas[0]); }, [sistemas, sistemaFilter]);
+
+  const upcoming7Days = useMemo(() => computeUpcoming7Days(activeEquipos, mttoLog, mttoCronograma, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeEquipos, mttoLog, mttoCronograma]);
+
+  // ===== % de cumplimiento del cronograma por sistema, del mes en curso: de lo programado para
+  // este mes, cuánto ya tiene un mantenimiento real registrado. =====
+  const cumplimientoPorSistema = useMemo(() => {
+    const mesActual = now.getMonth() + 1;
+    return sistemas.map(sis => {
+      const eqsDelSistema = activeEquipos.filter(e => e.sistema === sis);
+      const programadosEsteMes = eqsDelSistema.filter(eq => mttoCronograma.some(c => c.equipoId === eq.id && c.mesNum === mesActual && c.programado));
+      const cumplidos = programadosEsteMes.filter(eq => mttoLog.some(r => r.equipoId === eq.id && new Date(r.fecha).getMonth() + 1 === mesActual && new Date(r.fecha).getFullYear() === now.getFullYear()));
+      return { sistema: sis, total: programadosEsteMes.length, cumplidos: cumplidos.length, pct: programadosEsteMes.length ? Math.round((cumplidos.length / programadosEsteMes.length) * 100) : null };
+    }).filter(s => s.total > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sistemas, activeEquipos, mttoCronograma, mttoLog]);
 
   const eqInSistema = activeEquipos
     .filter(e => e.sistema === sistemaFilter)
@@ -12971,6 +13496,21 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Cronograma Anual de Mantenimiento</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>El año completo, mes a mes, por sistema — toca cualquier celda para ver el detalle.</p>
 
+      {cumplimientoPorSistema.length > 0 && (
+        <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>% de cumplimiento este mes, por sistema</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {cumplimientoPorSistema.map(s => (
+              <div key={s.sistema} className="rounded-md p-2" style={{ background: C.bg }}>
+                <div className="text-[10px] truncate" style={{ color: C.gray }}>{s.sistema}</div>
+                <div className="text-lg font-bold" style={{ color: s.pct >= 80 ? C.green : s.pct >= 50 ? C.amber : C.red }}>{s.pct}%</div>
+                <div className="text-[10px]" style={{ color: C.gray }}>{s.cumplidos}/{s.total} equipos</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filtros */}
       <div className="rounded-xl border p-3 mb-3 flex items-end gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>
         <div>
@@ -13004,7 +13544,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
           <span className="flex items-center gap-1"><span style={{ color: C.gray }}>○</span> Sin programar</span>
         </div>
         <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
-          {[{ v: "tabla", l: "Tabla" }, { v: "calendario", l: "Calendario" }].map((opt, i) => (
+          {[{ v: "tabla", l: "Tabla" }, { v: "calendario", l: "Calendario" }, { v: "semana", l: `Próximos 7 días${upcoming7Days.length ? ` (${upcoming7Days.length})` : ""}` }].map((opt, i) => (
             <button key={opt.v} onClick={() => setCronoViewMode(opt.v)} className="px-3 py-1.5 font-semibold"
               style={{ background: cronoViewMode === opt.v ? C.steelDark : C.panel, color: cronoViewMode === opt.v ? "#fff" : C.inkSoft, borderLeft: i > 0 ? `1px solid ${C.line}` : "none" }}>
               {opt.l}
@@ -13028,7 +13568,31 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
 
-      {cronoViewMode === "tabla" ? (
+      {cronoViewMode === "semana" ? (
+        <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <p className="text-xs mb-3" style={{ color: C.gray }}>
+            Equipos a los que, según su frecuencia programada, les toca mantenimiento esta semana (o ya se pasaron un poco) —
+            calculado a partir de cuándo fue su último mantenimiento real, no de una fecha fija en el calendario.
+          </p>
+          {upcoming7Days.length === 0 ? (
+            <div className="text-sm flex items-center gap-1.5 py-4 justify-center" style={{ color: C.green }}><CheckCircle2 size={16} /> Nada pendiente para esta semana.</div>
+          ) : (
+            <div className="space-y-1.5">
+              {upcoming7Days.map(u => (
+                <div key={u.equipo.id} className="rounded-md p-2 flex items-center justify-between gap-2" style={{ background: u.diasParaVencer <= 0 ? C.redSoft : C.amberSoft }}>
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: C.ink }}>{u.equipo.nombre}</div>
+                    <div className="text-xs" style={{ color: C.gray }}>{u.equipo.sistema} · cada {u.frecuenciaEsperadaDias} días · último: {fmtDT(u.lastDate)}</div>
+                  </div>
+                  <div className="text-sm font-bold shrink-0" style={{ color: u.diasParaVencer <= 0 ? C.red : "#8a5a00" }}>
+                    {u.diasParaVencer <= 0 ? `Vencido hace ${-u.diasParaVencer}d` : `En ${u.diasParaVencer}d`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : cronoViewMode === "tabla" ? (
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
             <thead>
@@ -13095,6 +13659,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
       {selectedCell && (
         <CronogramaDetailDrawer equipo={selectedCell.equipo} mesNum={selectedCell.mesNum}
           entry={cronoByEquipo[selectedCell.equipo.id]?.[selectedCell.mesNum]}
+          equipoCronograma={mttoCronograma.filter(c => c.equipoId === selectedCell.equipo.id)}
           mttoLog={mttoLog} invItems={invItems} onClose={() => setSelectedCell(null)}
           onReprogram={onUpdateCronograma} onLogExtraordinary={onLogMaintenance} onZoom={setLightboxUrl} />
       )}
@@ -13917,7 +14482,7 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
 /* ============================================================
    BÚSQUEDA GLOBAL — busca en TODOS los catálogos de equipos de la app
    ============================================================ */
-function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, onNavigate, onOpenEquipo, onOpenShelf, onOpenFloor }) {
+function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, wikiPages, onNavigate, onOpenEquipo, onOpenShelf, onOpenFloor }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -13949,13 +14514,15 @@ function GlobalSearch({ currentView, mttoEquipos, invItems, employees, tasks, on
         .map(e => ({ tipo: "Empleado", label: e.name, sub: e.cargo || "", action: () => onNavigate("schedules") })),
       tasks: () => (tasks || []).filter(t => t.titulo.toLowerCase().includes(query))
         .map(t => ({ tipo: "Tarea", label: t.titulo, sub: TASK_STATES.find(s => s.code === t.estado)?.label || "", action: () => onNavigate("tasks") })),
+      wiki: () => (wikiPages || []).filter(p => (p.titulo || "").toLowerCase().includes(query) || (p.contenido || "").toLowerCase().includes(query))
+        .map(p => ({ tipo: "Wiki", label: p.titulo, sub: "", action: () => onNavigate("wiki") })),
     };
 
     if (scoped[currentView]) return scoped[currentView]().slice(0, 25);
 
     // Fuera de esas pantallas (Inicio, Admin, etc.) sí busca en todo, para poder llegar a donde sea.
     return Object.values(scoped).flatMap(fn => fn()).slice(0, 25);
-  }, [q, currentView, mttoEquipos, invItems, employees, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, currentView, mttoEquipos, invItems, employees, tasks, wikiPages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scopedLabels = {
     ronda: "Buscar en la Ronda de revisión…", coldrooms: "Buscar en Cuartos Fríos…", meters: "Buscar en Medidores…",
@@ -14185,129 +14752,6 @@ function OfflineBanner() {
   );
 }
 
-/** Buscador global: busca por texto en tareas, equipos, repuestos y la wiki al mismo tiempo, sin
- * tener que saber de antemano en qué módulo está lo que se busca. Guarda las últimas búsquedas
- * (por usuario, en este celular) para que sea rápido repetir una búsqueda frecuente. */
-function GlobalSearchModal({ tasks, equipos, invItems, wikiPages, currentUser, onNavigate, onClose }) {
-  const [q, setQ] = useState("");
-  const RECENT_KEY = `pm-local:global-search-recent:${currentUser}`;
-  const [recent, setRecent] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; }
-  });
-  const inputRef = useRef(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
-  useEffect(() => {
-    const onKey = e => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const norm = s => normalizeSearchText(s || "");
-  const qn = norm(q.trim());
-
-  const results = useMemo(() => {
-    if (!qn || qn.length < 2) return null;
-    const tareas = (tasks || []).filter(t => norm(`${t.titulo} ${t.descripcion}`).includes(qn)).slice(0, 8);
-    const eqs = (equipos || []).filter(e => e.active !== false && norm(`${e.nombre} ${e.sistema}`).includes(qn)).slice(0, 8);
-    const items = (invItems || []).filter(it => norm(`${it.name} ${it.sku}`).includes(qn)).slice(0, 8);
-    const wiki = (wikiPages || []).filter(p => norm(`${p.titulo} ${p.contenido}`).includes(qn)).slice(0, 8);
-    return { tareas, eqs, items, wiki };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qn, tasks, equipos, invItems, wikiPages]);
-
-  const remember = (term) => {
-    const t = term.trim();
-    if (!t) return;
-    setRecent(prev => {
-      const next = [t, ...prev.filter(x => x.toLowerCase() !== t.toLowerCase())].slice(0, 6);
-      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* noop */ }
-      return next;
-    });
-  };
-
-  const goTo = (view) => { remember(q); onNavigate(view); onClose(); };
-
-  const totalResults = results ? results.tareas.length + results.eqs.length + results.items.length + results.wiki.length : 0;
-
-  return (
-    <>
-      <div className="fixed inset-0" style={{ background: "rgba(10,14,20,0.5)", zIndex: 200 }} onClick={onClose} />
-      <div className="fixed top-0 left-0 right-0 sm:top-[8vh] sm:left-1/2 sm:-translate-x-1/2 sm:w-[520px] sm:rounded-xl overflow-hidden pm-stagger-in"
-        style={{ background: C.panel, zIndex: 201, boxShadow: "0 8px 28px rgba(0,0,0,0.25)", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
-        <div className="pm-safe-top p-3 border-b flex items-center gap-2" style={{ borderColor: C.line }}>
-          <Search size={16} style={{ color: C.gray }} />
-          <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && q.trim()) remember(q); }}
-            placeholder="Buscar tareas, equipos, repuestos, wiki…"
-            className="flex-1 text-sm outline-none bg-transparent" style={{ color: C.ink }} />
-          <button onClick={onClose} aria-label="Cerrar"><X size={18} style={{ color: C.gray }} /></button>
-        </div>
-        <div className="overflow-y-auto p-3">
-          {!results && recent.length > 0 && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Búsquedas recientes</div>
-              <div className="flex flex-col gap-1">
-                {recent.map((r, i) => (
-                  <button key={i} onClick={() => setQ(r)} className="text-left text-sm rounded-md px-2 py-1.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink }}>
-                    <Search size={13} style={{ color: C.gray }} /> {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {!results && recent.length === 0 && (
-            <div className="text-sm text-center py-6" style={{ color: C.gray }}>Escribe al menos 2 letras para buscar en toda la app.</div>
-          )}
-          {results && totalResults === 0 && (
-            <div className="text-sm text-center py-6" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
-          )}
-          {results && results.tareas.length > 0 && (
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Tareas</div>
-              {results.tareas.map(t => (
-                <button key={t.id} onClick={() => goTo("tasks")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
-                  <ClipboardCheck size={13} style={{ color: C.amber }} className="shrink-0" /> <span className="truncate">{t.titulo}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {results && results.eqs.length > 0 && (
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Equipos</div>
-              {results.eqs.map(e => (
-                <button key={e.id} onClick={() => goTo("maintenance")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
-                  <Wrench size={13} style={{ color: C.blue }} className="shrink-0" /> <span className="truncate">{e.nombre} <span style={{ color: C.gray }}>· {e.sistema}</span></span>
-                </button>
-              ))}
-            </div>
-          )}
-          {results && results.items.length > 0 && (
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Repuestos</div>
-              {results.items.map(it => (
-                <button key={it.id} onClick={() => goTo("inventory")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
-                  <Package size={13} style={{ color: C.green }} className="shrink-0" /> <span className="truncate">{it.name}{it.sku ? ` · ${it.sku}` : ""}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {results && results.wiki.length > 0 && (
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Wiki interna</div>
-              {results.wiki.map(p => (
-                <button key={p.id} onClick={() => goTo("wiki")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
-                  <BookOpen size={13} style={{ color: C.amber }} className="shrink-0" /> <span className="truncate">{p.titulo}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
   useBackCloseModal(open, () => setOpen(false));
@@ -14514,7 +14958,7 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center" style={{ background: "#000" }}>
-      <button onClick={onClose} aria-label="Cerrar" className="pm-safe-top absolute top-4 right-4 z-10 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", minWidth: 44, minHeight: 44 }}>
+      <button onClick={onClose} aria-label="Cerrar" title="Cerrar" className="pm-safe-top absolute top-4 right-4 z-10 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", minWidth: 44, minHeight: 44 }}>
         <X size={22} color="#fff" />
       </button>
       {error ? (
@@ -15163,7 +15607,7 @@ function Lightbox({ url, onClose }) {
   if (!url) return null;
   return (
     <div className="fixed inset-0 flex items-center justify-center p-6" style={{ background: "rgba(10,14,20,0.85)", zIndex: 200 }} onClick={onClose}>
-      <button onClick={onClose} aria-label="Cerrar" className="absolute top-4 right-4 rounded-full w-9 h-9 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}>
+      <button onClick={onClose} aria-label="Cerrar" title="Cerrar" className="absolute top-4 right-4 rounded-full w-9 h-9 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}>
         <X size={20} />
       </button>
       <img loading="lazy" src={url} alt="" className="max-w-full max-h-full rounded-lg" style={{ objectFit: "contain" }} onClick={e => e.stopPropagation()} />
@@ -15228,7 +15672,7 @@ function WhatsNewBanner({ entries, currentUser }) {
         <div className="text-sm font-semibold" style={{ color: C.ink }}>{latest.title}</div>
         <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{latest.description}</div>
       </div>
-      <button onClick={dismiss} aria-label="Cerrar" className="p-0.5 shrink-0" style={{ minWidth: 24, minHeight: 24 }}><X size={16} color={C.gray} /></button>
+      <button onClick={dismiss} aria-label="Cerrar" title="Cerrar" className="p-0.5 shrink-0" style={{ minWidth: 24, minHeight: 24 }}><X size={16} color={C.gray} /></button>
     </div>
   );
 }
@@ -15313,9 +15757,15 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
   const oldestIssue = activeIssuesList.length
     ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
     : null;
+  // Equipos que llevan MUCHO tiempo fuera de servicio (más de un mes) — esto es distinto de
+  // "fuera de servicio ahora" en general: acá lo que importa es avisar que algo lleva
+  // demasiado tiempo sin resolverse, no solo que está dañado hoy.
+  const longDownIssues = activeIssuesList.filter(iss => hoursBetween(iss.openedAt, nowIso()) / 24 >= 30).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt));
 
   return (
-    <div>
+    <div className="pb-20">
+      {/* pb-20: deja espacio para que el botón flotante "Asistente IA" nunca tape
+          contenido real (como "Ver todos los módulos") cuando se hace scroll hasta el final. */}
       <div className="rounded-xl p-3.5 mb-4" style={{ background: C.steelDark }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
@@ -15431,6 +15881,17 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           </div>
         );
       })()}
+
+      {!gerenciaLocked && !searchNorm && longDownIssues.length > 0 && (
+        <button onClick={() => onNavigate("issues")} className="w-full text-left rounded-lg p-3 mb-4" style={{ background: C.redSoft, border: `1px solid ${C.red}` }}>
+          <div className="flex items-center gap-2 mb-1.5 text-sm font-semibold" style={{ color: C.red }}>
+            <AlertTriangle size={16} /> {longDownIssues.length} equipo{longDownIssues.length === 1 ? "" : "s"} lleva{longDownIssues.length === 1 ? "" : "n"} más de un mes fuera de servicio
+          </div>
+          <div className="text-xs" style={{ color: C.ink }}>
+            {longDownIssues.slice(0, 3).map(iss => iss.name).join(", ")}{longDownIssues.length > 3 ? `, y ${longDownIssues.length - 3} más` : ""} — toca para revisarlos.
+          </div>
+        </button>
+      )}
 
       {/* PILAR 1 — Widgets vivos: el tablero de instrumentos del día, no solo accesos directos */}
       {!gerenciaLocked && !searchNorm && (
@@ -16866,7 +17327,7 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
  * cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide.
  * No duplica órdenes ya importadas antes (las reconoce por su número de orden de HotSOS).
  */
-function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete }) {
+function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete, equipos }) {
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState({});
   const [parseError, setParseError] = useState(null);
@@ -16897,6 +17358,7 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
         return {
           orderId, edadStr, edadHoras: parseHotsosAge(edadStr), problema, lugar, asignadoHotsos,
           matchedUser: matchHotsosAssignee(asignadoHotsos, accounts), categoria: classifyHotsosProblem(problema),
+          matchedEquipoId: matchHotsosEquipo(lugar, problema, equipos),
           alreadyImported: existingOrderIds.has(orderId),
         };
       });
@@ -17030,13 +17492,14 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
                   <th className="text-left p-2">Problema</th>
                   <th className="text-left p-2">Ubicación</th>
                   <th className="text-left p-2">Especialidad</th>
+                  <th className="text-left p-2">Equipo del catálogo</th>
                   <th className="text-left p-2">Asignado en HotSOS</th>
                   <th className="text-left p-2">Edad</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.length === 0 ? (
-                  <tr><td colSpan={7} className="p-4 text-center" style={{ color: C.gray }}>Nadie coincide con ese filtro.</td></tr>
+                  <tr><td colSpan={8} className="p-4 text-center" style={{ color: C.gray }}>Nadie coincide con ese filtro.</td></tr>
                 ) : visibleRows.map((r, i) => (
                   <tr key={r.orderId} style={{ background: i % 2 ? C.cardAlt : C.panel, opacity: r.alreadyImported ? 0.5 : 1 }}>
                     <td className="p-2"><input type="checkbox" disabled={r.alreadyImported} checked={!!selected[r.orderId]} onChange={e => setSelected(s => ({ ...s, [r.orderId]: e.target.checked }))} /></td>
@@ -17044,6 +17507,11 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
                     <td className="p-2" style={{ color: C.ink }}>{r.problema}</td>
                     <td className="p-2" style={{ color: C.inkSoft }}>{r.lugar}</td>
                     <td className="p-2"><Badge tone="blue">{r.categoria}</Badge></td>
+                    <td className="p-2">
+                      {r.matchedEquipoId
+                        ? <span style={{ color: C.green }}>{(equipos || []).find(e => e.id === r.matchedEquipoId)?.nombre} ✓</span>
+                        : <span style={{ color: C.gray }}>Sin vincular</span>}
+                    </td>
                     <td className="p-2">
                       {r.matchedUser ? <span style={{ color: C.green }}>{r.asignadoHotsos} ✓</span>
                         : r.asignadoHotsos ? <span style={{ color: C.amber }}>{r.asignadoHotsos} (sin cuenta en la app)</span>
@@ -18733,10 +19201,36 @@ function ProfileView({ currentUser, mySignature, onSaveSignature, employees, lin
     setTimeout(() => setLinkSaved(false), 2500);
   };
 
+  const [fontScale, setFontScale] = useState(() => {
+    try { return localStorage.getItem("pm-local:font-scale") || "md"; } catch { return "md"; }
+  });
+  const doSetFontScale = (id) => {
+    setFontScale(id);
+    applyFontScale(id);
+  };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Mi Perfil</h2>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{currentUser}</p>
+
+      <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Tamaño de letra</div>
+        <p className="text-xs mb-3" style={{ color: C.gray }}>Ajusta el tamaño del texto en toda la app a lo que te resulte más cómodo de leer.</p>
+        <div className="flex flex-wrap gap-2">
+          {FONT_SCALE_OPTS.map(opt => (
+            <button key={opt.id} onClick={() => doSetFontScale(opt.id)}
+              className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+              style={{
+                borderColor: fontScale === opt.id ? C.amber : C.line,
+                background: fontScale === opt.id ? C.amber : "transparent",
+                color: fontScale === opt.id ? "#1a1a1a" : C.ink,
+              }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {employees && employees.length > 0 && (
         <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -20320,7 +20814,7 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
             <div className="text-sm font-semibold" style={{ color: C.ink }}>{acc.display_name || acc.email}</div>
             <div className="text-xs" style={{ color: C.gray }}>{acc.email}</div>
           </div>
-          <button onClick={onClose} aria-label="Cerrar" className="p-1"><X size={16} color={C.gray} /></button>
+          <button onClick={onClose} aria-label="Cerrar" title="Cerrar" className="p-1"><X size={16} color={C.gray} /></button>
         </div>
 
         <div className="p-4">
@@ -20406,6 +20900,7 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
   const list = Object.entries(accounts).sort((a, b) => (a[1].created_at || "").localeCompare(b[1].created_at || ""));
   const adminCount = list.filter(([, a]) => a.is_admin).length;
   const pending = list.filter(([, a]) => a.approved === false);
+  const posiblesFantasma = list.filter(([, a]) => looksLikeGhostAccount(a.display_name));
 
   return (
     <div>
@@ -20420,6 +20915,24 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
         </p>
         <BackupButton />
       </div>
+
+      {posiblesFantasma.length > 0 && (
+        <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.red }}>⚠️ Posibles cuentas que no son una persona</div>
+          <p className="text-xs mb-2" style={{ color: C.ink }}>
+            Estos nombres no parecen ser el de una persona (parecen más bien una tarea o un turno) — por eso pueden
+            aparecer como "técnico" en los reportes de Tareas. Revísalos y corrígeles el nombre (o elimínalos si no
+            hacen falta) tocando "Editar" más abajo.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {posiblesFantasma.map(([uid, a]) => (
+              <button key={uid} onClick={() => setEditingUser(uid)} className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: "#fff", color: C.red, border: `1px solid ${C.red}` }}>
+                {a.display_name} ✎
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <div className="flex items-center gap-2 mb-1">
@@ -20587,7 +21100,6 @@ export default function App() {
   const [themeOverride, setThemeOverride] = useState(() => { try { return localStorage.getItem("pm-local:theme"); } catch { return null; } }); // "dark" | "light" | null = automático
   const [darkMode, setDarkMode] = useState(() => themeOverride === "dark" ? true : themeOverride === "light" ? false : isNightHour());
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
-  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [undoToast, setUndoToast] = useState(null); // { label, trashId } | null
@@ -21295,8 +21807,8 @@ export default function App() {
   };
 
   /* ---- Inventario ---- */
-  const logInvMovement = async (itemId, type, quantity, balanceAfter, note, movementsBase) => {
-    const rec = { id: uid("mov"), itemId, type, quantity, balanceAfter, by: displayName, at: nowIso(), note: note || "" };
+  const logInvMovement = async (itemId, type, quantity, balanceAfter, note, movementsBase, taskId) => {
+    const rec = { id: uid("mov"), itemId, type, quantity, balanceAfter, by: displayName, at: nowIso(), note: note || "", taskId: taskId || null };
     const next = [rec, ...(movementsBase ?? invMovements)].slice(0, 3000);
     setInvMovements(next);
     await sSet("inventory-movements", next, true);
@@ -21326,7 +21838,7 @@ export default function App() {
     if (myShelves.length > 0 || myItems.length > 0) {
       return { ok: false, message: `Esta bodega todavía tiene ${myShelves.length} estantería(s) y ${myItems.length} repuesto(s). Bórralos primero.` };
     }
-    if (item) await moveToTrash("bodega", item, `${item.name} (bodega)`);
+    if (item) { const entry = await moveToTrash("bodega", item, `${item.name} (bodega)`); offerUndo(`Bodega "${item.name}" eliminada`, entry.id); }
     const next = bodegas.filter(b => b.id !== id);
     setBodegas(next);
     await sSet("inventory-bodegas", next, true);
@@ -21339,7 +21851,7 @@ export default function App() {
     if (myItems.length > 0) {
       return { ok: false, message: `Esta estantería todavía tiene ${myItems.length} repuesto(s). Bórralos primero.` };
     }
-    if (item) await moveToTrash("shelf", item, `Estantería ${item.code} (${item.name || "sin nombre"})`);
+    if (item) { const entry = await moveToTrash("shelf", item, `Estantería ${item.code} (${item.name || "sin nombre"})`); offerUndo(`Estantería "${item.code}" eliminada`, entry.id); }
     const next = shelves.filter(s => s.id !== id);
     setShelves(next);
     await sSet("inventory-shelves", next, true);
@@ -21496,7 +22008,7 @@ export default function App() {
 
   const deleteMttoEquipo = async (id) => {
     const item = mttoEquipos.find(e => e.id === id);
-    if (item) await moveToTrash("mttoEquipo", item, `${item.nombre} (equipo de mantenimiento)`);
+    if (item) { const entry = await moveToTrash("mttoEquipo", item, `${item.nombre} (equipo de mantenimiento)`); offerUndo(`Equipo "${item.nombre}" eliminado`, entry.id); }
     const next = mttoEquipos.filter(e => e.id !== id);
     setMttoEquipos(next);
     await sSet("mtto-equipos", next, true);
@@ -21552,6 +22064,7 @@ export default function App() {
       repuestos: repuestosUsados.map(r => ({ itemId: r.itemId, nombre: invItems.find(it => it.id === r.itemId)?.name || "Repuesto", cantidad: Number(r.cantidad) })),
       createdBy: displayName, createdByUsername: currentUser, createdAt: nowIso(),
       revisionEstado: "pendiente", // pendiente | aprobado | rechazado — lo cierra un supervisor
+      taskId: form.taskId || null, // si vino desde el cajón de una tarea, queda la trazabilidad de cuál
     };
     const next = [rec, ...mttoLog].slice(0, 5000);
     setMttoLog(next);
@@ -21559,7 +22072,7 @@ export default function App() {
 
     for (const r of repuestosUsados) {
       const item = invItems.find(it => it.id === r.itemId);
-      if (item) await adjustInvStock(item, -Math.abs(Number(r.cantidad)), "retiro", `Usado en mantenimiento de equipo (${rec.tipo})`);
+      if (item) await adjustInvStock(item, -Math.abs(Number(r.cantidad)), "retiro", `Usado en mantenimiento de equipo (${rec.tipo})`, form.taskId || null);
     }
     return rec;
   };
@@ -21601,12 +22114,12 @@ export default function App() {
     await sSet("mtto-cronograma", next, true);
   };
 
-  const adjustInvStock = async (item, delta, type, note) => {
+  const adjustInvStock = async (item, delta, type, note, taskId) => {
     const newQty = Math.max(0, item.quantity + delta);
     const nextItems = invItems.map(it => it.id === item.id ? { ...it, quantity: newQty, updatedAt: nowIso() } : it);
     setInvItems(nextItems);
     await sSet("inventory-items", nextItems, true);
-    await logInvMovement(item.id, type, delta, newQty, note);
+    await logInvMovement(item.id, type, delta, newQty, note, undefined, taskId);
   };
 
   const doInvRetiro = (item, qty, note) => adjustInvStock(item, -Math.abs(qty), "retiro", note);
@@ -21673,8 +22186,9 @@ export default function App() {
   const deleteEmployee = async (id) => {
     const item = employees.find(e => e.id === id);
     if (item) {
-      await moveToTrash("employee", item, `${item.name} (empleado)`);
+      const entry = await moveToTrash("employee", item, `${item.name} (empleado)`);
       logGeneralEdit({ kind: "empleado", action: "eliminacion", entityLabel: item.name });
+      offerUndo(`Empleado "${item.name}" eliminado`, entry.id);
     }
     const next = employees.filter(e => e.id !== id);
     setEmployees(next);
@@ -21946,7 +22460,7 @@ export default function App() {
         asignadoA: r.matchedUser || "",
         recurrencia: "", recurrenceGroupId: null, recurrencePeriodKey: null,
         fotosAntes: [], fotosDespues: [], notaCierre: "",
-        equipoId: null, origen: "hotsos", hotsosOrderId: r.orderId, hotsosAsignadoOriginal: r.asignadoHotsos || "",
+        equipoId: r.matchedEquipoId || null, origen: "hotsos", hotsosOrderId: r.orderId, hotsosAsignadoOriginal: r.asignadoHotsos || "",
         assignedAt: r.matchedUser ? createdAt : null, startedAt: null, finishedAt: null,
         timeLog: [{ estado: "asignada", at: createdAt }],
         createdBy: displayName, createdAt, updatedAt: importedAt,
@@ -22035,6 +22549,16 @@ export default function App() {
         after: TASK_STATES.find(s => s.code === normalizeTaskState(patch.estado))?.label || patch.estado,
       });
     }
+    if (before && patch.prioridad && patch.prioridad !== before.prioridad) {
+      logGeneralEdit({ kind: "tarea", entityLabel: before.titulo, field: "Prioridad", before: before.prioridad, after: patch.prioridad });
+    }
+    if (before && patch.asignadoA !== undefined && patch.asignadoA !== before.asignadoA) {
+      logGeneralEdit({
+        kind: "tarea", entityLabel: before.titulo, field: "Asignado a",
+        before: profiles?.[before.asignadoA]?.display_name || before.asignadoA || "Sin asignar",
+        after: profiles?.[patch.asignadoA]?.display_name || patch.asignadoA || "Sin asignar",
+      });
+    }
     // Si la reasignaron a alguien nuevo (no solo se creó), le llega el mismo push directo.
     if (before && patch.asignadoA && patch.asignadoA !== before.asignadoA && pushSubscriptions.length > 0) {
       const suyas = pushSubscriptions.filter(s => s.ownerUsername === patch.asignadoA);
@@ -22073,6 +22597,29 @@ export default function App() {
         if (suyas.length > 0) sendPushToSubscriptions(suyas, "📋 Te asignaron una tarea", before.titulo, "/");
       }
     });
+  };
+
+  /** Agrega un comentario al hilo de una tarea — para dejar contexto sin tener que cambiar de
+   *  estado ("le falta el repuesto", "ya lo vio mantenimiento", etc.). Si el texto trae @alguien
+   *  y ese "alguien" coincide con una cuenta real, le llega una notificación directa. */
+  const addTaskComment = async (taskId, text) => {
+    const clean = (text || "").trim();
+    if (!clean) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const mentioned = [];
+    Object.entries(profiles || {}).forEach(([uname, acc]) => {
+      const first = (acc.display_name || "").split(" ")[0];
+      if (first && first.length > 2 && clean.toLowerCase().includes(`@${first.toLowerCase()}`)) mentioned.push(uname);
+    });
+    const comment = { id: uid("cmt"), text: clean, by: displayName, byUsername: currentUser, at: nowIso(), mentions: mentioned };
+    const next = tasks.map(t => t.id === taskId ? { ...t, comments: [...(t.comments || []), comment] } : t);
+    setTasks(next);
+    await sSet("tasks", next, true);
+    if (mentioned.length > 0 && pushSubscriptions.length > 0) {
+      const suyas = pushSubscriptions.filter(s => mentioned.includes(s.ownerUsername) && s.ownerUsername !== currentUser);
+      if (suyas.length > 0) sendPushToSubscriptions(suyas, `💬 ${displayName} te mencionó`, `En "${task.titulo}": ${clean}`, "/");
+    }
   };
 
   /** Pasa todas las tareas abiertas (no finalizadas) de una persona a otra de un jalón — por
@@ -22791,6 +23338,41 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
+  // ---- Aviso automático de tareas críticas estancadas (>24h sin cerrar) ----
+  // No hay servidor propio corriendo aparte (igual que el aviso de stock de arriba), así que esto
+  // se revisa una vez al día cuando un administrador abre la app: a cada técnico con una tarea de
+  // Prioridad Alta abierta hace más de 24 horas le llega un recordatorio directo, y a los
+  // administradores un resumen de cuántas hay.
+  useEffect(() => {
+    if (!isAdmin || !currentUser) return;
+    const staleCritical = (tasks || []).filter(t => {
+      const estado = normalizeTaskState(t.estado);
+      return estado !== "finalizada" && t.prioridad === "alta" && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24;
+    });
+    if (staleCritical.length === 0) return;
+    const KEY = `pm-local:last-stale-critical-alert-${todayStr()}`;
+    let already = null;
+    try { already = localStorage.getItem(KEY); } catch { /* noop */ }
+    if (already) return;
+    try { localStorage.setItem(KEY, nowIso()); } catch { /* noop */ }
+    if (pushSubscriptions.length === 0) return;
+    const byAssignee = {};
+    staleCritical.forEach(t => { if (t.asignadoA) (byAssignee[t.asignadoA] = byAssignee[t.asignadoA] || []).push(t); });
+    Object.entries(byAssignee).forEach(([username, ts]) => {
+      const suyas = pushSubscriptions.filter(s => s.ownerUsername === username);
+      if (suyas.length > 0) {
+        sendPushToSubscriptions(suyas, "🔴 Tienes tareas críticas estancadas",
+          ts.length === 1 ? `"${ts[0].titulo}" lleva más de 24h sin cerrarse.` : `${ts.length} tareas de prioridad alta llevan más de 24h sin cerrarse.`, "/");
+      }
+    });
+    const admins = pushSubscriptions.filter(s => profiles?.[s.ownerUsername]?.is_admin);
+    if (admins.length > 0) {
+      sendPushToSubscriptions(admins, "🔴 Resumen: tareas críticas estancadas",
+        `${staleCritical.length} tarea(s) de Prioridad Alta llevan más de 24h abiertas en toda la operación.`, "/tasks");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, currentUser, tasks, pushSubscriptions]);
+
   useEffect(() => {
     if (gerenciaLocked && !GERENCIA_ALLOWED_VIEWS.includes(view)) setView("home");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -22936,10 +23518,6 @@ export default function App() {
           del manifiesto y no se vea un bloque blanco cortado arriba en iOS. */}
       <div className="fixed top-0 left-0 right-0 z-[200]" style={{ height: "env(safe-area-inset-top)", background: "#132030" }} />
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
-      {showGlobalSearch && (
-        <GlobalSearchModal tasks={tasks} equipos={mttoEquipos} invItems={invItems} wikiPages={wikiPages} currentUser={currentUser}
-          onNavigate={setView} onClose={() => setShowGlobalSearch(false)} />
-      )}
       {undoToast && (
         <div className="fixed bottom-36 sm:bottom-6 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[60] rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap"
           style={{ background: C.steelDark, color: "#fff" }}>
@@ -23099,7 +23677,7 @@ export default function App() {
           )}
           {isAdmin && (
             <>
-              <GlobalSearch currentView={view} mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks}
+              <GlobalSearch currentView={view} mttoEquipos={mttoEquipos} invItems={invItems} employees={employees} tasks={tasks} wikiPages={wikiPages}
                 onNavigate={setView}
                 onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }}
                 onOpenShelf={(id) => { setPendingShelfId(id); setView("inventory"); }}
@@ -23139,9 +23717,6 @@ export default function App() {
                 <CheckCircle2 size={12} /> Fotos sincronizadas
               </span>
             )}
-            <button onClick={() => setShowGlobalSearch(true)} title="Buscar en toda la app" className="p-1.5 rounded-md" style={{ background: C.bg }}>
-              <Search size={16} color={C.ink} />
-            </button>
             <button onClick={() => setShowOnboarding(true)} title="Ver guía de bienvenida" className="hidden sm:block p-1.5 rounded-md" style={{ background: C.bg }}>
               <span className="text-xs font-bold w-4 h-4 flex items-center justify-center" style={{ color: C.ink }}>?</span>
             </button>
@@ -23366,7 +23941,7 @@ export default function App() {
               onSetComponentPosition={setComponentPosition} />
           )}
           {view === "hotsos-import" && isAdmin && (
-            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount}
+            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
@@ -23380,7 +23955,7 @@ export default function App() {
               onDeleteBodega={deleteBodega} onDeleteShelf={deleteShelf}
               initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)}
               invMovements={invMovements} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName}
-              tools={tools} accounts={profiles} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} viewerLocked={viewerLocked} />
+              tools={tools} accounts={profiles} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} viewerLocked={viewerLocked} tasks={tasks} />
           )}
           {view === "maintenance" && (
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
@@ -23426,7 +24001,7 @@ export default function App() {
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
-              onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask}
+              onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} onAddTaskComment={addTaskComment}
               mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} />
           )}
           {view === "admin" && isAdmin && (

@@ -5,6 +5,12 @@
 // Configúrala en Vercel → tu proyecto → Settings → Environment Variables:
 //   GEMINI_API_KEY  = tu clave gratuita de aistudio.google.com/apikey (no hace falta tarjeta)
 
+import { getSupabaseAdmin, checkRateLimit, sendRateLimited, callerIp, base64SizeBytes } from "./_lib/security.js";
+
+// Una foto de medidor no debería pesar más que esto en base64 (ya se manda comprimida desde el
+// navegador) — un límite generoso que igual evita pedidos gigantes por error o mal uso.
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ ok: false, message: "Método no permitido." });
@@ -22,9 +28,22 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Límite de uso por IP (no hay sesión de usuario en este endpoint, solo la clave compartida) —
+  // máximo 20 lecturas cada 10 minutos. Como varios técnicos pueden compartir la misma wifi del
+  // hotel, el tope es por IP y no por persona, así que se deja generoso a propósito.
+  const supabaseAdmin = getSupabaseAdmin();
+  if (supabaseAdmin) {
+    const rl = await checkRateLimit(supabaseAdmin, "read-meter", callerIp(req), { max: 20, windowMs: 10 * 60 * 1000 });
+    if (!rl.ok) { sendRateLimited(res, rl.retryAfterSeconds); return; }
+  }
+
   const { imageBase64, mediaType, previousReading, meterName } = req.body || {};
   if (!imageBase64) {
     res.status(400).json({ ok: false, message: "Falta la foto." });
+    return;
+  }
+  if (base64SizeBytes(imageBase64) > MAX_IMAGE_BYTES) {
+    res.status(413).json({ ok: false, message: `La foto es demasiado pesada (máximo ${MAX_IMAGE_BYTES / (1024 * 1024)} MB).` });
     return;
   }
 

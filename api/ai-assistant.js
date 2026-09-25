@@ -16,7 +16,10 @@
 // demanda, según la propia ficha de modelo de Google. Si en el futuro este modelo también se
 // descontinúa, revisa el nombre vigente en https://ai.google.dev/gemini-api/docs/changelog.
 
+import { getSupabaseAdmin, checkRateLimit, sendRateLimited, callerIp } from "./_lib/security.js";
+
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
+const MAX_QUESTION_LEN = 500;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -53,9 +56,22 @@ export default async function handler(req, res) {
     }
   }
 
+  // Límite de uso por IP (no hay sesión de usuario en este endpoint, solo la clave compartida) —
+  // máximo 20 preguntas cada 10 minutos. Como varios técnicos pueden compartir la misma wifi del
+  // hotel, el tope es por IP y no por persona, así que se deja generoso a propósito.
+  const supabaseAdmin = getSupabaseAdmin();
+  if (supabaseAdmin) {
+    const rl = await checkRateLimit(supabaseAdmin, "ai-assistant", callerIp(req), { max: 20, windowMs: 10 * 60 * 1000 });
+    if (!rl.ok) { sendRateLimited(res, rl.retryAfterSeconds); return; }
+  }
+
   const { question, contextSummary, history } = req.body || {};
   if (!question || typeof question !== "string" || !question.trim()) {
     res.status(400).json({ ok: false, message: "Falta la pregunta." });
+    return;
+  }
+  if (question.length > MAX_QUESTION_LEN) {
+    res.status(400).json({ ok: false, message: `La pregunta es demasiado larga (máximo ${MAX_QUESTION_LEN} caracteres).` });
     return;
   }
 

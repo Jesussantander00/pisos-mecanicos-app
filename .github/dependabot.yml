@@ -1,0 +1,38 @@
+# Configuración de Dependabot (gratis, ya viene incluido en GitHub).
+#
+# Qué hace: una vez a la semana, GitHub revisa las dependencias de este proyecto (las de
+# package.json — React, Supabase, web-push, etc.) contra su base de datos de vulnerabilidades
+# conocidas, y si encuentra alguna, abre solo un Pull Request avisando (con el cambio de versión
+# ya armado, listo para revisar y aceptar). No cambia nada solo, no rompe nada solo — el que decide
+# si se aprueba el PR sigues siendo tú.
+#
+# Cómo activarlo: solo hace falta que este archivo exista en la carpeta ".github" en la raíz del
+# repositorio de GitHub del proyecto (al mismo nivel que "package.json", "src", etc.) — no hay que
+# instalar nada ni configurar nada más en Vercel ni en Supabase. GitHub lo detecta solo apenas el
+# archivo esté en la rama principal.
+
+version: 2
+updates:
+  # Dependencias de Node/npm (package.json) — React, Supabase, web-push, Vite, Tailwind, etc.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Agrupa todos los avisos de una semana en un solo Pull Request en vez de uno por paquete,
+    # para no llenar el repositorio de PRs sueltos que hay que revisar uno por uno.
+    groups:
+      dependencias:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencias"
+    commit-message:
+      prefix: "deps"
+
+  # Las propias GitHub Actions, si el proyecto llega a usar alguna (ej. un flujo de build-check) —
+  # se deja configurado de una vez para que no haga falta acordarse después.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

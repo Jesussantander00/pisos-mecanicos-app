@@ -9938,7 +9938,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Tareas / Pendientes</h2>
           <p className="text-sm" style={{ color: C.inkSoft }}>El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={toggleOnlyMine} className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
             {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
           </button>

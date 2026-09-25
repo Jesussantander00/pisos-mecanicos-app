@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical, Menu as MenuIcon
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical, Menu as MenuIcon, Eye
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -68,9 +68,50 @@ function syncCssVars() {
   } catch { /* noop (por si corre antes de que exista document, poco probable) */ }
 }
 /** ¿Es de noche ahora mismo? 6:00 p.m. a 6:00 a.m. — el disparador de modo oscuro automático. */
+// Coordenadas de Cartagena de Indias — para calcular la hora real de amanecer/atardecer en vez
+// de usar una franja fija (6pm-6am), que en la práctica sí varía un poco durante el año.
+const CARTAGENA_LAT = 10.39;
+const CARTAGENA_LON = -75.51;
+
+/** Amanecer/atardecer real aproximado (algoritmo estándar del Almanac) para una fecha y coordenadas
+ * dadas. Devuelve horas decimales en el huso horario de Colombia (UTC-5, sin horario de verano). */
+function sunriseSunsetHours(date, lat = CARTAGENA_LAT, lon = CARTAGENA_LON) {
+  const rad = Math.PI / 180;
+  const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
+  const zenith = 90.83;
+  const lngHour = lon / 15;
+  const calc = (isRise) => {
+    const t = dayOfYear + ((isRise ? 6 : 18) - lngHour) / 24;
+    const M = (0.9856 * t) - 3.289;
+    let L = M + (1.916 * Math.sin(M * rad)) + (0.020 * Math.sin(2 * M * rad)) + 282.634;
+    L = (L + 360) % 360;
+    let RA = (1 / rad) * Math.atan(0.91764 * Math.tan(L * rad));
+    RA = (RA + 360) % 360;
+    const Lquadrant = Math.floor(L / 90) * 90;
+    const RAquadrant = Math.floor(RA / 90) * 90;
+    RA = (RA + (Lquadrant - RAquadrant)) / 15;
+    const sinDec = 0.39782 * Math.sin(L * rad);
+    const cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (Math.cos(zenith * rad) - (sinDec * Math.sin(lat * rad))) / (cosDec * Math.cos(lat * rad));
+    if (cosH > 1 || cosH < -1) return null; // no hay amanecer/atardecer ese día a esa latitud (no aplica cerca del ecuador)
+    let H = isRise ? 360 - (1 / rad) * Math.acos(cosH) : (1 / rad) * Math.acos(cosH);
+    H = H / 15;
+    const T = H + RA - (0.06571 * t) - 6.622;
+    return (T - lngHour + 24) % 24; // hora UT
+  };
+  const riseUT = calc(true);
+  const setUT = calc(false);
+  const tzOffset = -5; // Colombia, todo el año
+  return {
+    sunrise: riseUT != null ? (riseUT + tzOffset + 24) % 24 : 6,
+    sunset: setUT != null ? (setUT + tzOffset + 24) % 24 : 18,
+  };
+}
+
 function isNightHour(d = new Date()) {
-  const h = d.getHours();
-  return h >= 18 || h < 6;
+  const hourDecimal = d.getHours() + d.getMinutes() / 60;
+  const { sunrise, sunset } = sunriseSunsetHours(d);
+  return hourDecimal >= sunset || hourDecimal < sunrise;
 }
 
 /**
@@ -8293,7 +8334,7 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
   );
 }
 
-function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem, onRetiro, onEntrada, onEditItem }) {
+function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem, onRetiro, onEntrada, onEditItem, viewerLocked }) {
   const [showNewItem, setShowNewItem] = useState(false);
   const [form, setForm] = useState({ name: "", sku: "", unit: "unidad", quantity: "", minThreshold: "" });
   const [busyId, setBusyId] = useState(null);
@@ -8416,7 +8457,7 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
               </div>
             )}
 
-            {!draft && (
+            {!draft && !viewerLocked && (
               <div className="flex items-center gap-2 mt-2">
                 <Button size="sm" icon={PackageMinus} onClick={() => openMove(item.id, "retiro")}>Retirar</Button>
                 {canManage && <Button size="sm" variant="ghost" icon={PackagePlus} onClick={() => openMove(item.id, "entrada")}>Registrar entrada</Button>}
@@ -8465,7 +8506,7 @@ function InventoryHubView(props) {
           onCreateBodega={props.onCreateBodega} onCreateShelf={props.onCreateShelf} onCreateItem={props.onCreateItem}
           onRetiro={props.onRetiro} onEntrada={props.onEntrada} onEditItem={props.onEditItem} onImportInventory={props.onImportInventory}
           onDeleteBodega={props.onDeleteBodega} onDeleteShelf={props.onDeleteShelf}
-          initialShelfId={props.initialShelfId} onConsumedInitialShelf={props.onConsumedInitialShelf} />
+          initialShelfId={props.initialShelfId} onConsumedInitialShelf={props.onConsumedInitialShelf} viewerLocked={props.viewerLocked} />
       )}
       {tab === "alertas" && (
         <StockAlertsView invItems={props.invItems} invMovements={props.invMovements} bodegas={props.bodegas} shelves={props.shelves}
@@ -8482,10 +8523,10 @@ function InventoryHubView(props) {
   );
 }
 
-function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, onEditItem, onImportInventory, onDeleteBodega, onDeleteShelf, initialShelfId, onConsumedInitialShelf }) {
+function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onCreateBodega, onCreateShelf, onCreateItem, onRetiro, onEntrada, onEditItem, onImportInventory, onDeleteBodega, onDeleteShelf, initialShelfId, onConsumedInitialShelf, viewerLocked }) {
   const [selectedBodegaId, setSelectedBodegaId] = useState(null);
   const [selectedShelfId, setSelectedShelfId] = useState(null);
-  const canManage = isAdmin || isAlmacenista;
+  const canManage = (isAdmin || isAlmacenista) && !viewerLocked;
 
   useEffect(() => {
     if (initialShelfId) {
@@ -8502,7 +8543,7 @@ function InventoryView({ bodegas, shelves, invItems, isAdmin, isAlmacenista, onC
     return (
       <ShelfDetailView bodega={bodegaForShelf} shelf={shelf} items={invItems.filter(i => i.shelfId === shelf.id)}
         canManage={canManage} onBack={() => setSelectedShelfId(null)}
-        onCreateItem={onCreateItem} onRetiro={onRetiro} onEntrada={onEntrada} onEditItem={onEditItem} />
+        onCreateItem={onCreateItem} onRetiro={onRetiro} onEntrada={onEntrada} onEditItem={onEditItem} viewerLocked={viewerLocked} />
     );
   }
 
@@ -8880,6 +8921,13 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
         <div className={`flex items-center gap-1.5 mb-1 pr-6 ${selectMode ? "pl-6" : ""}`}>
           <div className="text-xs font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{task.titulo}</div>
         </div>
+        {task.etiquetas && task.etiquetas.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap mb-1.5">
+            {task.etiquetas.map((tag, i) => (
+              <span key={i} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }}>{tag}</span>
+            ))}
+          </div>
+        )}
         {linkedEquipo?.sistema && (
           <div className="mb-1.5"><Badge tone={badgeToneFor("sistema", linkedEquipo.sistema)}>{linkedEquipo.sistema}</Badge></div>
         )}
@@ -8969,6 +9017,13 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
           <div className="min-w-0">
             <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: stateColors.bg, color: stateColors.fg }}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</span>
             <div className="text-base font-semibold mt-1" style={{ color: C.ink }}>{task.titulo}</div>
+            {task.etiquetas && task.etiquetas.length > 0 && (
+              <div className="flex items-center gap-1 flex-wrap mt-1">
+                {task.etiquetas.map((tag, i) => (
+                  <span key={i} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }}>{tag}</span>
+                ))}
+              </div>
+            )}
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-full shrink-0" style={{ color: C.gray }}><X size={18} /></button>
         </div>
@@ -9143,13 +9198,14 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, mySignature, signerCargo, pendingTaskCloseIds }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newTab, setNewTab] = useState("manual"); // "manual" | "sugerencias"
-  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
+  const [form, setForm] = useState({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null, etiquetas: [] });
+  const [tagDraft, setTagDraft] = useState("");
   // Si la persona ya tocó el selector de prioridad a mano, no se lo volvemos a cambiar solos —
   // la sugerencia automática por palabras clave solo actúa mientras no se haya intervenido.
   const prioridadManualRef = useRef(false);
@@ -9245,7 +9301,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         fotosAntes,
         async (payload, urls) => { await onCreateTask({ ...payload, fotosAntes: urls }); }
       );
-      setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null });
+      setForm({ titulo: "", descripcion: "", prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null, etiquetas: [] });
+      setTagDraft("");
       prioridadManualRef.current = false; setPrioritySuggested(false);
       setShowNew(false); setNewTab("manual"); setDupWarning(null);
       if (res.queued) { setSaveMsg({ ok: true, text: "✓ Tarea guardada en este celular — no había señal. Se sube sola apenas vuelva." }); showToast("Tarea guardada en este celular — se sube sola apenas vuelva la señal.", true); }
@@ -9269,6 +9326,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [filterOperario, setFilterOperario] = useState("");
   const [showAdvFilters, setShowAdvFilters] = useState(false);
   const [filterPrioridad, setFilterPrioridad] = useState("");
+  const [filterEtiqueta, setFilterEtiqueta] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -9331,8 +9389,9 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     if (h >= 14 && h < 22) return "Tarde";
     return "Noche";
   };
-  const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterPrioridad;
-  const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); setFilterOrigen(""); };
+  const allTags = useMemo(() => [...new Set(tasks.flatMap(t => t.etiquetas || []))].sort(), [tasks]);
+  const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterPrioridad || filterEtiqueta;
+  const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); setFilterOrigen(""); setFilterEtiqueta(""); };
 
   const [onlyMine, setOnlyMine] = useState(() => {
     try { const saved = localStorage.getItem(`pm-local:tasks-only-mine:${currentUsername}`); return saved != null ? saved === "1" : !isAdmin; } catch { return !isAdmin; }
@@ -9369,10 +9428,11 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       if (!onlyMine && filterOperario && t.asignadoA !== filterOperario) return false;
       if (filterOrigen && (t.origen || "manual") !== filterOrigen) return false;
       if (filterPrioridad && t.prioridad !== filterPrioridad) return false;
+      if (filterEtiqueta && !(t.etiquetas || []).includes(filterEtiqueta)) return false;
       return true;
     })
     .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt))),
-    [tasks, onlyMine, onlyVencidas, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad]
+    [tasks, onlyMine, onlyVencidas, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad, filterEtiqueta]
   );
 
   const counts = useMemo(
@@ -9570,7 +9630,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             <button onClick={() => setViewMode("kanban")} className="px-2.5 font-semibold" style={{ background: viewMode === "kanban" ? C.steelDark : C.panel, color: viewMode === "kanban" ? "#fff" : C.inkSoft, minHeight: 36 }}>Kanban</button>
             <button onClick={() => setViewMode("list")} className="px-2.5 font-semibold" style={{ background: viewMode === "list" ? C.steelDark : C.panel, color: viewMode === "list" ? "#fff" : C.inkSoft, borderLeft: `1px solid ${C.line}`, minHeight: 36 }}>Lista</button>
           </div>
-          <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>
+          {!viewerLocked && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>}
         </div>
       </div>
 
@@ -9824,6 +9884,28 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             </div>
             <PhotoPicker photos={form.fotosAntes} onChange={fotosAntes => setForm(f => ({ ...f, fotosAntes }))} max={4} />
           </div>
+          <div className="mb-2">
+            <div className="text-xs font-medium mb-1.5" style={{ color: C.inkSoft }}>Etiquetas (opcional) — para agrupar o buscar tareas parecidas, ej: "aire acondicionado", "urgente huésped".</div>
+            <div className="flex items-center gap-1 flex-wrap mb-1.5">
+              {(form.etiquetas || []).map((tag, i) => (
+                <span key={i} className="text-xs font-medium px-2 py-1 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>
+                  {tag}
+                  <button type="button" onClick={() => setForm(f => ({ ...f, etiquetas: f.etiquetas.filter((_, j) => j !== i) }))}><X size={11} /></button>
+                </span>
+              ))}
+            </div>
+            <input value={tagDraft} onChange={e => setTagDraft(e.target.value)}
+              onKeyDown={e => {
+                if ((e.key === "Enter" || e.key === ",") && tagDraft.trim()) {
+                  e.preventDefault();
+                  const tag = tagDraft.trim().toLowerCase();
+                  setForm(f => f.etiquetas.includes(tag) ? f : { ...f, etiquetas: [...f.etiquetas, tag] });
+                  setTagDraft("");
+                }
+              }}
+              placeholder="Escribe una etiqueta y presiona Enter…"
+              className="text-sm border rounded-md px-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          </div>
           {dupWarning && (
             <div className="rounded-md p-2.5 mb-2" style={{ background: C.amberSoft }}>
               <div className="text-xs font-semibold flex items-center gap-1.5" style={{ color: C.amber }}>
@@ -9889,6 +9971,15 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                 <option value="Noche">Noche</option>
               </select>
             </div>
+            {allTags.length > 0 && (
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Etiqueta</div>
+                <select value={filterEtiqueta} onChange={e => setFilterEtiqueta(e.target.value)} aria-label="Filtrar por etiqueta" className={filterSelectClass} style={filterSelectStyle}>
+                  <option value="">Todas</option>
+                  {allTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+              </div>
+            )}
           </>
         )}
         <div className="flex items-center gap-1">
@@ -9920,9 +10011,11 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         <button onClick={doExportClosedRange} disabled={exportingRange} title="Exporta a Excel las tareas cerradas dentro del rango de fechas y filtros de arriba" className="text-xs font-semibold px-2.5 py-1.5 rounded-md flex items-center gap-1" style={{ color: C.blue }}>
           <Download size={13} /> {exportingRange ? "Generando…" : "Exportar cerradas"}
         </button>
-        <button onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)} className="text-xs font-semibold px-2.5 py-1.5 rounded-md ml-auto flex items-center gap-1" style={{ color: selectMode ? C.red : C.amber }}>
-          {selectMode ? <><X size={13} /> Cancelar selección</> : <><ClipboardCheck size={13} /> Seleccionar varias</>}
-        </button>
+        {!viewerLocked && (
+          <button onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)} className="text-xs font-semibold px-2.5 py-1.5 rounded-md ml-auto flex items-center gap-1" style={{ color: selectMode ? C.red : C.amber }}>
+            {selectMode ? <><X size={13} /> Cancelar selección</> : <><ClipboardCheck size={13} /> Seleccionar varias</>}
+          </button>
+        )}
       </div>
 
       {viewMode === "kanban" && (
@@ -9961,7 +10054,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                     </span>
                   </div>
                 ) : colTasks.map(t => (
-                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} equipos={equipos} canAct={isAdmin || t.asignadoA === currentUsername}
+                  <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} equipos={equipos} canAct={!viewerLocked && (isAdmin || t.asignadoA === currentUsername)}
                     onOpenDrawer={setDrawerTaskId}
                     onMove={(task, code) => code === "finalizada" ? setDrawerTaskId(task.id) : transitionTask(task, code)}
                     onZoom={setLightboxUrl}
@@ -9979,7 +10072,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         const estado = normalizeTaskState(t.estado);
         const stateColors = TASK_STATE_COLORS[estado];
         const canDelete = isAdmin || t.createdBy === currentUser;
-        const canAct = isAdmin || t.asignadoA === currentUsername;
+        const canAct = !viewerLocked && (isAdmin || t.asignadoA === currentUsername);
         const assigneeName = t.asignadoA ? (accounts[t.asignadoA]?.display_name || t.asignadoA) : null;
         return (
           <div key={t.id} className="pm-stagger-in rounded-lg border p-3 mb-2 cursor-pointer transition hover:shadow-sm"
@@ -10000,6 +10093,14 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                     )}
                   </div>
                   {t.descripcion && <div className="text-xs mt-0.5 truncate" style={{ color: C.inkSoft }}>{t.descripcion}</div>}
+                  {t.etiquetas && t.etiquetas.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap mt-1">
+                      {t.etiquetas.map((tag, ti) => (
+                        <button key={ti} onClick={e => { e.stopPropagation(); setFilterEtiqueta(tag); }}
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }}>{tag}</button>
+                      ))}
+                    </div>
+                  )}
                   <div className="text-xs mt-1 flex items-center gap-2 flex-wrap" style={{ color: C.gray }}>
                     <span>{assigneeName || "Sin asignar"} · {fmtDT(t.createdAt)}</span>
                     {t.recurrencia && <span>🔁 {t.recurrencia === "semanal" ? "Semanal" : "Mensual"}</span>}
@@ -10084,7 +10185,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
       )}
 
       {drawerTask && (
-        <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={isAdmin || drawerTask.asignadoA === currentUsername}
+        <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={!viewerLocked && (isAdmin || drawerTask.asignadoA === currentUsername)}
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask} onMarkViewed={markTaskViewed}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl}
@@ -10101,6 +10202,7 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
   const [search, setSearch] = useState("");
+  const [topPeriod, setTopPeriod] = useState(30);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -10121,6 +10223,24 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
   const filtered = search.trim()
     ? rows.filter(r => `${r.repuesto} ${r.sku} ${r.bodega} ${r.estanteria} ${r.por}`.toLowerCase().includes(search.toLowerCase()))
     : rows;
+
+  const topUsedParts = useMemo(() => {
+    const cutoff = topPeriod ? Date.now() - topPeriod * 864e5 : null;
+    const totals = new Map();
+    for (const mv of invMovements) {
+      if (mv.type !== "retiro") continue;
+      if (cutoff && new Date(mv.at).getTime() < cutoff) continue;
+      const item = invItems.find(it => it.id === mv.itemId);
+      const key = item?.id || mv.itemId;
+      const prev = totals.get(key) || { name: item?.name || "(repuesto eliminado)", sku: item?.sku || "", qty: 0, moves: 0 };
+      prev.qty += Number(mv.quantity) || 0;
+      prev.moves += 1;
+      totals.set(key, prev);
+    }
+    return [...totals.values()].sort((a, b) => b.qty - a.qty).slice(0, 8);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invMovements, invItems, topPeriod]);
+  const maxTopQty = topUsedParts.length ? topUsedParts[0].qty : 0;
 
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
@@ -10186,6 +10306,32 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
           <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      </div>
+
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Repuestos más usados</div>
+          <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
+            {[{ v: 30, l: "30 días" }, { v: 90, l: "90 días" }, { v: null, l: "Todo" }].map((opt, i) => (
+              <button key={opt.l} onClick={() => setTopPeriod(opt.v)} className="px-2.5 py-1 font-medium"
+                style={{ background: topPeriod === opt.v ? C.steelDark : C.panel, color: topPeriod === opt.v ? "#fff" : C.inkSoft, borderLeft: i > 0 ? `1px solid ${C.line}` : "none" }}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
+        </div>
+        {topUsedParts.length === 0 && <div className="text-xs" style={{ color: C.gray }}>Sin retiros registrados en ese período.</div>}
+        {topUsedParts.map((p, i) => (
+          <div key={i} className="mb-1.5 last:mb-0">
+            <div className="flex items-center justify-between text-xs mb-0.5">
+              <span style={{ color: C.ink }}>{p.name}{p.sku ? ` · ${p.sku}` : ""}</span>
+              <span className="font-semibold" style={{ color: C.ink }}>{p.qty} und. · {p.moves} retiro{p.moves === 1 ? "" : "s"}</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.line }}>
+              <div className="h-full rounded-full" style={{ width: `${maxTopQty ? (p.qty / maxTopQty) * 100 : 0}%`, background: C.amber }} />
+            </div>
+          </div>
+        ))}
       </div>
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por repuesto, bodega, estantería o quién lo hizo…"
@@ -10712,7 +10858,7 @@ function VideoEmbed({ url }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, mttoRequiredFields, onUpdateRequiredFields }) {
+function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, mttoRequiredFields, onUpdateRequiredFields, viewerLocked }) {
   const [editingEquipo, setEditingEquipo] = useState(false);
   const [equipoDraft, setEquipoDraft] = useState({ nombre: equipo.nombre, sistema: equipo.sistema });
   const [savingEquipo, setSavingEquipo] = useState(false);
@@ -11008,6 +11154,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
           <Button size="sm" variant="ghost" icon={Download} disabled={downloadingQr} onClick={doDownloadQr}>{downloadingQr ? "Generando…" : "Descargar QR"}</Button>
         </div>
 
+        {!viewerLocked && (
         <div className="flex-1 min-w-[260px] rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Registrar mantenimiento</div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -11066,6 +11213,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
           </div>
           {saveMsg && <div className="text-xs mt-2" style={{ color: saveMsg.ok ? C.green : C.red }}>{saveMsg.text}</div>}
         </div>
+        )}
       </div>
 
       <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -11149,10 +11297,10 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds, viewerLocked }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
-  const canManage = isAdmin || isAlmacenista;
+  const canManage = (isAdmin || isAlmacenista) && !viewerLocked;
 
   useEffect(() => {
     if (initialEquipoId) {
@@ -11166,7 +11314,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} tasks={tasks} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} onUpdateEquipoInfo={onUpdateEquipoInfo} mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={onUpdateRequiredFields} />;
+    return <EquipoDetailView equipo={equipo} records={records} tasks={tasks} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} onUpdateEquipoInfo={onUpdateEquipoInfo} mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={onUpdateRequiredFields} viewerLocked={viewerLocked} />;
   }
 
   if (selectedSistema) {
@@ -12670,6 +12818,7 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
   const [selectedCell, setSelectedCell] = useState(null); // { equipo, mesNum } | null
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
+  const [cronoViewMode, setCronoViewMode] = useState("tabla"); // "tabla" | "calendario"
   const now = new Date();
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
@@ -12716,6 +12865,66 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
     ws["!cols"] = [{ wch: 40 }, ...MESES_LABELS.map(() => ({ wch: 12 }))];
     XLSX.utils.book_append_sheet(wb, ws, (sistemaFilter || "Cronograma").slice(0, 31));
     return wb;
+  };
+
+  const [downloadingFull, setDownloadingFull] = useState(false);
+  const buildFullWorkbook = () => {
+    const wb = XLSX.utils.book_new();
+    const usedNames = new Set();
+    sistemas.forEach(sis => {
+      const eqs = activeEquipos.filter(e => e.sistema === sis).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+      const header = ["Equipo", ...MESES_LABELS];
+      const data = eqs.map(eq => {
+        const row = [eq.nombre];
+        for (let m = 1; m <= 12; m++) {
+          const c = mttoCronograma.find(c2 => c2.equipoId === eq.id && c2.mesNum === m);
+          row.push(c ? (MTTO_ESTADO_COLORS[c.estado]?.label || c.estado) : "");
+        }
+        return row;
+      });
+      const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+      ws["!cols"] = [{ wch: 40 }, ...MESES_LABELS.map(() => ({ wch: 12 }))];
+      let name = sis.slice(0, 31) || "Sistema";
+      let suffix = 1;
+      while (usedNames.has(name)) { name = `${sis.slice(0, 28)}(${++suffix})`; }
+      usedNames.add(name);
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    });
+    return wb;
+  };
+  const doDownloadFull = () => {
+    setDownloadingFull(true);
+    try {
+      const wb = buildFullWorkbook();
+      XLSX.writeFile(wb, `cronograma-anual-completo-${todayStr().replace(/\//g, "-")}.xlsx`);
+    } catch { setMsg({ ok: false, text: "No se pudo generar el Excel completo — revisa la conexión e intenta de nuevo." }); }
+    setDownloadingFull(false);
+  };
+  const doSendFull = async () => {
+    if (!emailTo.trim()) { setMsg({ ok: false, text: "Escribe un correo destino." }); return; }
+    setSending(true); setMsg(null);
+    try {
+      const wb = buildFullWorkbook();
+      const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+      const base64 = bufferToBase64(out);
+      const resp = await fetch("/api/send-report", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          to: emailTo.trim(),
+          subject: `Cronograma Anual Completo de Mantenimiento — ${todayStr()}`,
+          text: `Cronograma anual completo, con una pestaña por cada sistema (${sistemas.length} sistemas).`,
+          attachmentBase64: base64,
+          filename: `cronograma-anual-completo-${todayStr().replace(/\//g, "-")}.xlsx`,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      setMsg({ ok: resp.ok, text: data?.message || (resp.ok ? "Enviado." : "El servidor rechazó el envío.") });
+      onLogSent?.({ to: emailTo.trim(), method: "Cronograma anual completo (correo con Excel)", ok: resp.ok, message: data?.message, sentBy: currentUser, sentAt: nowIso() });
+    } catch {
+      setMsg({ ok: false, text: "No se pudo enviar. Revisa la conexión." });
+    }
+    setSending(false);
   };
 
   const doDownload = () => {
@@ -12786,60 +12995,102 @@ function CronogramaAnualView({ equipos, mttoCronograma, mttoLog, invItems, onLog
         </div>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap mb-3 text-xs" style={{ color: C.gray }}>
-        <span className="flex items-center gap-1"><span style={{ color: C.green }}>●</span> Ejecutado</span>
-        <span className="flex items-center gap-1"><span style={{ color: C.amber }}>●</span> Por vencer</span>
-        <span className="flex items-center gap-1"><span style={{ color: C.blue }}>●</span> Programado</span>
-        <span className="flex items-center gap-1"><span style={{ color: C.red }}>●</span> Atrasado</span>
-        <span className="flex items-center gap-1"><span style={{ color: C.gray }}>○</span> Sin programar</span>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="flex items-center gap-3 flex-wrap text-xs" style={{ color: C.gray }}>
+          <span className="flex items-center gap-1"><span style={{ color: C.green }}>●</span> Ejecutado</span>
+          <span className="flex items-center gap-1"><span style={{ color: C.amber }}>●</span> Por vencer</span>
+          <span className="flex items-center gap-1"><span style={{ color: C.blue }}>●</span> Programado</span>
+          <span className="flex items-center gap-1"><span style={{ color: C.red }}>●</span> Atrasado</span>
+          <span className="flex items-center gap-1"><span style={{ color: C.gray }}>○</span> Sin programar</span>
+        </div>
+        <div className="flex rounded-md border overflow-hidden text-xs" style={{ borderColor: C.line }}>
+          {[{ v: "tabla", l: "Tabla" }, { v: "calendario", l: "Calendario" }].map((opt, i) => (
+            <button key={opt.v} onClick={() => setCronoViewMode(opt.v)} className="px-3 py-1.5 font-semibold"
+              style={{ background: cronoViewMode === opt.v ? C.steelDark : C.panel, color: cronoViewMode === opt.v ? "#fff" : C.inkSoft, borderLeft: i > 0 ? `1px solid ${C.line}` : "none" }}>
+              {opt.l}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Descargar / enviar este sistema (Excel)</div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar Excel"}</Button>
+          <Button variant="ghost" icon={Download} disabled={downloadingFull} onClick={doDownloadFull}>{downloadingFull ? "Generando…" : "Descargar cronograma completo (todos los sistemas)"}</Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="correo@hotel.com"
             className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink, minWidth: 180 }} />
-          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar con Excel adjunto"}</Button>
+          <Button icon={Mail} disabled={sending} onClick={doSend}>{sending ? "Enviando…" : "Enviar este sistema"}</Button>
+          <Button icon={Mail} variant="ghost" disabled={sending} onClick={doSendFull}>{sending ? "Enviando…" : "Enviar cronograma completo"}</Button>
         </div>
         {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-        <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: C.steelDark, color: "#fff" }}>
-              <th onClick={() => setSortAsc(v => !v)} className="text-left px-2 py-2 sticky left-0 cursor-pointer select-none" style={{ minWidth: 220, background: C.steelDark, zIndex: 1 }}>
-                Equipo <span style={{ fontSize: 9, color: "#cdd8e2" }}>{sortAsc ? "▲" : "▼"}</span>
-              </th>
-              {MESES_LABELS.map(m => <th key={m} className="px-2 py-2 text-center" style={{ minWidth: 56 }}>{m}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {eqVisible.map((eq, i) => (
-              <tr key={eq.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
-                <td className="px-2 py-1.5 sticky left-0" style={{ color: C.ink, background: i % 2 ? C.cardAlt : C.panel }}>{eq.nombre}</td>
-                {Array.from({ length: 12 }, (_, idx) => idx + 1).map(m => {
-                  const c = cronoByEquipo[eq.id]?.[m];
-                  const visual = cronogramaCellVisual(c, m, now);
-                  return (
-                    <td key={m} onClick={() => setSelectedCell({ equipo: eq, mesNum: m })}
-                      className="px-1 py-1.5 text-center cursor-pointer transition hover:opacity-75"
-                      style={{ background: visual.bg, color: visual.fg, fontWeight: visual.tone !== "vacio" ? 600 : 400, minHeight: 32 }}>
-                      {visual.tone === "vacio" ? "—" : visual.label.slice(0, 4)}
-                    </td>
-                  );
-                })}
+      {cronoViewMode === "tabla" ? (
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: C.steelDark, color: "#fff" }}>
+                <th onClick={() => setSortAsc(v => !v)} className="text-left px-2 py-2 sticky left-0 cursor-pointer select-none" style={{ minWidth: 220, background: C.steelDark, zIndex: 1 }}>
+                  Equipo <span style={{ fontSize: 9, color: "#cdd8e2" }}>{sortAsc ? "▲" : "▼"}</span>
+                </th>
+                {MESES_LABELS.map(m => <th key={m} className="px-2 py-2 text-center" style={{ minWidth: 56 }}>{m}</th>)}
               </tr>
-            ))}
-            {eqVisible.length === 0 && (
-              <tr><td colSpan={13} className="px-2 py-6 text-center text-xs" style={{ color: C.gray }}>Ningún equipo coincide con estos filtros.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {eqVisible.map((eq, i) => (
+                <tr key={eq.id} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
+                  <td className="px-2 py-1.5 sticky left-0" style={{ color: C.ink, background: i % 2 ? C.cardAlt : C.panel }}>{eq.nombre}</td>
+                  {Array.from({ length: 12 }, (_, idx) => idx + 1).map(m => {
+                    const c = cronoByEquipo[eq.id]?.[m];
+                    const visual = cronogramaCellVisual(c, m, now);
+                    return (
+                      <td key={m} onClick={() => setSelectedCell({ equipo: eq, mesNum: m })}
+                        className="px-1 py-1.5 text-center cursor-pointer transition hover:opacity-75"
+                        style={{ background: visual.bg, color: visual.fg, fontWeight: visual.tone !== "vacio" ? 600 : 400, minHeight: 32 }}>
+                        {visual.tone === "vacio" ? "—" : visual.label.slice(0, 4)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              {eqVisible.length === 0 && (
+                <tr><td colSpan={13} className="px-2 py-6 text-center text-xs" style={{ color: C.gray }}>Ningún equipo coincide con estos filtros.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {MESES_LABELS.map((mLabel, idx) => {
+            const mNum = idx + 1;
+            const isCurrentMonth = mNum === now.getMonth() + 1;
+            const cellsThisMonth = eqVisible.map(eq => ({ eq, visual: cronogramaCellVisual(cronoByEquipo[eq.id]?.[mNum], mNum, now) }))
+              .filter(c => c.visual.tone !== "vacio");
+            return (
+              <div key={mLabel} className="rounded-xl border p-3" style={{ borderColor: isCurrentMonth ? C.amber : C.line, background: C.panel, borderWidth: isCurrentMonth ? 2 : 1 }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-semibold" style={{ color: C.ink }}>{mLabel}</div>
+                  {isCurrentMonth && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }}>Mes actual</span>}
+                </div>
+                {cellsThisMonth.length === 0 && <div className="text-xs" style={{ color: C.gray }}>Nada programado.</div>}
+                <div className="flex flex-col gap-1">
+                  {cellsThisMonth.map(({ eq, visual }) => (
+                    <button key={eq.id} onClick={() => setSelectedCell({ equipo: eq, mesNum: mNum })}
+                      className="text-left text-xs rounded-md px-2 py-1.5 flex items-center justify-between gap-2 transition hover:opacity-80"
+                      style={{ background: visual.bg, color: visual.fg }}>
+                      <span className="truncate">{eq.nombre}</span>
+                      <span className="shrink-0 font-semibold">{visual.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {selectedCell && (
         <CronogramaDetailDrawer equipo={selectedCell.equipo} mesNum={selectedCell.mesNum}
@@ -13913,6 +14164,150 @@ function NetworkStatusIndicator({ pendingCount = 0 }) {
   );
 }
 
+/** Aviso de "sin internet" bien visible en toda la app — no solo el punto pequeño del encabezado.
+ * Aparece como una barra fija arriba de todo mientras no haya señal, para que sea imposible no
+ * darse cuenta de que se está trabajando sin conexión (todo se sigue guardando en el celular). */
+function OfflineBanner() {
+  const [online, setOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, []);
+  if (online) return null;
+  return (
+    <div className="pm-safe-top fixed top-0 left-0 right-0 flex items-center justify-center gap-2 text-xs font-semibold py-2 px-3"
+      style={{ background: "#7a5405", color: "#fff", zIndex: 500 }}>
+      <WifiOff size={13} /> Sin conexión — lo que registres se guarda en este celular y se sube solo apenas vuelva la señal
+    </div>
+  );
+}
+
+/** Buscador global: busca por texto en tareas, equipos, repuestos y la wiki al mismo tiempo, sin
+ * tener que saber de antemano en qué módulo está lo que se busca. Guarda las últimas búsquedas
+ * (por usuario, en este celular) para que sea rápido repetir una búsqueda frecuente. */
+function GlobalSearchModal({ tasks, equipos, invItems, wikiPages, currentUser, onNavigate, onClose }) {
+  const [q, setQ] = useState("");
+  const RECENT_KEY = `pm-local:global-search-recent:${currentUser}`;
+  const [recent, setRecent] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; }
+  });
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const norm = s => normalizeSearchText(s || "");
+  const qn = norm(q.trim());
+
+  const results = useMemo(() => {
+    if (!qn || qn.length < 2) return null;
+    const tareas = (tasks || []).filter(t => norm(`${t.titulo} ${t.descripcion}`).includes(qn)).slice(0, 8);
+    const eqs = (equipos || []).filter(e => e.active !== false && norm(`${e.nombre} ${e.sistema}`).includes(qn)).slice(0, 8);
+    const items = (invItems || []).filter(it => norm(`${it.name} ${it.sku}`).includes(qn)).slice(0, 8);
+    const wiki = (wikiPages || []).filter(p => norm(`${p.titulo} ${p.contenido}`).includes(qn)).slice(0, 8);
+    return { tareas, eqs, items, wiki };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qn, tasks, equipos, invItems, wikiPages]);
+
+  const remember = (term) => {
+    const t = term.trim();
+    if (!t) return;
+    setRecent(prev => {
+      const next = [t, ...prev.filter(x => x.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+  };
+
+  const goTo = (view) => { remember(q); onNavigate(view); onClose(); };
+
+  const totalResults = results ? results.tareas.length + results.eqs.length + results.items.length + results.wiki.length : 0;
+
+  return (
+    <>
+      <div className="fixed inset-0" style={{ background: "rgba(10,14,20,0.5)", zIndex: 200 }} onClick={onClose} />
+      <div className="fixed top-0 left-0 right-0 sm:top-[8vh] sm:left-1/2 sm:-translate-x-1/2 sm:w-[520px] sm:rounded-xl overflow-hidden pm-stagger-in"
+        style={{ background: C.panel, zIndex: 201, boxShadow: "0 8px 28px rgba(0,0,0,0.25)", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+        <div className="pm-safe-top p-3 border-b flex items-center gap-2" style={{ borderColor: C.line }}>
+          <Search size={16} style={{ color: C.gray }} />
+          <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && q.trim()) remember(q); }}
+            placeholder="Buscar tareas, equipos, repuestos, wiki…"
+            className="flex-1 text-sm outline-none bg-transparent" style={{ color: C.ink }} />
+          <button onClick={onClose} aria-label="Cerrar"><X size={18} style={{ color: C.gray }} /></button>
+        </div>
+        <div className="overflow-y-auto p-3">
+          {!results && recent.length > 0 && (
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Búsquedas recientes</div>
+              <div className="flex flex-col gap-1">
+                {recent.map((r, i) => (
+                  <button key={i} onClick={() => setQ(r)} className="text-left text-sm rounded-md px-2 py-1.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink }}>
+                    <Search size={13} style={{ color: C.gray }} /> {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!results && recent.length === 0 && (
+            <div className="text-sm text-center py-6" style={{ color: C.gray }}>Escribe al menos 2 letras para buscar en toda la app.</div>
+          )}
+          {results && totalResults === 0 && (
+            <div className="text-sm text-center py-6" style={{ color: C.gray }}>Sin resultados para "{q}".</div>
+          )}
+          {results && results.tareas.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Tareas</div>
+              {results.tareas.map(t => (
+                <button key={t.id} onClick={() => goTo("tasks")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
+                  <ClipboardCheck size={13} style={{ color: C.amber }} className="shrink-0" /> <span className="truncate">{t.titulo}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {results && results.eqs.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Equipos</div>
+              {results.eqs.map(e => (
+                <button key={e.id} onClick={() => goTo("maintenance")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
+                  <Wrench size={13} style={{ color: C.blue }} className="shrink-0" /> <span className="truncate">{e.nombre} <span style={{ color: C.gray }}>· {e.sistema}</span></span>
+                </button>
+              ))}
+            </div>
+          )}
+          {results && results.items.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Repuestos</div>
+              {results.items.map(it => (
+                <button key={it.id} onClick={() => goTo("inventory")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
+                  <Package size={13} style={{ color: C.green }} className="shrink-0" /> <span className="truncate">{it.name}{it.sku ? ` · ${it.sku}` : ""}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {results && results.wiki.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Wiki interna</div>
+              {results.wiki.map(p => (
+                <button key={p.id} onClick={() => goTo("wiki")} className="w-full text-left text-sm rounded-md px-2 py-1.5 mb-0.5 flex items-center gap-2 hover:opacity-75" style={{ color: C.ink, background: C.bg }}>
+                  <BookOpen size={13} style={{ color: C.amber }} className="shrink-0" /> <span className="truncate">{p.titulo}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onNavigate }) {
   const [open, setOpen] = useState(false);
   useBackCloseModal(open, () => setOpen(false));
@@ -14838,7 +15233,7 @@ function WhatsNewBanner({ entries, currentUser }) {
   );
 }
 
-function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries }) {
+function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries, shiftAlerts }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState(() => {
@@ -14957,6 +15352,34 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
 
       <WhatsNewBanner entries={changelogEntries} currentUser={currentUser} />
 
+      {!gerenciaLocked && !searchNorm && (tasksToday || []).length > 0 && (() => {
+        const misPendientes = tasksToday.filter(t => normalizeTaskState(t.estado) !== "finalizada");
+        const misHechas = tasksToday.length - misPendientes.length;
+        const fechaHoy = new Date().toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long" });
+        return (
+          <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-semibold capitalize" style={{ color: C.ink }}>Mi día — {fechaHoy}</div>
+              <span className="text-xs" style={{ color: C.gray }}>{misHechas}/{tasksToday.length} hechas</span>
+            </div>
+            {misPendientes.length === 0 ? (
+              <div className="text-xs" style={{ color: C.green }}>✓ Ya terminaste todo lo tuyo de hoy.</div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {misPendientes.slice(0, 5).map(t => (
+                  <button key={t.id} onClick={() => onNavigate("tasks")} className="text-left text-xs rounded-md px-2 py-1.5 flex items-center gap-2 hover:opacity-80"
+                    style={{ background: C.bg, color: C.ink }}>
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: t.prioridad === "alta" ? C.red : t.prioridad === "media" ? C.amber : C.gray }} />
+                    <span className="truncate flex-1">{t.titulo}</span>
+                  </button>
+                ))}
+                {misPendientes.length > 5 && <div className="text-xs" style={{ color: C.gray }}>+ {misPendientes.length - 5} más — ve a Tareas para ver todo.</div>}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.gray }} />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar una herramienta… (ej: cuartos fríos, tareas, reportes)"
@@ -14980,6 +15403,34 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           </div>
         </div>
       )}
+
+      {!gerenciaLocked && !searchNorm && (shiftAlerts || []).length > 0 && (() => {
+        const checklistShortcuts = {
+          "Lecturas de Medidores": "meters", "Ronda de revisión": "ronda", "Cuartos Fríos": "coldrooms",
+          "Equipos de Gimnasio": "fichas-tecnicas", "Check List Caldera": "fichas-tecnicas", "Equipos de Lavandería": "fichas-tecnicas",
+        };
+        return (
+          <div className="rounded-lg p-3 mb-4" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+            <div className="flex items-center gap-2 mb-2 text-sm font-semibold" style={{ color: C.amber }}>
+              <ClipboardList size={16} /> Checklist de inicio de turno
+            </div>
+            {shiftAlerts.map((a, i) => (
+              <div key={i} className="mb-2 last:mb-0">
+                <div className="text-xs font-medium mb-1" style={{ color: C.amber }}>{a.turno} — faltó registrar:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {a.missing.map((m, j) => (
+                    <button key={j} onClick={() => checklistShortcuts[m] && onNavigate(checklistShortcuts[m])}
+                      className="text-xs rounded-full px-2.5 py-1 border transition hover:-translate-y-0.5"
+                      style={{ borderColor: C.amber, background: C.panel, color: C.amber }}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* PILAR 1 — Widgets vivos: el tablero de instrumentos del día, no solo accesos directos */}
       {!gerenciaLocked && !searchNorm && (
@@ -17476,8 +17927,40 @@ async function generateTaskReportPdf(task, assigneeName, signatureDataUrl, signe
     if (col > 0) y += cellH + gap;
     y += 4;
   };
-  await addPhotoGrid("Fotos — antes", task.fotosAntes);
-  await addPhotoGrid("Fotos — después", task.fotosDespues);
+
+  // Cuando hay fotos de antes Y de después, se ponen lado a lado en parejas (antes | después) en
+  // vez de dos cuadrículas separadas — así se ve de un vistazo el efecto del trabajo, que es lo
+  // que de verdad importa en un reporte de novedad.
+  const addBeforeAfterPairs = async (before, after) => {
+    if (y > pageH - 50) { doc.addPage(); y = 18; }
+    y = pdfSectionTitle(doc, y, "Antes / Después");
+    const cellW = 84, cellH = 60, gap = 6, marginX = 14;
+    const pairCount = Math.max(before.length, after.length);
+    doc.setFontSize(8); doc.setTextColor(...PDF_C.inkSoft);
+    doc.text("Antes", marginX + cellW / 2, y, { align: "center" });
+    doc.text("Después", marginX + cellW + gap + cellW / 2, y, { align: "center" });
+    doc.setTextColor(...PDF_C.ink);
+    y += 4;
+    for (let i = 0; i < pairCount; i++) {
+      if (y + cellH > pageH - 16) { doc.addPage(); y = 18; }
+      for (const [url, x] of [[before[i], marginX], [after[i], marginX + cellW + gap]]) {
+        if (!url) continue;
+        try {
+          const dataUrl = await urlToDataUrl(url);
+          doc.addImage(dataUrl, "JPEG", x, y, cellW, cellH);
+        } catch { /* se omite esa foto puntual si falla al descargar */ }
+      }
+      y += cellH + gap;
+    }
+    y += 2;
+  };
+
+  if (task.fotosAntes?.length > 0 && task.fotosDespues?.length > 0) {
+    await addBeforeAfterPairs(task.fotosAntes, task.fotosDespues);
+  } else {
+    await addPhotoGrid("Fotos — antes", task.fotosAntes);
+    await addPhotoGrid("Fotos — después", task.fotosDespues);
+  }
 
   if (task.notaCierre) {
     if (y > pageH - 30) { doc.addPage(); y = 18; }
@@ -18225,7 +18708,7 @@ function ChangelogView({ entries, isAdmin, currentUser, onAddEntry, onDeleteEntr
   );
 }
 
-function ProfileView({ currentUser, mySignature, onSaveSignature, employees, linkedEmployeeId, onSetLinkedEmployee, onLogoutEverywhere }) {
+function ProfileView({ currentUser, mySignature, onSaveSignature, employees, linkedEmployeeId, onSetLinkedEmployee, onLogoutEverywhere, loginHistory }) {
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -18309,6 +18792,21 @@ function ProfileView({ currentUser, mySignature, onSaveSignature, employees, lin
           </div>
         )}
       </div>
+
+      {loginHistory && loginHistory.length > 0 && (
+        <div className="rounded-lg border p-4 mt-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Mis últimos inicios de sesión</div>
+          <p className="text-xs mb-3" style={{ color: C.gray }}>Si ves un ingreso que no reconoces, cierra la sesión en todos los dispositivos arriba y avísale al admin.</p>
+          <div className="flex flex-col gap-1">
+            {loginHistory.slice(0, 15).map((l, i) => (
+              <div key={i} className="text-xs flex items-center justify-between" style={{ color: i === 0 ? C.ink : C.inkSoft, fontWeight: i === 0 ? 600 : 400 }}>
+                <span>{fmtDT(l.at)}</span>
+                {i === 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: C.greenSoft, color: C.green }}>Más reciente</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -18400,6 +18898,19 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
   const [sentNow, setSentNow] = useState(null);
   const [sendingAuto, setSendingAuto] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  // Buscar en el historial de entregas de turno por fecha o por técnico, en vez de solo poder
+  // desplazarse por las últimas 20 en orden.
+  const [historySearch, setHistorySearch] = useState("");
+  const historyTecnicos = useMemo(() => [...new Set((tourHistory || []).slice(1).map(t => t.user))].sort(), [tourHistory]);
+  const [historyTecnico, setHistoryTecnico] = useState("");
+  const filteredHistory = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    return (tourHistory || []).slice(1).filter(t => {
+      if (historyTecnico && t.user !== historyTecnico) return false;
+      if (q && !(`${t.date} ${t.shift} ${t.user}`.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [tourHistory, historySearch, historyTecnico]);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
   useEffect(() => { setWaTo(reportWhatsapp || ""); }, [reportWhatsapp]);
@@ -18551,7 +19062,21 @@ function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLog
             Ver recorridos anteriores ({tourHistory.length - 1})
           </summary>
           <div className="mt-2">
-            {tourHistory.slice(1, 20).map(t => (
+            <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+              <div className="relative flex-1 min-w-[140px]">
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" color={C.gray} />
+                <input value={historySearch} onChange={e => setHistorySearch(e.target.value)} placeholder="Buscar por fecha o turno…"
+                  className="text-xs border rounded-md pl-6 pr-2 py-1.5 outline-none w-full" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+              </div>
+              <select value={historyTecnico} onChange={e => setHistoryTecnico(e.target.value)}
+                className="text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                <option value="">Todos los técnicos</option>
+                {historyTecnicos.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            {filteredHistory.length === 0 ? (
+              <p className="text-xs py-3 text-center" style={{ color: C.gray }}>Sin resultados para esa búsqueda.</p>
+            ) : filteredHistory.slice(0, 30).map(t => (
               <div key={t.id} className="text-xs py-1.5 border-b flex items-center justify-between" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
                 <span>{t.date} · Turno {t.shift} · {t.user}</span>
                 <span style={{ color: C.gray }}>{t.itemCount} equipos{t.damagedCount ? `, ${t.damagedCount} dañados` : ""}</span>
@@ -19723,7 +20248,7 @@ function BackupButton() {
  * admin no es "un rol más" sino que ve y hace de todo. La sección de Permisos Específicos vive
  * ahí mismo para cuando se agreguen más permisos finos (hoy solo hay uno real: editar horarios). */
 function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, currentUsername, onClose,
-  onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleScheduleManager, onDeleteAccount, onResetPassword, onTransferTasks }) {
+  onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onDeleteAccount, onResetPassword, onTransferTasks }) {
   useBackCloseModal(true, onClose); // se desmonta solo cuando el padre deja de mostrarlo
   const [newPw, setNewPw] = useState("");
   const [resetMsg, setResetMsg] = useState("");
@@ -19733,7 +20258,7 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
   const [busy, setBusy] = useState(false);
   const [roleMsg, setRoleMsg] = useState(null); // { text, ok } — feedback de cambios de rol/permiso que sí pueden fallar
 
-  const baseRole = acc.is_almacenista ? "almacenista" : acc.is_gerencia ? "gerencia" : "operador";
+  const baseRole = acc.is_almacenista ? "almacenista" : acc.is_gerencia ? "gerencia" : acc.is_viewer ? "viewer" : "operador";
   const isLastAdmin = acc.is_admin && adminCount === 1;
 
   // Antes estas acciones no revisaban si el servidor las había rechazado (sesión vencida, columna
@@ -19760,8 +20285,10 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
     try {
       if (next !== "almacenista" && acc.is_almacenista) { const r = await onToggleAlmacenista(uid); if (r?.ok === false) throw new Error(r.message); }
       if (next !== "gerencia" && acc.is_gerencia) { const r = await onToggleGerencia(uid); if (r?.ok === false) throw new Error(r.message); }
+      if (next !== "viewer" && acc.is_viewer) { const r = await onToggleViewer(uid); if (r?.ok === false) throw new Error(r.message); }
       if (next === "almacenista" && !acc.is_almacenista) { const r = await onToggleAlmacenista(uid); if (r?.ok === false) throw new Error(r.message); }
       if (next === "gerencia" && !acc.is_gerencia) { const r = await onToggleGerencia(uid); if (r?.ok === false) throw new Error(r.message); }
+      if (next === "viewer" && !acc.is_viewer) { const r = await onToggleViewer(uid); if (r?.ok === false) throw new Error(r.message); }
     } catch (e) {
       setRoleMsg({ text: e.message || "No se pudo cambiar el rol.", ok: false });
       showToast(e.message || "No se pudo cambiar el rol.", false);
@@ -19832,7 +20359,8 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
             className="text-sm border rounded-md px-2 py-1.5 outline-none w-full mb-1" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <option value="operador">Operador</option>
             <option value="almacenista">Almacenista</option>
-            <option value="gerencia">Gerencia (solo consulta)</option>
+            <option value="gerencia">Gerencia (solo consulta — pocas pantallas)</option>
+            <option value="viewer">Solo ver (ve todo, no puede crear/editar nada)</option>
           </select>
           {acc.is_admin && <div className="text-[11px] mb-2" style={{ color: C.gray }}>Un administrador ya tiene acceso a todo — quita el admin abajo si quieres asignarle un rol base específico.</div>}
 
@@ -19869,7 +20397,7 @@ function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, curren
   );
 }
 
-function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleScheduleManager, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
+function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -19978,6 +20506,7 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
               {acc.is_admin ? <Pill tone="amber">Administrador</Pill> : <Pill tone="gray">Operador</Pill>}
               {acc.is_almacenista && <Pill tone="blue">Almacenista</Pill>}
               {acc.is_gerencia && <Pill tone="green">Gerencia</Pill>}
+              {acc.is_viewer && <Pill tone="gray">Solo ver</Pill>}
               {!acc.is_admin && acc.can_manage_schedule && <Pill tone="blue">Gestiona horarios</Pill>}
               <Button size="sm" variant="ghost" icon={SettingsIcon} onClick={() => setEditingUser(uid)}>Editar usuario</Button>
             </div>
@@ -19997,6 +20526,7 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
           onToggleAdmin={onToggleAdmin}
           onToggleAlmacenista={onToggleAlmacenista}
           onToggleGerencia={onToggleGerencia}
+          onToggleViewer={onToggleViewer}
           onToggleScheduleManager={onToggleScheduleManager}
           onDeleteAccount={onDeleteAccount}
           onResetPassword={onResetPassword}
@@ -20057,6 +20587,7 @@ export default function App() {
   const [themeOverride, setThemeOverride] = useState(() => { try { return localStorage.getItem("pm-local:theme"); } catch { return null; } }); // "dark" | "light" | null = automático
   const [darkMode, setDarkMode] = useState(() => themeOverride === "dark" ? true : themeOverride === "light" ? false : isNightHour());
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [undoToast, setUndoToast] = useState(null); // { label, trashId } | null
@@ -20239,6 +20770,7 @@ export default function App() {
 
   const [trash, setTrash] = useState([]);
   const [loginLog, setLoginLog] = useState([]);
+  const myLoginHistory = useMemo(() => (loginLog || []).filter(l => l.userId === currentUser), [loginLog, currentUser]);
   const [mttoLog, setMttoLog] = useState([]);
   const [mttoCronograma, setMttoCronograma] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -20603,6 +21135,7 @@ export default function App() {
   const toggleAdmin = (userId) => callAdminAction("toggle-admin", userId);
   const toggleAlmacenista = (userId) => callAdminAction("toggle-almacenista", userId);
   const toggleGerencia = (userId) => callAdminAction("toggle-gerencia", userId);
+  const toggleViewer = (userId) => callAdminAction("toggle-viewer", userId);
   const toggleScheduleManager = (userId) => callAdminAction("toggle-schedule-manager", userId);
   const resetPassword = (userId, newPassword) => callAdminAction("reset-password", userId, { newPassword });
   const deleteAccount = async (userId) => {
@@ -21388,6 +21921,14 @@ export default function App() {
     if (rec.prioridad === "alta" && pushSubscriptions.length > 0) {
       sendPushToSubscriptions(pushSubscriptions, "🔴 Tarea de prioridad alta", rec.titulo, "/");
     }
+    // Aviso directo a la persona asignada — antes solo se enteraba si abría la app y la veía en
+    // su lista; ahora le llega un push al instante, igual que ya pasa con otras alertas.
+    if (rec.asignadoA) {
+      const suyas = pushSubscriptions.filter(s => s.ownerUsername === rec.asignadoA);
+      if (suyas.length > 0) {
+        sendPushToSubscriptions(suyas, "📋 Te asignaron una tarea", rec.titulo, "/");
+      }
+    }
     return rec;
   };
 
@@ -21494,6 +22035,11 @@ export default function App() {
         after: TASK_STATES.find(s => s.code === normalizeTaskState(patch.estado))?.label || patch.estado,
       });
     }
+    // Si la reasignaron a alguien nuevo (no solo se creó), le llega el mismo push directo.
+    if (before && patch.asignadoA && patch.asignadoA !== before.asignadoA && pushSubscriptions.length > 0) {
+      const suyas = pushSubscriptions.filter(s => s.ownerUsername === patch.asignadoA);
+      if (suyas.length > 0) sendPushToSubscriptions(suyas, "📋 Te asignaron una tarea", before.titulo, "/");
+    }
   };
 
   /** Igual que updateTask, pero para varias tareas a la vez (acciones masivas del panel de
@@ -21521,6 +22067,10 @@ export default function App() {
           before: TASK_STATES.find(s => s.code === normalizeTaskState(before.estado))?.label || before.estado,
           after: TASK_STATES.find(s => s.code === normalizeTaskState(patch.estado))?.label || patch.estado,
         });
+      }
+      if (before && patch.asignadoA && patch.asignadoA !== before.asignadoA && pushSubscriptions.length > 0) {
+        const suyas = pushSubscriptions.filter(s => s.ownerUsername === patch.asignadoA);
+        if (suyas.length > 0) sendPushToSubscriptions(suyas, "📋 Te asignaron una tarea", before.titulo, "/");
       }
     });
   };
@@ -22082,8 +22632,14 @@ export default function App() {
   const isAdmin = !!account.is_admin;
   const isAlmacenista = !!account.is_almacenista;
   const isGerencia = !!account.is_gerencia;
+  const isViewer = !!account.is_viewer;
   const canManageSchedule = isAdmin || !!account.can_manage_schedule;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista; // gerencia "pura": solo consulta
+  // "Solo ver": a diferencia de Gerencia (que solo ve un puñado de pantallas de KPIs), esta cuenta
+  // puede navegar y VER cualquier módulo de la app — pero en las pantallas principales de captura
+  // (tareas, rondas, cuartos fríos, medidores, caldera, inventario) no aparecen los botones para
+  // crear, editar o cerrar nada, solo para consultar.
+  const viewerLocked = isViewer && !isAdmin && !isAlmacenista && !isGerencia;
   // Si esta cuenta está vinculada a un empleado del Horario Mensual (ver Mi Perfil), se usa su
   // cargo para que la firma en los PDF diga "Nombre — Cargo", no solo el nombre suelto.
   const mySignerCargo = employees.find(e => e.id === account.linked_employee_id)?.cargo || null;
@@ -22196,6 +22752,39 @@ export default function App() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, reportEmail, currentUser]);
+
+  // ---- Aviso automático de stock mínimo por correo ----
+  // Igual que el respaldo automático de arriba: no hay servidor propio corriendo aparte, así que
+  // se revisa cada vez que un admin/almacenista abre la app, y si hay repuestos en nivel crítico
+  // y no se ha mandado el aviso HOY, se manda solo (sin que nadie lo pida) al correo de reportes.
+  useEffect(() => {
+    if ((!isAdmin && !isAlmacenista) || !reportEmail || !currentUser) return;
+    if (criticalStockItems.length === 0) return;
+    const KEY = `pm-local:last-auto-stock-alert-${todayStr()}`;
+    let already = null;
+    try { already = localStorage.getItem(KEY); } catch { /* noop */ }
+    if (already) return;
+    (async () => {
+      try {
+        const lines = criticalStockItems.map(it => `- ${it.name}${it.sku ? ` (${it.sku})` : ""}: quedan ${it.quantity}, mínimo ${it.minThreshold}`).join("\n");
+        const resp = await fetch("/api/send-report", {
+          method: "POST",
+          headers: await authHeaders(),
+          body: JSON.stringify({
+            to: reportEmail,
+            subject: `⚠️ Stock mínimo — ${criticalStockItems.length} repuesto(s) crítico(s) (${todayStr()})`,
+            text: `Estos repuestos están en nivel crítico de stock (la mitad o menos del mínimo, o ya en cero):\n\n${lines}\n\nEste aviso se genera solo, una vez al día, mientras sigan en ese nivel.`,
+          }),
+        });
+        const ok = resp.ok;
+        try { localStorage.setItem(KEY, nowIso()); } catch { /* noop */ }
+        logSentReport?.({ to: reportEmail, method: "Aviso automático de stock mínimo (correo)", ok, sentBy: currentUser, sentAt: nowIso() });
+      } catch {
+        // Sin señal o falló — se reintentará la próxima vez que alguien abra la app hoy mismo.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, isAlmacenista, reportEmail, currentUser, criticalStockItems]);
 
   useEffect(() => {
     if (currentUser) checkRecurringTasks();
@@ -22341,11 +22930,16 @@ export default function App() {
   return (
     <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
       <ToastHost />
+      <OfflineBanner />
       {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin
           importar si la app está en modo claro u oscuro, para que combine con el theme-color
           del manifiesto y no se vea un bloque blanco cortado arriba en iOS. */}
       <div className="fixed top-0 left-0 right-0 z-[200]" style={{ height: "env(safe-area-inset-top)", background: "#132030" }} />
       {showOnboarding && <OnboardingTour onClose={closeOnboarding} />}
+      {showGlobalSearch && (
+        <GlobalSearchModal tasks={tasks} equipos={mttoEquipos} invItems={invItems} wikiPages={wikiPages} currentUser={currentUser}
+          onNavigate={setView} onClose={() => setShowGlobalSearch(false)} />
+      )}
       {undoToast && (
         <div className="fixed bottom-36 sm:bottom-6 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[60] rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap"
           style={{ background: C.steelDark, color: "#fff" }}>
@@ -22545,6 +23139,9 @@ export default function App() {
                 <CheckCircle2 size={12} /> Fotos sincronizadas
               </span>
             )}
+            <button onClick={() => setShowGlobalSearch(true)} title="Buscar en toda la app" className="p-1.5 rounded-md" style={{ background: C.bg }}>
+              <Search size={16} color={C.ink} />
+            </button>
             <button onClick={() => setShowOnboarding(true)} title="Ver guía de bienvenida" className="hidden sm:block p-1.5 rounded-md" style={{ background: C.bg }}>
               <span className="text-xs font-bold w-4 h-4 flex items-center justify-center" style={{ color: C.ink }}>?</span>
             </button>
@@ -22688,6 +23285,11 @@ export default function App() {
           ))}
         </nav>
         <main className="flex-1 p-4 pb-24 sm:pb-8 max-w-5xl w-full mx-auto overflow-x-hidden">
+          {viewerLocked && (
+            <div className="rounded-lg p-2.5 mb-3 flex items-center gap-2 text-xs font-medium" style={{ background: C.bg, border: `1px solid ${C.line}`, color: C.inkSoft }}>
+              <Eye size={14} /> Modo solo ver — puedes navegar y consultar todo, pero no vas a ver botones para crear, editar o cerrar nada.
+            </div>
+          )}
           {view !== "home" && (
             <button onClick={() => setView("home")}
               className="flex items-center gap-1 text-sm mb-3 px-2 py-1 rounded-md lg:hidden"
@@ -22704,6 +23306,7 @@ export default function App() {
               mttoWeekCount={mttoWeekCount}
               tasksToday={tasksTodayForHome}
               changelogEntries={changelogEntries}
+              shiftAlerts={shiftAlerts}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: openTasksCount, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount, misTareasVencidas }} />
           )}
           {view === "ronda" && (
@@ -22725,7 +23328,8 @@ export default function App() {
           )}
           {view === "profile" && (
             <ProfileView currentUser={displayName} mySignature={account.signature} onSaveSignature={updateMySignature}
-              employees={employees} linkedEmployeeId={account.linked_employee_id} onSetLinkedEmployee={updateMyLinkedEmployee} onLogoutEverywhere={logoutEverywhere} />
+              employees={employees} linkedEmployeeId={account.linked_employee_id} onSetLinkedEmployee={updateMyLinkedEmployee} onLogoutEverywhere={logoutEverywhere}
+              loginHistory={myLoginHistory} />
           )}
           {view === "changelog" && (
             <ChangelogView entries={changelogEntries} isAdmin={isAdmin} currentUser={displayName}
@@ -22776,7 +23380,7 @@ export default function App() {
               onDeleteBodega={deleteBodega} onDeleteShelf={deleteShelf}
               initialShelfId={pendingShelfId} onConsumedInitialShelf={() => setPendingShelfId(null)}
               invMovements={invMovements} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName}
-              tools={tools} accounts={profiles} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} />
+              tools={tools} accounts={profiles} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} viewerLocked={viewerLocked} />
           )}
           {view === "maintenance" && (
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
@@ -22787,7 +23391,7 @@ export default function App() {
               onUpdateEquipoInfo={updateMttoEquipoInfo} tasks={tasks}
               mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={updateMttoRequiredFields}
               pendingMaintenanceEquipoIds={pendingMaintenanceEquipoIds}
-              initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} />
+              initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} viewerLocked={viewerLocked} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (
             <MaintenanceAnalyticsView equipos={mttoEquipos} mttoLog={mttoLog} issueHistory={issueHistory} activeIssues={activeIssues}
@@ -22823,12 +23427,12 @@ export default function App() {
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
               onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask}
-              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} />
+              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onToggleScheduleManager={toggleScheduleManager} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
+              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onToggleViewer={toggleViewer} onToggleScheduleManager={toggleScheduleManager} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
               onApproveAccount={approveAccount} onRejectAccount={rejectAccount} onTransferTasks={transferTasks} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />
           )}
           {view === "trash" && isAdmin && (

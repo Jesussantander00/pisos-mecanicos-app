@@ -67,13 +67,15 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, warning: "El perfil se eliminó, pero no se pudo borrar la cuenta de acceso del todo. Si esa persona tenía la app abierta, se le va a cerrar la sesión sola en menos de un minuto." });
         return;
       }
-    } else if (action === "toggle-admin" || action === "toggle-almacenista" || action === "toggle-gerencia" || action === "toggle-schedule-manager") {
-      // Las cuatro casillas de rol/permiso comparten la misma forma: leer el valor actual y
+    } else if (action === "toggle-admin" || action === "toggle-almacenista" || action === "toggle-gerencia" || action === "toggle-schedule-manager" || action === "toggle-viewer") {
+      // Las casillas de rol/permiso comparten la misma forma: leer el valor actual y
       // apagarlo/prenderlo. Antes esto no revisaba errores de Supabase (por ejemplo si la columna
       // no existiera, o la fila no se encontrara) y respondía "ok" igual, dejando el checkbox del
       // panel sin ningún cambio real y sin ninguna pista de por qué. Ahora si algo falla en
       // cualquiera de los dos pasos, se lo decimos al que llama en vez de fingir que funcionó.
-      const column = { "toggle-admin": "is_admin", "toggle-almacenista": "is_almacenista", "toggle-gerencia": "is_gerencia", "toggle-schedule-manager": "can_manage_schedule" }[action];
+      // "toggle-viewer" es el rol "Solo ver": puede navegar y ver todos los módulos, pero la app
+      // le esconde los botones de crear/editar/cerrar en las pantallas principales de captura.
+      const column = { "toggle-admin": "is_admin", "toggle-almacenista": "is_almacenista", "toggle-gerencia": "is_gerencia", "toggle-schedule-manager": "can_manage_schedule", "toggle-viewer": "is_viewer" }[action];
       const { data: t, error: selErr } = await supabaseAdmin.from("profiles").select(column).eq("id", targetUserId).maybeSingle();
       if (selErr) {
         res.status(500).json({ ok: false, message: `No se pudo leer el estado actual (${selErr.message}). Si la columna "${column}" no existe todavía en la tabla "profiles" de Supabase, hay que agregarla primero.` });

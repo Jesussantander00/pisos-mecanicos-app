@@ -18,13 +18,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # Agrupa todos los avisos de una semana en un solo Pull Request en vez de uno por paquete,
-    # para no llenar el repositorio de PRs sueltos que hay que revisar uno por uno.
+    # Agrupa SOLO las actualizaciones pequeñas y seguras (parches y versiones menores) en un único
+    # Pull Request — esas casi nunca rompen nada, así que no hace falta revisarlas una por una.
+    # Las actualizaciones GRANDES (ej. Vite 5 -> 6, Tailwind 3 -> 4) quedan A PROPÓSITO fuera de
+    # este grupo, así que Dependabot las manda cada una en su propio Pull Request por separado —
+    # si alguna rompe el build (como pasó con el combo de 14), se identifica y se descarta sola,
+    # sin arrastrar consigo las demás actualizaciones que sí funcionaban bien.
     groups:
       dependencias:
         patterns:
           - "*"
-    open-pull-requests-limit: 5
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
     labels:
       - "dependencias"
     commit-message:

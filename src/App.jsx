@@ -7653,7 +7653,7 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>
             {anomalies.length} lectura{anomalies.length !== 1 ? "s" : ""} con consumo negativo detectada{anomalies.length !== 1 ? "s" : ""} (probable error de lectura o medidor reiniciado):{" "}
-            {anomalies.map((a, i) => `${a.meter.n}${a.sub ? ` (${a.sub})` : ""}`).join(", ")}
+            {anomalies.map((a, i) => `${a.meter.n}${a.sub && a.sub !== "value" ? ` (${a.sub})` : ""}`).join(", ")}
           </span>
         </div>
       )}

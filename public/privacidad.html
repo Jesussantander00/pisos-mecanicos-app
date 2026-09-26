@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Política de Privacidad — QuinTech</title>
+<style>
+  :root {
+    --ink: #132030;
+    --ink-soft: #45566b;
+    --line: #e2e8f0;
+    --amber: #d97706;
+    --bg: #f7f9fb;
+    --panel: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  header .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--amber);
+    flex-shrink: 0;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px;
+  }
+  .updated {
+    color: var(--ink-soft);
+    font-size: 0.875rem;
+    margin-bottom: 32px;
+  }
+  h2 {
+    font-size: 1.1rem;
+    margin-top: 36px;
+    margin-bottom: 8px;
+    color: var(--ink);
+  }
+  p, li {
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+  }
+  ul {
+    padding-left: 1.25rem;
+  }
+  li {
+    margin-bottom: 6px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 24px;
+  }
+  a { color: var(--amber); }
+  .footer-note {
+    margin-top: 40px;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="dot"></div>
+      <h1>Política de Privacidad — QuinTech</h1>
+    </header>
+    <div class="updated">Última actualización: 26 de septiembre de 2026</div>
+
+    <p>
+      QuinTech es un sistema de gestión de mantenimiento e ingeniería para hoteles, usado por el personal
+      autorizado de cada hotel donde se implementa. Esta página explica, en términos simples, qué información
+      guarda la aplicación, para qué se usa, y cómo se protege.
+    </p>
+
+    <h2>¿Quién soy?</h2>
+    <p>
+      QuinTech es desarrollado y operado por Jesús Daniel Quintana Santander, como proveedor independiente de
+      este sistema de software. Si tienes alguna pregunta sobre esta política o sobre tus datos, puedes
+      escribir a <a href="mailto:pisosmecanicosapp@gmail.com">pisosmecanicosapp@gmail.com</a>.
+    </p>
+
+    <h2>¿Quién puede usar la app?</h2>
+    <p>
+      QuinTech es una herramienta de uso interno. Solo el personal de mantenimiento, ingeniería y administración
+      autorizado por cada hotel puede crear una cuenta, y toda cuenta nueva queda pendiente de aprobación por un
+      administrador antes de poder usarse. No está dirigida al público general ni a huéspedes del hotel.
+    </p>
+
+    <h2>Qué información guarda la app</h2>
+    <p>Para que el equipo de mantenimiento pueda hacer su trabajo, QuinTech guarda:</p>
+    <ul>
+      <li><strong>Datos de la cuenta:</strong> nombre completo y correo electrónico de cada empleado con acceso.</li>
+      <li><strong>Historial de uso:</strong> fecha y hora de los inicios de sesión, para seguridad de la cuenta.</li>
+      <li><strong>Firma digital:</strong> la firma que cada usuario dibuja una vez, usada para autenticar los
+        reportes de turno y de mantenimiento que genera.</li>
+      <li><strong>Fotos operativas:</strong> fotografías de equipos, daños, medidores y tareas de mantenimiento,
+        tomadas por el personal como parte de su trabajo diario.</li>
+      <li><strong>Registros de trabajo:</strong> rondas de revisión, tareas, mantenimientos, movimientos de
+        inventario y horarios del personal — la información operativa propia del día a día del hotel.</li>
+    </ul>
+    <p>
+      QuinTech <strong>no</strong> recolecta información de huéspedes del hotel, no accede a la cámara ni al
+      micrófono del celular salvo cuando el propio usuario elige tomar una foto o usar el dictado por voz para un
+      campo de texto, y no rastrea la ubicación del dispositivo.
+    </p>
+
+    <h2>Para qué se usa esa información</h2>
+    <ul>
+      <li>Llevar el registro operativo diario de mantenimiento del hotel (el propósito central de la app).</li>
+      <li>Generar reportes en PDF/Excel y enviarlos por correo a quien el propio usuario indique dentro de la
+        organización.</li>
+      <li>Enviar notificaciones push sobre tareas asignadas, equipos dañados o cuentas pendientes de aprobar.</li>
+      <li>Mostrar un resumen de datos reales de la operación al asistente de inteligencia artificial integrado,
+        cuando el usuario le hace una pregunta dentro de la app.</li>
+    </ul>
+    <p>Esta información nunca se vende ni se comparte con terceros con fines publicitarios.</p>
+
+    <h2>Dónde se guarda la información</h2>
+    <p>
+      Los datos se almacenan en servidores de Supabase (base de datos) y Vercel (aplicación), ambos con cifrado
+      en tránsito (HTTPS). El envío de correos usa el servicio Resend, y el asistente de IA usa la API de Google
+      Gemini — a estos servicios solo se les envía la información estrictamente necesaria para cada función
+      (por ejemplo, el texto de una pregunta al asistente, o el archivo adjunto de un correo puntual).
+    </p>
+
+    <h2>Cuánto tiempo se conserva</h2>
+    <p>
+      La información se conserva mientras la cuenta del hotel siga usando el sistema. Un administrador puede
+      eliminar cuentas, tareas u otros registros desde el panel de administración; los elementos eliminados
+      pasan primero a una Papelera desde donde se pueden recuperar, antes de borrarse de forma definitiva.
+    </p>
+
+    <h2>Tus derechos</h2>
+    <p>
+      Si eres parte del personal de un hotel que usa QuinTech y quieres consultar, corregir o solicitar la
+      eliminación de tu información personal (por ejemplo, tu firma o tu historial de acceso), puedes pedírselo
+      al administrador de la cuenta en tu hotel, o escribir directamente a
+      <a href="mailto:pisosmecanicosapp@gmail.com">pisosmecanicosapp@gmail.com</a>.
+    </p>
+
+    <div class="card">
+      <h2 style="margin-top:0;">Cambios a esta política</h2>
+      <p style="margin-bottom:0;">
+        Esta política puede actualizarse si la app cambia lo que hace con la información. La fecha al inicio de
+        esta página siempre refleja la última actualización.
+      </p>
+    </div>
+
+    <div class="footer-note">
+      QuinTech — Sistema de gestión de mantenimiento hotelero.
+    </div>
+  </div>
+</body>
+</html>

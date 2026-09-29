@@ -1,0 +1,10 @@
+Keep this file and signing.keystore in a safe place. You'll need these files if you want to upload future versions of your PWA to the Google Play Store.
+
+Key store file: signing.keystore
+Key store password: iQwIHwjgOD4A
+Key alias: quintech-hcc
+Key password: iQwIHwjgOD4A
+Signer's full name: QuinTech Admin
+Signer's organization: QuinTech
+Signer's organizational unit: Engineering
+Signer's country code: US

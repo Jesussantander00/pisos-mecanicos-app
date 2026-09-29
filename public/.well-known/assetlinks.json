@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.quintech.hcc",
+        "sha256_cert_fingerprints": ["F6:01:C2:49:3E:46:43:E1:7F:5F:A8:44:9C:F0:39:7C:59:30:9C:92:F8:8A:01:C2:D5:EE:21:DF:14:29:10:8E"]
+      }
+    }]

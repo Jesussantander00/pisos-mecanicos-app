@@ -101,7 +101,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         from,
         to: [toClean],
-        subject: subject || "Informe - Pisos Mecánicos",
+        subject: subject || "Informe - QuinTech",
         text: text || "Se adjunta el informe.",
         attachments: [
           {

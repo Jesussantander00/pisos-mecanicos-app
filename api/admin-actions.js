@@ -97,6 +97,12 @@ export default async function handler(req, res) {
       }
       const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, { password: newPassword });
       if (pwErr) { res.status(500).json({ ok: false, message: pwErr.message }); return; }
+      // La contraseña la puso el admin, no la persona dueña de la cuenta — se le exige cambiarla
+      // por una propia la primera vez que entre, para que el admin no quede sabiendo su clave
+      // real de ahí en adelante. Si la columna todavía no existe (falta correr la migración
+      // 06_forzar_cambio_password.sql), esto simplemente no hace nada — el reset de contraseña
+      // en sí ya se hizo y no se bloquea por esto.
+      await supabaseAdmin.from("profiles").update({ must_change_password: true }).eq("id", targetUserId);
     } else {
       res.status(400).json({ ok: false, message: "Acción no reconocida." });
       return;

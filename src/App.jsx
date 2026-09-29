@@ -7120,6 +7120,58 @@ function EquipmentRow({ item, entry, onChange, activeIssue, onResolve, previous,
   );
 }
 
+/** Pantalla obligatoria cuando un administrador le puso la contraseña a esta cuenta (reset o
+ *  cuenta nueva): no deja pasar al resto de la app hasta que la persona ponga una contraseña
+ *  propia, para que el admin no siga sabiendo la clave real de ahí en adelante. */
+function ForcedPasswordChangeScreen({ onDone, onLogout }) {
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    setError(null);
+    if (password.length < 8) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
+    if (password !== password2) { setError("Las dos contraseñas no coinciden."); return; }
+    setBusy(true);
+    try {
+      const { error: pwErr } = await supabase.auth.updateUser({ password });
+      if (pwErr) { setError(pwErr.message || "No se pudo cambiar la contraseña."); setBusy(false); return; }
+      await onDone();
+    } catch {
+      setError("No se pudo conectar para cambiar la contraseña. Revisa tu conexión e intenta de nuevo.");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: C.bg }}>
+      <div className="max-w-sm w-full rounded-xl border p-6" style={{ borderColor: C.line, background: C.panel }}>
+        <ShieldCheck size={32} style={{ color: C.amber, margin: "0 auto 12px", display: "block" }} />
+        <h2 className="text-base font-semibold mb-2 text-center" style={{ color: C.ink }}>Pon tu propia contraseña</h2>
+        <p className="text-sm mb-4 text-center" style={{ color: C.inkSoft }}>
+          Un administrador te dio acceso con una contraseña provisional. Antes de seguir, escribe una nueva que solo tú conozcas.
+        </p>
+        <div className="relative mb-2">
+          <input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Nueva contraseña (mínimo 8 caracteres)"
+            className="w-full text-sm border rounded-md px-3 py-2.5 outline-none pr-10" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+          <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? "Ocultar contraseña" : "Mostrar contraseña"} title={showPw ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: C.gray }}>
+            <Eye size={16} />
+          </button>
+        </div>
+        <input type={showPw ? "text" : "password"} value={password2} onChange={e => setPassword2(e.target.value)} placeholder="Repite la nueva contraseña"
+          className="w-full text-sm border rounded-md px-3 py-2.5 outline-none mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+        {error && <div className="text-xs mb-3" style={{ color: C.red }}>{error}</div>}
+        <Button className="w-full mb-2" disabled={busy || !password || !password2} onClick={submit}>
+          {busy ? "Guardando…" : "Guardar y continuar"}
+        </Button>
+        <Button variant="ghost" className="w-full" icon={LogOut} onClick={onLogout}>Salir</Button>
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================
    VISTA: RONDA DE REVISIÓN
    ============================================================ */
@@ -8321,7 +8373,7 @@ function BodegasListView({ bodegas, shelves, invItems, canManage, onSelectBodega
                   </div>
                 </button>
                 {canManage && (
-                  <button onClick={(e) => { e.stopPropagation(); doDelete(b.id); }} className="absolute top-2 right-2 p-1">
+                  <button onClick={(e) => { e.stopPropagation(); doDelete(b.id); }} aria-label="Eliminar bodega" title="Eliminar bodega" className="absolute top-2 right-2 p-1">
                     <Trash2 size={13} color={C.gray} />
                   </button>
                 )}
@@ -8401,7 +8453,7 @@ function BodegaShelvesView({ bodega, shelves, invItems, canManage, onBack, onSel
                   <div className="text-xs mt-1" style={{ color: C.gray }}>{myItems.length} repuesto{myItems.length !== 1 ? "s" : ""}</div>
                 </button>
                 {canManage && (
-                  <button onClick={(e) => { e.stopPropagation(); onDeleteShelf(s.id); }} className="absolute top-2 right-2 p-1">
+                  <button onClick={(e) => { e.stopPropagation(); onDeleteShelf(s.id); }} aria-label="Eliminar estantería" title="Eliminar estantería" className="absolute top-2 right-2 p-1">
                     <Trash2 size={13} color={C.gray} />
                   </button>
                 )}
@@ -8501,7 +8553,7 @@ function ShelfDetailView({ bodega, shelf, items, canManage, onBack, onCreateItem
                 <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: C.ink }}>
                   {item.name}{item.sku ? <span style={{ color: C.gray }}> · {item.sku}</span> : ""}
                   {canManage && (
-                    <button onClick={() => openEdit(item)} className="p-0.5"><Pencil size={12} color={C.gray} /></button>
+                    <button onClick={() => openEdit(item)} aria-label="Editar artículo" title="Editar artículo" className="p-0.5"><Pencil size={12} color={C.gray} /></button>
                   )}
                 </div>
                 <div className="text-xs" style={{ color: C.gray }}>Mínimo: {item.minThreshold} {item.unit}</div>
@@ -9047,7 +9099,7 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
         )}
         {canAct && estado !== "finalizada" && !selectMode && (
           <div className="absolute top-1.5 right-1.5" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setMenuOpen(v => !v)} className="w-6 h-6 rounded-md flex items-center justify-center" style={{ color: C.gray }}>
+            <button onClick={() => setMenuOpen(v => !v)} aria-label="Más opciones" title="Más opciones" className="w-6 h-6 rounded-md flex items-center justify-center" style={{ color: C.gray }}>
               <MoreVertical size={14} />
             </button>
             {menuOpen && (
@@ -10223,7 +10275,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
               {(form.etiquetas || []).map((tag, i) => (
                 <span key={i} className="text-xs font-medium px-2 py-1 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>
                   {tag}
-                  <button type="button" onClick={() => setForm(f => ({ ...f, etiquetas: f.etiquetas.filter((_, j) => j !== i) }))}><X size={11} /></button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, etiquetas: f.etiquetas.filter((_, j) => j !== i) }))} aria-label={`Quitar etiqueta ${tag}`} title="Quitar etiqueta"><X size={11} /></button>
                 </span>
               ))}
             </div>
@@ -10538,6 +10590,7 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
   const [msg, setMsg] = useState(null);
   const [search, setSearch] = useState("");
   const [topPeriod, setTopPeriod] = useState(30);
+  const [onlyMine, setOnlyMine] = useState(false);
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
 
@@ -10557,9 +10610,9 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invMovements, invItems, bodegas, shelves, tasks]);
 
-  const filtered = search.trim()
-    ? rows.filter(r => `${r.repuesto} ${r.sku} ${r.bodega} ${r.estanteria} ${r.por}`.toLowerCase().includes(search.toLowerCase()))
-    : rows;
+  const filtered = rows
+    .filter(r => !onlyMine || r.por === currentUser)
+    .filter(r => !search.trim() || `${r.repuesto} ${r.sku} ${r.bodega} ${r.estanteria} ${r.por}`.toLowerCase().includes(search.toLowerCase()));
 
   const topUsedParts = useMemo(() => {
     const cutoff = topPeriod ? Date.now() - topPeriod * 864e5 : null;
@@ -10671,8 +10724,13 @@ function InventoryMovementsView({ invMovements, invItems, bodegas, shelves, repo
         ))}
       </div>
 
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por repuesto, bodega, estantería o quién lo hizo…"
-        className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+      <div className="flex items-center gap-2 mb-3">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por repuesto, bodega, estantería o quién lo hizo…"
+          className="text-sm border rounded-md px-2 py-2 outline-none flex-1" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+        <button onClick={() => setOnlyMine(v => !v)} className="text-xs font-semibold px-3 rounded-md border shrink-0" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 38 }}>
+          {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
+        </button>
+      </div>
 
       <div className="overflow-x-auto rounded-lg border" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
@@ -10916,7 +10974,7 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSe
                       </button>
                     </div>
                   ) : (
-                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(eq.id); }} className="absolute top-2 right-2 p-1">
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(eq.id); }} aria-label="Eliminar equipo" title="Eliminar equipo" className="absolute top-2 right-2 p-1">
                       <Trash2 size={13} color={C.gray} />
                     </button>
                   )
@@ -11034,7 +11092,7 @@ function PartsPicker({ invItems, parts, onChange }) {
             return (
               <div key={i} className="flex items-center justify-between text-xs rounded-md px-2 py-1" style={{ background: C.bg }}>
                 <span style={{ color: C.ink }}>{item?.name || "Repuesto"} × {p.cantidad}</span>
-                <button type="button" onClick={() => removePart(i)}><X size={12} color={C.gray} /></button>
+                <button type="button" onClick={() => removePart(i)} aria-label="Quitar repuesto" title="Quitar repuesto"><X size={12} color={C.gray} /></button>
               </div>
             );
           })}
@@ -11805,6 +11863,7 @@ function RequiredFieldsSettings({ value, onChange }) {
 function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEmail, onLogSent, currentUser, onViewEquipoHistory }) {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
+  const [onlyMine, setOnlyMine] = useState(false);
   const [sort, setSort] = useState({ key: "fecha", dir: "desc" });
   const onSort = (key) => setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "fecha" ? "desc" : "asc" });
   const [emailTo, setEmailTo] = useState(reportEmail || "");
@@ -11827,7 +11886,7 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   useBackCloseModal(showExportModal, () => setShowExportModal(false));
 
   useEffect(() => { setEmailTo(reportEmail || ""); }, [reportEmail]);
-  useEffect(() => { setVisibleCount(20); }, [search, filterTipo, sort]); // si cambian los filtros, vuelve a empezar
+  useEffect(() => { setVisibleCount(20); }, [search, filterTipo, onlyMine, sort]); // si cambian los filtros, vuelve a empezar
   useEffect(() => { setReviewComment(""); setConfirmApprove(false); }, [selectedId]); // no arrastrar el comentario de un registro al siguiente
 
   const rows = useMemo(() => {
@@ -11841,13 +11900,14 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
   const filtered = useMemo(() => {
     const base = sortRows(rows.filter(r => {
       if (filterTipo && r.tipo !== filterTipo) return false;
+      if (onlyMine && r.tecnico !== currentUser) return false;
       if (!search.trim()) return true;
       return `${r.equipoNombre} ${r.sistema} ${r.tecnico} ${r.descripcion}`.toLowerCase().includes(search.toLowerCase());
     }), sort);
     // Los pendientes de revisión siempre van primero — es lo que el supervisor debe auditar hoy,
     // sin importar qué columna haya elegido para ordenar el resto de la lista.
     return [...base].sort((a, b) => (isPendingReview(a) ? 0 : 1) - (isPendingReview(b) ? 0 : 1));
-  }, [rows, filterTipo, search, sort]);
+  }, [rows, filterTipo, onlyMine, currentUser, search, sort]);
 
   const selected = filtered.find(r => r.id === selectedId) || rows.find(r => r.id === selectedId);
   const selectedIndex = mttoLog.findIndex(r => r.id === selectedId);
@@ -11943,6 +12003,9 @@ function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, reportEm
           <option value="">Todos los tipos</option>
           {MTTO_TIPOS.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
         </select>
+        <button onClick={() => setOnlyMine(v => !v)} className="text-xs font-semibold px-3 rounded-md border shrink-0" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
+          {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
+        </button>
         <button onClick={() => setShowExportModal(true)} title="Descargar o enviar en Excel" aria-label="Descargar o enviar en Excel" className="p-2 rounded-md shrink-0" style={{ background: C.bg }}>
           <Download size={16} color={C.ink} />
         </button>
@@ -13787,6 +13850,12 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
   // generaba un mes nuevo, por eso reglas que ya se habían dado — como lo de Quintana los sábados,
   // o lo de Félix y Zarith los domingos — no se estaban aplicando si no se volvían a escribir).
   const [standingRules, setStandingRules] = useState("");
+  const [standingRulesLog, setStandingRulesLog] = useState([]);
+  const [showRulesLog, setShowRulesLog] = useState(false);
+  // Guarda el último valor YA guardado en la base de datos (distinto de "standingRules", que
+  // cambia con cada tecla mientras se edita) — sirve para poder registrar el "antes" real cuando
+  // se guarda, sin depender de recargar la página.
+  const lastSavedRulesRef = useRef("");
   const [standingRulesLoaded, setStandingRulesLoaded] = useState(false);
   const [standingRulesSaving, setStandingRulesSaving] = useState(false);
   const [standingRulesSaved, setStandingRulesSaved] = useState(false);
@@ -13801,8 +13870,13 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
   useEffect(() => {
     (async () => {
       let saved = null;
+      let log = null;
       try { saved = await sGet("schedule-standing-rules", true); } catch { /* usa el texto por defecto */ }
-      setStandingRules(saved || DEFAULT_STANDING_RULES);
+      try { log = await sGet("standing-rules-log", true); } catch { /* sin historial por ahora */ }
+      const initial = saved || DEFAULT_STANDING_RULES;
+      setStandingRules(initial);
+      lastSavedRulesRef.current = initial;
+      setStandingRulesLog(log || []);
       setStandingRulesLoaded(true);
     })();
   }, []);
@@ -13811,6 +13885,16 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
     setStandingRulesSaving(true);
     try {
       await sSet("schedule-standing-rules", standingRules, true);
+      // Registro de quién cambió qué y cuándo — antes solo quedaba el texto final, sin rastro de
+      // qué decía antes ni quién lo tocó, así que un cambio accidental o mal entendido no se podía
+      // rastrear ni revertir con criterio.
+      if (standingRules !== lastSavedRulesRef.current) {
+        const entry = { before: lastSavedRulesRef.current, after: standingRules, by: currentUser || "—", at: nowIso() };
+        const nextLog = [entry, ...standingRulesLog].slice(0, 200);
+        setStandingRulesLog(nextLog);
+        sSet("standing-rules-log", nextLog, true); // no se espera a propósito, no debe atrasar el guardado principal
+      }
+      lastSavedRulesRef.current = standingRules;
       setStandingRulesSaved(true);
       setTimeout(() => setStandingRulesSaved(false), 2500);
     } catch { setAiError("No se pudieron guardar las reglas generales. Intenta de nuevo."); }
@@ -14210,12 +14294,31 @@ function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isAdmin, c
                   <>
                     <textarea value={standingRules} onChange={e => setStandingRules(e.target.value)} rows={5}
                       className="text-sm border rounded-md px-2 py-2 outline-none w-full mb-1" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button size="sm" variant="ghost" disabled={standingRulesSaving} onClick={saveStandingRules}>
                         {standingRulesSaving ? "Guardando…" : "Guardar reglas generales"}
                       </Button>
                       {standingRulesSaved && <span className="text-xs" style={{ color: C.green }}>Guardado ✓</span>}
+                      {standingRulesLog.length > 0 && (
+                        <button onClick={() => setShowRulesLog(v => !v)} className="text-xs font-semibold ml-auto" style={{ color: C.blue }}>
+                          {showRulesLog ? "Ocultar historial" : `Ver historial (${standingRulesLog.length})`}
+                        </button>
+                      )}
                     </div>
+                    {showRulesLog && (
+                      <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto rounded-md border p-2" style={{ borderColor: C.line }}>
+                        {standingRulesLog.map((h, i) => (
+                          <div key={i} className="text-xs rounded-md px-2 py-1.5" style={{ background: C.bg, color: C.ink }}>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <b>{h.by}</b>
+                              <span style={{ color: C.gray }}>{fmtDT(h.at)}</span>
+                            </div>
+                            <div style={{ color: C.gray }}>Antes: <span className="italic">{h.before ? h.before.slice(0, 140) + (h.before.length > 140 ? "…" : "") : "(vacío)"}</span></div>
+                            <div style={{ color: C.ink }}>Después: <span className="italic">{h.after.slice(0, 140)}{h.after.length > 140 ? "…" : ""}</span></div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 ) : <div className="text-xs" style={{ color: C.inkSoft }}>Cargando…</div>}
               </div>
@@ -14681,7 +14784,7 @@ function AiAssistantWidget({ contextSummary }) {
             <div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: C.ink }}>
               <Sparkles size={15} color={C.amber} /> Pregúntale a la app
             </div>
-            <button onClick={() => setOpen(false)}><X size={16} color={C.gray} /></button>
+            <button onClick={() => setOpen(false)} aria-label="Cerrar" title="Cerrar"><X size={16} color={C.gray} /></button>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.length === 0 && (
@@ -14762,7 +14865,7 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onN
   const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (fuelAlerts?.length || 0);
   return (
     <div className="relative">
-      <button onClick={() => setOpen(v => !v)} className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
+      <button onClick={() => setOpen(v => !v)} aria-label="Notificaciones" title="Notificaciones" className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
         <Bell size={16} color={C.ink} />
         {totalCount > 0 && (
           <span className={`absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${fuelAlerts?.length ? "animate-pulse" : ""}`} style={{ background: C.red, color: "#fff" }}>
@@ -15154,7 +15257,7 @@ function SystemCoverageGrid({ coverage, positiveLabel = "Trabajados", negativeLa
     <div className="mt-3 rounded-xl border p-4" style={{ borderColor: C.amber, background: C.panel }}>
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-bold" style={{ color: C.ink }}>{selectedRow.sistema} — qué falta y qué ya se hizo</div>
-        <button onClick={() => setSelected(null)}><X size={16} color={C.gray} /></button>
+        <button onClick={() => setSelected(null)} aria-label="Cerrar" title="Cerrar"><X size={16} color={C.gray} /></button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-lg p-3" style={{ background: C.redSoft }}>
@@ -15702,7 +15805,11 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
   };
   const canManageInv = isAdmin || isAlmacenista;
   const gerenciaLocked = isGerencia && !isAdmin && !isAlmacenista;
-  const modules = [
+  // Memoizado: esta lista (con sus badges/accesos) se recalculaba en CADA render — cada tecla
+  // escrita en el buscador, cada vez que se cerraba el aviso de firma, etc. — aunque nada de lo
+  // que la afecta (counts, roles) hubiera cambiado. Con 24 módulos no se nota a simple vista,
+  // pero es trabajo de sobra repetido en cada pantallazo del día.
+  const modules = useMemo(() => [
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los pisos mecánicos", access: true, group: "Operación en Campo" },
     { id: "coldrooms", label: "Cuartos fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange, group: "Operación en Campo" },
     { id: "meters", label: "Lecturas de medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies, group: "Operación en Campo" },
@@ -15727,7 +15834,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
-  ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m);
+  ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);
 
   const toggleFavorite = (id) => {
     setFavorites(prev => {
@@ -15746,58 +15855,92 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
       return next;
     });
   };
-  const favModules = modules.filter(m => favorites.includes(m.id) && m.access);
-  const recentModules = recent.map(id => modules.find(m => m.id === id)).filter(m => m && m.access && !favorites.includes(m.id)).slice(0, 4);
+  const favModules = useMemo(() => modules.filter(m => favorites.includes(m.id) && m.access), [modules, favorites]);
+  const recentModules = useMemo(() => recent.map(id => modules.find(m => m.id === id)).filter(m => m && m.access && !favorites.includes(m.id)).slice(0, 4), [recent, modules, favorites]);
   const searchNorm = normalizeSearchText(search.trim());
-  const visibleModules = (searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules).filter(m => m.access);
+  const visibleModules = useMemo(() => (searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules).filter(m => m.access), [modules, searchNorm]);
   const GROUP_COLORS = { "Operación en Campo": C.amber, "Gestión e Inventario": "#0ea5e9", "Reportes y Análisis": "#2563eb", "Administración": "#64748b" };
   const groupOrder = ["Operación en Campo", "Gestión e Inventario", "Reportes y Análisis", "Administración"];
-  const groupedModules = groupOrder.map(g => ({ group: g, items: visibleModules.filter(m => m.group === g) })).filter(g => g.items.length > 0);
+  const groupedModules = useMemo(() => groupOrder.map(g => ({ group: g, items: visibleModules.filter(m => m.group === g) })).filter(g => g.items.length > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleModules]);
 
-  const oldestIssue = activeIssuesList.length
-    ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
-    : null;
+  // Memoizado: dependen de activeIssuesList, que puede traer decenas de equipos — sin esto se
+  // recorría/ordenaba la lista completa en cada render del Inicio, no solo cuando cambiaba.
+  const oldestIssue = useMemo(() => (
+    activeIssuesList.length
+      ? activeIssuesList.reduce((a, b) => new Date(a.openedAt) < new Date(b.openedAt) ? a : b)
+      : null
+  ), [activeIssuesList]);
   // Equipos que llevan MUCHO tiempo fuera de servicio (más de un mes) — esto es distinto de
   // "fuera de servicio ahora" en general: acá lo que importa es avisar que algo lleva
   // demasiado tiempo sin resolverse, no solo que está dañado hoy.
-  const longDownIssues = activeIssuesList.filter(iss => hoursBetween(iss.openedAt, nowIso()) / 24 >= 30).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt));
+  const longDownIssues = useMemo(() => (
+    activeIssuesList.filter(iss => hoursBetween(iss.openedAt, nowIso()) / 24 >= 30).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt))
+  ), [activeIssuesList]);
 
   return (
     <div className="pb-20">
       {/* pb-20: deja espacio para que el botón flotante "Asistente IA" nunca tape
           contenido real (como "Ver todos los módulos") cuando se hace scroll hasta el final. */}
-      <div className="rounded-xl p-3.5 mb-4" style={{ background: C.steelDark }}>
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <div className="text-white text-lg font-semibold">Hola, {(currentUser || "").trim().split(/\s+/)[0]}</div>
-            <div className="text-sm hidden sm:block" style={{ color: "#8fa3b8" }}>
-              {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"}
+      <div className="relative rounded-xl p-3.5 mb-4 overflow-hidden" style={{ background: `linear-gradient(135deg, ${C.steelDark} 0%, #0a1521 100%)` }}>
+        <style>{`
+          @keyframes pmNodePulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+          @keyframes pmTracePulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.75; } }
+        `}</style>
+        {/* Fondo decorativo tipo placa de circuito iluminada — solo estético, no interactivo */}
+        <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" aria-hidden="true" style={{ pointerEvents: "none" }}>
+          <defs>
+            <pattern id="pmCircuitPattern" width="130" height="100" patternUnits="userSpaceOnUse">
+              <path d="M0 22 H38 V54 H76 V12 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 5s ease-in-out infinite" }} />
+              <path d="M16 100 V70 H58 V90 H96 V48 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 6.5s ease-in-out infinite 1.2s" }} />
+              <path d="M0 85 H24 V60 H0" fill="none" stroke="#245a91" strokeWidth="1" style={{ animation: "pmTracePulse 7s ease-in-out infinite 0.6s" }} />
+              <circle cx="38" cy="22" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.2s ease-in-out infinite" }} />
+              <circle cx="76" cy="54" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4s ease-in-out infinite 0.8s" }} />
+              <circle cx="58" cy="70" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.6s ease-in-out infinite 1.6s" }} />
+              <circle cx="96" cy="48" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4.4s ease-in-out infinite 0.3s" }} />
+            </pattern>
+            <radialGradient id="pmCircuitGlow" cx="82%" cy="15%" r="90%">
+              <stop offset="0%" stopColor="#3fa9ff" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#3fa9ff" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#pmCircuitPattern)" opacity="0.65" />
+          <rect width="100%" height="100%" fill="url(#pmCircuitGlow)" />
+        </svg>
+        <div className="relative z-10">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <div className="text-white text-lg font-semibold">Hola, {(currentUser || "").trim().split(/\s+/)[0]}</div>
+              <div className="text-sm hidden sm:block" style={{ color: "#8fa3b8" }}>
+                {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"}
+              </div>
             </div>
+            <Gauge size={28} color={C.amber} />
           </div>
-          <Gauge size={28} color={C.amber} />
+          {!gerenciaLocked && (tourProgress.total > 0 || tasksToday?.length > 0) && (() => {
+            const tasksDone = (tasksToday || []).filter(t => normalizeTaskState(t.estado) === "finalizada").length;
+            const tasksTotal = tasksToday?.length || 0;
+            const totalDone = tourProgress.done + tasksDone;
+            const totalExpected = tourProgress.total + tasksTotal;
+            const pct = totalExpected > 0 ? Math.round((totalDone / totalExpected) * 100) : 0;
+            return (
+              <div className="mt-3" title={`${tourProgress.done}/${tourProgress.total} pisos del recorrido · ${tasksDone}/${tasksTotal} tareas de hoy`}>
+                <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: "#8fa3b8" }}>
+                  <span>Progreso general del turno</span>
+                  <span className="font-semibold" style={{ color: pct >= 100 ? C.green : "#cdd8e2" }}>{pct}%</span>
+                </div>
+                <div className="w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)", height: 6 }}>
+                  <div className="h-full rounded-full" style={{
+                    width: `${Math.min(100, pct)}%`,
+                    background: pct >= 100 ? C.green : C.amber,
+                    transition: "width 700ms var(--ease-out)",
+                  }} />
+                </div>
+              </div>
+            );
+          })()}
         </div>
-        {!gerenciaLocked && (tourProgress.total > 0 || tasksToday?.length > 0) && (() => {
-          const tasksDone = (tasksToday || []).filter(t => normalizeTaskState(t.estado) === "finalizada").length;
-          const tasksTotal = tasksToday?.length || 0;
-          const totalDone = tourProgress.done + tasksDone;
-          const totalExpected = tourProgress.total + tasksTotal;
-          const pct = totalExpected > 0 ? Math.round((totalDone / totalExpected) * 100) : 0;
-          return (
-            <div className="mt-3" title={`${tourProgress.done}/${tourProgress.total} pisos del recorrido · ${tasksDone}/${tasksTotal} tareas de hoy`}>
-              <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: "#8fa3b8" }}>
-                <span>Progreso general del turno</span>
-                <span className="font-semibold" style={{ color: pct >= 100 ? C.green : "#cdd8e2" }}>{pct}%</span>
-              </div>
-              <div className="w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)", height: 6 }}>
-                <div className="h-full rounded-full" style={{
-                  width: `${Math.min(100, pct)}%`,
-                  background: pct >= 100 ? C.green : C.amber,
-                  transition: "width 700ms var(--ease-out)",
-                }} />
-              </div>
-            </div>
-          );
-        })()}
       </div>
 
       <WhatsNewBanner entries={changelogEntries} currentUser={currentUser} />
@@ -17064,7 +17207,7 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
             </div>
           </div>
           {isAdmin && (
-            <button onClick={() => setConfirmDeleteVisitId(v.id)} title="Borrar">
+            <button onClick={() => setConfirmDeleteVisitId(v.id)} aria-label="Borrar visita" title="Borrar visita">
               <Trash2 size={14} color={C.gray} />
             </button>
           )}
@@ -17700,6 +17843,8 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
   const [diagramForm, setDiagramForm] = useState({ nombre: "", componentesTexto: "" });
   const [diagramImageFile, setDiagramImageFile] = useState(null);
   const [savingDiagram, setSavingDiagram] = useState(false);
+  const [diagramSaveError, setDiagramSaveError] = useState(null);
+  const [procSaveError, setProcSaveError] = useState(null);
 
   const [confirmDeleteDiagram, setConfirmDeleteDiagram] = useState(false);
   const [confirmDeleteProcedure, setConfirmDeleteProcedure] = useState(false);
@@ -17733,26 +17878,37 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
 
   const doCreateDiagram = async () => {
     if (!diagramForm.nombre.trim()) return;
-    setSavingDiagram(true);
+    setSavingDiagram(true); setDiagramSaveError(null);
     const componentes = diagramForm.componentesTexto.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
       const [codigo, ...rest] = line.split("-");
       return { codigo: (codigo || "").trim(), nombre: rest.join("-").trim() || (codigo || "").trim(), tipo: "Otro" };
     });
-    await onCreateDiagram({ nombre: diagramForm.nombre.trim(), componentes, imageFile: diagramImageFile });
-    setDiagramForm({ nombre: "", componentesTexto: "" });
-    setDiagramImageFile(null);
-    setShowNewDiagram(false);
+    // Antes esto no tenía try/catch: si la foto no se podía subir (sin señal, por ejemplo), el
+    // botón se quedaba pegado en "Guardando…" para siempre, el formulario no se limpiaba, y no
+    // había ningún aviso de que algo había fallado.
+    try {
+      await onCreateDiagram({ nombre: diagramForm.nombre.trim(), componentes, imageFile: diagramImageFile });
+      setDiagramForm({ nombre: "", componentesTexto: "" });
+      setDiagramImageFile(null);
+      setShowNewDiagram(false);
+    } catch (e) {
+      setDiagramSaveError(e.message || "No se pudo guardar el diagrama — revisa tu conexión e intenta de nuevo.");
+    }
     setSavingDiagram(false);
   };
 
   const addStep = () => setProcSteps(s => [...s, { codigo: selected?.componentes?.[0]?.codigo || "", estado: "abierta", nota: "" }]);
   const doCreateProcedure = async () => {
     if (!procForm.nombre.trim() || procSteps.length === 0) return;
-    setSavingProc(true);
-    await onCreateProcedure({ diagramId: selected.id, nombre: procForm.nombre.trim(), color: procForm.color, componentePrincipal: procForm.componentePrincipal, pasos: procSteps.map((s, i) => ({ ...s, orden: i + 1 })) });
-    setProcForm({ nombre: "", color: PROCEDURE_COLORS[0].value, componentePrincipal: "" });
-    setProcSteps([]);
-    setShowNewProcedure(false);
+    setSavingProc(true); setProcSaveError(null);
+    try {
+      await onCreateProcedure({ diagramId: selected.id, nombre: procForm.nombre.trim(), color: procForm.color, componentePrincipal: procForm.componentePrincipal, pasos: procSteps.map((s, i) => ({ ...s, orden: i + 1 })) });
+      setProcForm({ nombre: "", color: PROCEDURE_COLORS[0].value, componentePrincipal: "" });
+      setProcSteps([]);
+      setShowNewProcedure(false);
+    } catch (e) {
+      setProcSaveError(e.message || "No se pudo guardar la secuencia — revisa tu conexión e intenta de nuevo.");
+    }
     setSavingProc(false);
   };
 
@@ -17797,6 +17953,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
                   placeholder={"V-1 - Válvula entrada a la torre #1\nV-2 - Válvula entrada a la torre #1\nBAC1 - Bomba de condensación #1"}
                   className={`${inputCls} w-full mb-2 resize-y font-mono`} style={inputStyle} />
                 <Button size="sm" disabled={savingDiagram} onClick={doCreateDiagram}>{savingDiagram ? "Guardando…" : "Crear diagrama"}</Button>
+                {diagramSaveError && <div className="text-xs mt-1.5" style={{ color: C.red }}>✗ {diagramSaveError}</div>}
               </div>
             )}
           </div>
@@ -17969,13 +18126,14 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
                 {DIAGRAM_ESTADOS.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
               </select>
               <input value={s.nota} onChange={e => setProcSteps(arr => arr.map((st, idx) => idx === i ? { ...st, nota: e.target.value } : st))} placeholder="Nota (opcional)" className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 100 }} />
-              <button onClick={() => setProcSteps(arr => arr.filter((_, idx) => idx !== i))}><X size={14} color={C.gray} /></button>
+              <button onClick={() => setProcSteps(arr => arr.filter((_, idx) => idx !== i))} aria-label="Quitar paso" title="Quitar paso"><X size={14} color={C.gray} /></button>
             </div>
           ))}
           <div className="flex items-center gap-2 mt-2">
             <Button size="sm" variant="ghost" onClick={addStep}>+ Agregar componente</Button>
             <Button size="sm" disabled={savingProc || !procForm.nombre.trim() || procSteps.length === 0} onClick={doCreateProcedure}>{savingProc ? "Guardando…" : "Guardar secuencia"}</Button>
           </div>
+          {procSaveError && <div className="text-xs mt-1.5" style={{ color: C.red }}>✗ {procSaveError}</div>}
         </div>
       )}
 
@@ -18055,7 +18213,7 @@ function DiagramsView({ diagrams, procedures, isAdmin, initialDiagramId, onConsu
                 <Badge tone="blue">{tappedComponent.codigo}</Badge>
                 <div className="text-base font-bold mt-1" style={{ color: C.ink }}>{tappedComponent.nombre}</div>
               </div>
-              <button onClick={() => setTappedComponent(null)}><X size={18} color={C.gray} /></button>
+              <button onClick={() => setTappedComponent(null)} aria-label="Cerrar" title="Cerrar"><X size={18} color={C.gray} /></button>
             </div>
             {(() => {
               const related = diagramProcedures.filter(p => p.componentePrincipal === tappedComponent.codigo);
@@ -19340,9 +19498,9 @@ function MyScheduleView({ employee, scheduleEntries, onGoToProfile }) {
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>{employee.cargo || "—"}</p>
 
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => setMonthDate(new Date(year, month - 1, 1))} className="p-1.5 rounded-md border" style={{ borderColor: C.line }}><ChevronLeft size={16} color={C.ink} /></button>
+        <button onClick={() => setMonthDate(new Date(year, month - 1, 1))} aria-label="Mes anterior" title="Mes anterior" className="p-1.5 rounded-md border" style={{ borderColor: C.line }}><ChevronLeft size={16} color={C.ink} /></button>
         <span className="text-sm font-semibold capitalize" style={{ color: C.ink }}>{monthLabel}</span>
-        <button onClick={() => setMonthDate(new Date(year, month + 1, 1))} className="p-1.5 rounded-md border" style={{ borderColor: C.line }}><ChevronRight size={16} color={C.ink} /></button>
+        <button onClick={() => setMonthDate(new Date(year, month + 1, 1))} aria-label="Mes siguiente" title="Mes siguiente" className="p-1.5 rounded-md border" style={{ borderColor: C.line }}><ChevronRight size={16} color={C.ink} /></button>
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-4">
@@ -21376,7 +21534,12 @@ export default function App() {
       setRoundsIndex(ri || []);
       setLatestValues(lv || {});
       setTankHistory(th || {});
-      setReportEmail(email?.value || "");
+      // Si NUNCA se ha guardado un correo de reportes (no existe el registro todavía), se usa uno
+      // por defecto en vez de dejarlo vacío — así los recorridos/reportes automáticos no se quedan
+      // sin destinatario solo porque nadie entró al Panel de administrador desde el día uno.
+      // Ojo: si el registro SÍ existe pero un admin lo dejó vacío a propósito (para apagar el
+      // envío automático), eso se respeta tal cual — no se le vuelve a poner el correo por defecto.
+      setReportEmail(email ? (email.value || "") : "pisosmecanicosapp@gmail.com");
       setReportWhatsapp(wa?.value || "");
       setSentReports(sr || []);
       setLastTour(lt || null);
@@ -23436,6 +23599,16 @@ export default function App() {
     );
   }
 
+  // La contraseña se la puso un administrador (reset o cuenta nueva) — se obliga a cambiarla
+  // por una propia antes de dejar entrar al resto de la app, para que el admin no quede
+  // sabiendo la clave real de la persona de ahí en adelante.
+  if (account.must_change_password) {
+    return <ForcedPasswordChangeScreen onDone={async () => {
+      await supabase.from("profiles").update({ must_change_password: false }).eq("id", currentUser);
+      setProfiles(m => ({ ...m, [currentUser]: { ...m[currentUser], must_change_password: false } }));
+    }} onLogout={logout} />;
+  }
+
   if (printMode) {
     return <PrintableReport activeIssues={activeIssues} issueHistory={issueHistory} roundsIndex={roundsIndex} onClose={() => setPrintMode(false)} />;
   }
@@ -23656,7 +23829,7 @@ export default function App() {
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="pm-safe-top flex items-center justify-between px-4 py-3 border-b gap-2 flex-wrap" style={{ background: C.panel, borderColor: C.line }}>
-          <button className="hidden sm:flex lg:hidden items-center justify-center" onClick={() => setSidebarOpen(v => !v)} style={{ minWidth: 44, minHeight: 44 }}>
+          <button className="hidden sm:flex lg:hidden items-center justify-center" onClick={() => setSidebarOpen(v => !v)} aria-label={sidebarOpen ? "Ocultar menú" : "Mostrar menú"} title={sidebarOpen ? "Ocultar menú" : "Mostrar menú"} style={{ minWidth: 44, minHeight: 44 }}>
             <ChevronDown size={20} color={C.ink} style={{ transform: sidebarOpen ? "rotate(180deg)" : "none" }} />
           </button>
           <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>

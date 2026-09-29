@@ -14,7 +14,7 @@ export default defineConfig({
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
         lang: "es",
-        name: "QuinTech — Hyatt Regency Cartagena",
+        name: "QuinTech — Gestión de Mantenimiento",
         short_name: "QuinTech",
         description: "Revisión diaria de equipos, cuartos fríos, medidores, inventario, mantenimiento y horarios.",
         start_url: "/",

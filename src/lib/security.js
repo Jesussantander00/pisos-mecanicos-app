@@ -110,7 +110,7 @@ export function isValidEmail(value) {
 
 /**
  * Si se configuró ALLOWED_REPORT_DOMAINS en Vercel (lista separada por comas, ej.
- * "gmail.com,hyattregencycartagena.com"), solo se permite mandar correos a esos dominios.
+ * "gmail.com,midominio.com"), solo se permite mandar correos a esos dominios.
  * Si NO se configuró, no se restringe nada (para no romper el uso actual, donde cualquier
  * correo válido sirve de destino) — pero queda documentado en send-report.js como la forma
  * de cerrar esa puerta el día que se quiera.

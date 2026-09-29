@@ -6678,12 +6678,12 @@ function buildIcsForEmployee(employee, daysIso, entriesByEmployee) {
       `DTSTART:${start}`,
       `DTEND:${end}`,
       `SUMMARY:Turno — QuinTech`,
-      `DESCRIPTION:Hyatt Regency Cartagena, Ingeniería`,
+      `DESCRIPTION:Turno de mantenimiento — QuinTech`,
       "END:VEVENT"
     );
   });
   return [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//QuinTech - Hyatt Regency Cartagena//ES", "CALSCALE:GREGORIAN",
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//QuinTech//ES", "CALSCALE:GREGORIAN",
     ...events,
     "END:VCALENDAR",
   ].join("\r\n");

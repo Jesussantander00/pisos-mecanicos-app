@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const prompt = `Eres un asistente que arma borradores de horario mensual para el equipo de ingeniería/mantenimiento de un hotel (Hyatt Regency Cartagena). Trabajas con datos en bruto, no le hables al usuario directamente en el JSON final, solo en el campo "notas".
+  const prompt = `Eres un asistente que arma borradores de horario mensual para el equipo de ingeniería/mantenimiento de un hotel. Trabajas con datos en bruto, no le hables al usuario directamente en el JSON final, solo en el campo "notas".
 
 MES A PROGRAMAR: ${monthLabel}
 IMPORTANTE: este pedido cubre SOLO UNA PARTE del mes (los días de la lista de abajo), no el mes completo — el resto se arma en otro(s) pedido(s) aparte. No asumas que los días que no aparecen aquí no existen; simplemente no son tu responsabilidad en este pedido.

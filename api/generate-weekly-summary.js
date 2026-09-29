@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const prompt = `Eres un asistente que le escribe a la gerencia de un hotel (Hyatt Regency Cartagena) un resumen semanal breve de lo que pasó con el equipo de ingeniería/mantenimiento. Escribe en español de Colombia, natural, como si se lo estuvieras contando a alguien — no un reporte técnico frío ni una lista de viñetas sin conexión. 3-6 frases en 1-2 párrafos cortos, nada más.
+  const prompt = `Eres un asistente que le escribe a la gerencia de un hotel un resumen semanal breve de lo que pasó con el equipo de ingeniería/mantenimiento. Escribe en español de Colombia, natural, como si se lo estuvieras contando a alguien — no un reporte técnico frío ni una lista de viñetas sin conexión. 3-6 frases en 1-2 párrafos cortos, nada más.
 
 SEMANA: ${weekLabel}
 

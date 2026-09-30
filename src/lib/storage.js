@@ -158,10 +158,28 @@ function compressImage(file, maxWidth = 1280, quality = 0.7) {
   });
 }
 
+// Los buckets "maintenance-photos" y "maintenance-videos" son PRIVADOS: ya no se puede ver una
+// foto o video solo por tener el enlace público. En su lugar, cada foto/video nuevo se sube y de
+// una se le pide a Supabase un "enlace firmado" — un enlace que sí funciona para ver el archivo,
+// pero que trae una firma con fecha de vencimiento (aquí puesto a 10 años, para que en la práctica
+// no se note ninguna diferencia con un enlace normal). Si algún día hiciera falta revocar el
+// acceso a un archivo puntual antes de que venza su firma, hay que borrarlo o reemplazarlo.
+const SIGNED_URL_SECONDS = 10 * 365 * 24 * 60 * 60; // 10 años
+
+async function getSignedUrl(bucket, path) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGNED_URL_SECONDS);
+  if (error) {
+    console.error(`getSignedUrl error (${bucket}):`, error);
+    throw new Error(`El archivo se subió, pero no se pudo generar el enlace para verlo: ${error.message || "error de conexión"}.`);
+  }
+  return data.signedUrl;
+}
+
 /**
- * Sube una foto al bucket "maintenance-photos" de Supabase Storage y devuelve su URL pública.
- * El bucket lo tiene que crear un administrador UNA sola vez desde el panel de Supabase
- * (Storage → New bucket → nombre exacto "maintenance-photos" → marcarlo como público).
+ * Sube una foto al bucket privado "maintenance-photos" de Supabase Storage y devuelve un enlace
+ * firmado (con vigencia de 10 años) para poder verla. El bucket lo tiene que crear un
+ * administrador UNA sola vez desde el panel de Supabase (Storage → New bucket → nombre exacto
+ * "maintenance-photos" → dejarlo PRIVADO, no público).
  */
 export async function uploadPhoto(file, pathPrefix = "mtto") {
   const compressed = await compressImage(file);
@@ -176,17 +194,17 @@ export async function uploadPhoto(file, pathPrefix = "mtto") {
     console.error("uploadPhoto error:", error);
     throw new Error(`No se pudo subir la foto: ${error.message || "error de conexión"}. ¿Ya creaste el bucket "maintenance-photos" en Supabase Storage?`);
   }
-  const { data } = supabase.storage.from("maintenance-photos").getPublicUrl(path);
-  return data.publicUrl;
+  return getSignedUrl("maintenance-photos", path);
 }
 
 /**
- * Sube un video (sin comprimir como si fuera foto) al bucket "maintenance-videos" de Supabase
- * Storage y devuelve su URL pública. El bucket lo tiene que crear un administrador UNA sola vez
- * desde el panel de Supabase (Storage → New bucket → nombre exacto "maintenance-videos" →
- * marcarlo como público). Límite práctico: revisa el límite de tamaño de archivo de tu plan de
- * Supabase (por defecto suele ser 50 MB por archivo en el plan gratuito) — para videos cortos
- * de referencia (1-2 minutos grabados en celular) normalmente alcanza sin problema.
+ * Sube un video (sin comprimir como si fuera foto) al bucket privado "maintenance-videos" de
+ * Supabase Storage y devuelve un enlace firmado (con vigencia de 10 años) para poder verlo. El
+ * bucket lo tiene que crear un administrador UNA sola vez desde el panel de Supabase (Storage →
+ * New bucket → nombre exacto "maintenance-videos" → dejarlo PRIVADO, no público). Límite
+ * práctico: revisa el límite de tamaño de archivo de tu plan de Supabase (por defecto suele ser
+ * 50 MB por archivo en el plan gratuito) — para videos cortos de referencia (1-2 minutos grabados
+ * en celular) normalmente alcanza sin problema.
  */
 export async function uploadVideo(file, pathPrefix = "equipo") {
   const ext = (file.name.match(/\.([a-zA-Z0-9]+)$/) || [, "mp4"])[1].toLowerCase();
@@ -200,8 +218,7 @@ export async function uploadVideo(file, pathPrefix = "equipo") {
     console.error("uploadVideo error:", error);
     throw new Error(`No se pudo subir el video: ${error.message || "error de conexión"}. ¿Ya creaste el bucket "maintenance-videos" en Supabase Storage?`);
   }
-  const { data } = supabase.storage.from("maintenance-videos").getPublicUrl(path);
-  return data.publicUrl;
+  return getSignedUrl("maintenance-videos", path);
 }
 
 /* ------------------------------------------------------------------------------------------

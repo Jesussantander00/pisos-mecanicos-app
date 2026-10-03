@@ -259,6 +259,9 @@ export default async function handler(req, res) {
           hasTab: /\t/.test(password),
           isAllPrintableAscii: /^[\x20-\x7E]+$/.test(password),
           trimmedLength: password.trim().length,
+          // "Forma" de cada carácter (Mayúscula/minúscula/Dígito/Símbolo) SIN decir cuál es —
+          // para poder comparar contra lo que realmente se tecleó sin exponer el valor.
+          charShape: password.split("").map(c => /[A-Z]/.test(c) ? "U" : /[a-z]/.test(c) ? "L" : /[0-9]/.test(c) ? "D" : "S").join(""),
         } : null;
         const usernameChecks = username ? {
           length: username.length,

@@ -155,11 +155,13 @@ async function fetchAllRooms() {
         sort: JSON.stringify([{ property: "RoomName", direction: "ASC" }]),
       },
     });
+    console.log("[telkonet debug] fetchAllRooms page", { start, dataIsNull: data === null, isArray: Array.isArray(data?.data), length: data?.data?.length, filterCount: data?.filterCount, totalCount: data?.totalCount });
     if (!data || !Array.isArray(data.data) || data.data.length === 0) break;
     all = all.concat(data.data);
     total = Number(data.filterCount || data.totalCount || all.length);
     start += limit;
   }
+  console.log("[telkonet debug] fetchAllRooms done", { allLength: all.length });
   const seen = new Set();
   const unique = [];
   for (const room of all) {

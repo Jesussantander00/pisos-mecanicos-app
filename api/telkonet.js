@@ -133,6 +133,9 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true,
 
   let data = null;
   try { data = JSON.parse(text); } catch { /* no era JSON — probablemente sesión vencida */ }
+  if (!data) {
+    console.log("[telkonet debug] respuesta no-JSON", { path, status: resp.status, textLength: text.length, snippet: text.slice(0, 1500) });
+  }
 
   if (!data && retry) {
     await getCookie(true);
@@ -288,6 +291,7 @@ async function fetchDataLog(deviceId, limit = 40) {
       _nodeid: NODE_ID,
     },
   });
+  console.log("[telkonet debug] fetchDataLog", { deviceId, dataIsNull: data === null, isArray: Array.isArray(data?.data), length: data?.data?.length, keys: data ? Object.keys(data) : null, totalCount: data?.totalCount });
   return (data?.data || []).map(r => ({
     dateTime: r.DateTime,
     profileId: r.CurrentlyActiveProfileType,

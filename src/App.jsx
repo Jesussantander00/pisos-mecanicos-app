@@ -17003,6 +17003,7 @@ function HVACView({ isAdmin, isGerencia }) {
   const [stateRoom, setStateRoom] = useState(null); // { RoomID, RoomName, choice }
   const [busyRoomId, setBusyRoomId] = useState(null);
   const [flash, setFlash] = useState(null);
+  const [expandedRoomId, setExpandedRoomId] = useState(null);
 
   const canControl = isAdmin || isGerencia;
 
@@ -17031,13 +17032,14 @@ function HVACView({ isAdmin, isGerencia }) {
     : rooms;
 
   const openHistory = async (room) => {
-    setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: true, records: [], error: null });
+    setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: true, graphs: {}, startDate: null, endDate: null, error: null });
     try {
       const headers = await authHeaders();
       const resp = await fetch(`/api/telkonet?action=history&roomId=${encodeURIComponent(room.RoomID)}`, { headers });
       const data = await resp.json();
       if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el historial.");
-      setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: false, records: data.history || [], error: null });
+      const h = data.history || {};
+      setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: false, graphs: h.graphs || {}, startDate: h.startDate || null, endDate: h.endDate || null, error: null });
     } catch (e) {
       setHistoryRoom(h => h && ({ ...h, loading: false, error: e.message || "No se pudo cargar el historial." }));
     }
@@ -17122,6 +17124,9 @@ function HVACView({ isAdmin, isGerencia }) {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button size="sm" variant="ghost" onClick={() => openHistory(r)}>Historial</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setExpandedRoomId(id => id === r.RoomID ? null : r.RoomID)}>
+                      {expandedRoomId === r.RoomID ? "Menos datos" : "Más datos"}
+                    </Button>
                     {canControl && (
                       <select
                         value=""
@@ -17138,6 +17143,22 @@ function HVACView({ isAdmin, isGerencia }) {
                       </select>
                     )}
                   </div>
+                  {expandedRoomId === r.RoomID && (
+                    <div className="mt-2.5 pt-2.5 border-t grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]" style={{ borderColor: C.line, color: C.inkSoft }}>
+                      <span>Ocupada: <b style={{ color: C.ink }}>{r.Occupied === "1" ? "Sí" : r.Occupied === "0" ? "No" : "—"}</b></span>
+                      <span>Config. HVAC: <b style={{ color: C.ink }}>{r.HVACConfigName || "—"}</b></span>
+                      <span>Termostatos: <b style={{ color: C.ink }}>{r.NumThermostat ?? "—"}</b></span>
+                      <span>EcoGuard: <b style={{ color: C.ink }}>{r.NumEcoGuard ?? "—"}</b></span>
+                      <span>EcoSwitch: <b style={{ color: C.ink }}>{r.NumEcoSwitch ?? "—"}</b></span>
+                      <span>Alertas TKO: <b style={{ color: r.TKOAlertCount > 0 ? C.red : C.ink }}>{r.TKOAlertCount ?? "—"}</b></span>
+                      <span>Notas: <b style={{ color: C.ink }}>{r.NoteCount ?? "—"}</b></span>
+                      <span>Tickets: <b style={{ color: C.ink }}>{r.TicketCount ?? "—"}</b></span>
+                      <span>Cola de comandos: <b style={{ color: C.ink }}>{r.CommandQueueCount ?? "—"}</b></span>
+                      <span>Volts: <b style={{ color: C.ink }}>{r.Volts ?? "—"}</b></span>
+                      <span>Amps: <b style={{ color: C.ink }}>{r.Amps ?? "—"}</b></span>
+                      <span>Watts: <b style={{ color: C.ink }}>{r.Watts ?? "—"}</b></span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -17171,23 +17192,25 @@ function HVACView({ isAdmin, isGerencia }) {
       {/* Historial de la habitación */}
       {historyRoom && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={() => setHistoryRoom(null)}>
-          <div className="rounded-xl max-w-md w-full p-5 max-h-[80vh] overflow-y-auto" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
+          <div className="rounded-xl max-w-2xl w-full p-5 max-h-[85vh] overflow-y-auto" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
               <h3 className="text-base font-semibold" style={{ color: C.ink }}>Historial — {historyRoom.RoomName}</h3>
               <button onClick={() => setHistoryRoom(null)} style={{ color: C.gray }}><X size={18} /></button>
             </div>
+            {!historyRoom.loading && !historyRoom.error && historyRoom.startDate && (
+              <p className="text-xs mb-3" style={{ color: C.gray }}>{historyRoom.startDate} — {historyRoom.endDate}</p>
+            )}
             {historyRoom.loading && <div className="text-sm text-center py-6" style={{ color: C.gray }}>Cargando…</div>}
             {historyRoom.error && <div className="rounded-md px-3 py-2 text-sm" style={{ background: C.redSoft, color: C.red }}>{historyRoom.error}</div>}
             {!historyRoom.loading && !historyRoom.error && (
-              historyRoom.records.length === 0 ? (
+              Object.keys(historyRoom.graphs || {}).length === 0 ? (
                 <div className="text-sm text-center py-6" style={{ color: C.gray }}>Sin historial reciente.</div>
               ) : (
-                <div className="space-y-1.5">
-                  {historyRoom.records.map((rec, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: i % 2 === 0 ? "transparent" : (C.panelSoft || "#f8fafc") }}>
-                      <span style={{ color: C.inkSoft }}>{rec.DateTime}</span>
-                      <span style={{ color: C.ink }}>{rec.Temperature != null ? `${rec.Temperature}°F` : "—"} / set {rec.UserSetPoint != null ? `${rec.UserSetPoint}°F` : "—"}</span>
-                      <span style={{ color: C.gray }}>{rec.ThermostatMode || ""}</span>
+                <div className="space-y-4">
+                  {Object.entries(historyRoom.graphs).map(([key, g]) => (
+                    <div key={key}>
+                      <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>{g.label || key}</div>
+                      <img src={g.image} alt={g.label || key} className="w-full rounded-md border" style={{ borderColor: C.line }} />
                     </div>
                   ))}
                 </div>

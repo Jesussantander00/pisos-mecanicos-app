@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, User, LogOut, ChevronRight, ChevronDown, ChevronLeft,
   Droplets, ClipboardList, History, Gauge, Wrench, PlusCircle, X, Save, Search,
   Building2, ShieldCheck, MessageCircle, Download, Send, Mail, TrendingUp, TrendingDown, Snowflake, Zap, CalendarDays,
-  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical, Menu as MenuIcon, Eye
+  Package, Warehouse, QrCode, PackageMinus, PackagePlus, Trash2, ArrowLeft, Users, Home, Bell, ClipboardCheck, Moon, Sun, RotateCcw, Camera, Mic, Sparkles, Upload, WifiOff, Pencil, Cloud, CloudOff, Layers, Settings as SettingsIcon, BookOpen, Video, List, LayoutGrid, MoreVertical, Menu as MenuIcon, Eye, Thermometer
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
@@ -171,7 +171,7 @@ try {
 
 const STATUS_OPTS = ["Automático", "Manual", "Apagado"];
 // Vistas a las que SÍ puede entrar una cuenta marcada como "Gerencia" pura (sin admin/almacenista) — todo lo demás queda bloqueado.
-const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics"];
+const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics", "hvac"];
 
 /* ============================================================
    DATOS: PISOS Y EQUIPOS (según formato original, verificado
@@ -15847,6 +15847,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
+    { id: "hvac", label: "Clima de habitaciones (BMS)", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin || isGerencia, group: "Operación en Campo" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);
@@ -16968,6 +16969,232 @@ function FuelTanksView({ latestValues, fuelHistory, onManualUpdate, onNavigate }
             })}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/** Nombre a mostrar + color según el estado activo de una habitación en Telkonet. */
+function hvacStateTone(profileName) {
+  const p = (profileName || "").toUpperCase();
+  if (p === "VIP") return { color: "#a855f7", bg: "#f3e8ff" };
+  if (p.includes("CHECK IN")) return { color: C.blue, bg: C.blueSoft || "#e0f2fe" };
+  if (p.includes("CHECK OUT")) return { color: C.gray, bg: "#f1f5f9" };
+  return { color: C.amber, bg: "#fef3c7" };
+}
+
+/**
+ * Clima de habitaciones (BMS Telkonet) — tabla en vivo de temperatura/estado de todas las
+ * habitaciones (aires acondicionados), con historial e, para administración/gerencia, la
+ * posibilidad de cambiar el estado activo (VIP, Check IN, Check OUT) directamente desde acá,
+ * en vez de tener que entrar al panel de Telkonet por separado.
+ *
+ * Todo pasa por /api/telkonet (ver ese archivo) — las credenciales de Telkonet nunca tocan el
+ * navegador. El cambio de estado SÍ mueve equipo físico real, así que pide confirmación explícita
+ * y el propio servidor vuelve a comprobar que quien llama es admin/gerencia antes de ejecutarlo.
+ */
+function HVACView({ isAdmin, isGerencia }) {
+  const [rooms, setRooms] = useState([]);
+  const [profileTypes, setProfileTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [historyRoom, setHistoryRoom] = useState(null); // { RoomID, RoomName }
+  const [stateRoom, setStateRoom] = useState(null); // { RoomID, RoomName, choice }
+  const [busyRoomId, setBusyRoomId] = useState(null);
+  const [flash, setFlash] = useState(null);
+
+  const canControl = isAdmin || isGerencia;
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const headers = await authHeaders();
+      const resp = await fetch("/api/telkonet?action=rooms", { headers });
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el estado de las habitaciones.");
+      setRooms(data.rooms || []);
+      setProfileTypes(data.profileTypes || []);
+    } catch (e) {
+      setError(e.message || "No se pudo conectar con Telkonet.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const searchNorm = normalizeSearchText(search.trim());
+  const filtered = searchNorm
+    ? rooms.filter(r => normalizeSearchText(r.RoomName || "").includes(searchNorm) || normalizeSearchText(r.ProfileName || "").includes(searchNorm))
+    : rooms;
+
+  const openHistory = async (room) => {
+    setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: true, records: [], error: null });
+    try {
+      const headers = await authHeaders();
+      const resp = await fetch(`/api/telkonet?action=history&roomId=${encodeURIComponent(room.RoomID)}`, { headers });
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el historial.");
+      setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: false, records: data.history || [], error: null });
+    } catch (e) {
+      setHistoryRoom(h => h && ({ ...h, loading: false, error: e.message || "No se pudo cargar el historial." }));
+    }
+  };
+
+  const confirmSetState = async () => {
+    if (!stateRoom?.choice) return;
+    setBusyRoomId(stateRoom.RoomID);
+    try {
+      const headers = await authHeaders();
+      const resp = await fetch("/api/telkonet", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          action: "setState",
+          roomId: stateRoom.RoomID,
+          profileTypeId: stateRoom.choice.id,
+          profileTypeName: stateRoom.choice.name,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) throw new Error(data.message || "Telkonet no confirmó el cambio.");
+      setFlash({ ok: true, msg: `${stateRoom.RoomName}: estado cambiado a ${stateRoom.choice.name}.` });
+      setStateRoom(null);
+      await load();
+    } catch (e) {
+      setFlash({ ok: false, msg: e.message || "No se pudo cambiar el estado." });
+    } finally {
+      setBusyRoomId(null);
+      setTimeout(() => setFlash(null), 4000);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Clima de habitaciones (BMS)</h2>
+        <Button size="sm" variant="ghost" icon={RotateCcw} onClick={load} disabled={loading}>Actualizar</Button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        Temperatura y estado de los aires acondicionados de todas las habitaciones, en vivo desde Telkonet EcoCentral.
+        {canControl ? " Puedes cambiar el estado (VIP, Check IN, Check OUT) de cualquier habitación desde aquí." : " Para cambiar el estado de una habitación, pide a un administrador o a gerencia."}
+      </p>
+
+      {flash && (
+        <div className="rounded-md px-3 py-2 text-sm mb-3" style={{ background: flash.ok ? C.greenSoft || "#dcfce7" : C.redSoft, color: flash.ok ? C.green : C.red }}>
+          {flash.msg}
+        </div>
+      )}
+
+      <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar habitación o estado (VIP, Check IN...)"
+        className="w-full text-sm border rounded-md px-3 py-2 outline-none mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+
+      {loading && <div className="text-sm text-center py-8" style={{ color: C.gray }}>Cargando habitaciones…</div>}
+      {error && !loading && (
+        <div className="rounded-md px-3 py-2 text-sm mb-3" style={{ background: C.redSoft, color: C.red }}>
+          {error} <button className="underline ml-1" onClick={load}>Reintentar</button>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          <div className="text-xs mb-2" style={{ color: C.gray }}>{filtered.length} de {rooms.length} habitaciones</div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {filtered.map(r => {
+              const tone = hvacStateTone(r.ProfileName);
+              const hasAlert = Number(r.AlertCount || 0) > 0;
+              return (
+                <div key={r.RoomID} className="rounded-lg border p-3" style={{ borderColor: hasAlert ? C.red : C.line, background: C.panel, color: C.ink }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm mb-1.5">
+                    <span style={{ color: C.ink }}>{r.Temperature != null ? `${r.Temperature}°F` : "—"} <span className="text-xs" style={{ color: C.gray }}>amb.</span></span>
+                    <span style={{ color: C.gray }}>·</span>
+                    <span style={{ color: C.ink }}>{r.UserSetPoint != null ? `${Number(r.UserSetPoint)}°F` : "—"} <span className="text-xs" style={{ color: C.gray }}>set</span></span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] mb-2" style={{ color: C.gray }}>
+                    <span>Batería {r.BatteryPercent != null ? `${r.BatteryPercent}%` : "—"}</span>
+                    {hasAlert && <span style={{ color: C.red }}>· {r.AlertCount} alerta(s)</span>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button size="sm" variant="ghost" onClick={() => openHistory(r)}>Historial</Button>
+                    {canControl && (
+                      <select
+                        value=""
+                        disabled={busyRoomId === r.RoomID}
+                        onChange={e => {
+                          const choice = profileTypes.find(p => p.id === e.target.value);
+                          if (choice) setStateRoom({ RoomID: r.RoomID, RoomName: r.RoomName, current: r.ProfileName, choice });
+                        }}
+                        className="text-xs border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+                        <option value="" disabled>{busyRoomId === r.RoomID ? "Cambiando…" : "Cambiar estado a…"}</option>
+                        {profileTypes.filter(p => p.name !== r.ProfileName).map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {filtered.length === 0 && <div className="text-sm text-center py-8" style={{ color: C.gray }}>Sin resultados para "{search}".</div>}
+        </>
+      )}
+
+      {/* Confirmación antes de cambiar el estado — esto mueve equipo real del hotel. */}
+      {stateRoom && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={() => setStateRoom(null)}>
+          <div className="rounded-xl max-w-sm w-full p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle size={20} color={C.amber} />
+              <h3 className="text-base font-semibold" style={{ color: C.ink }}>Confirmar cambio de estado</h3>
+            </div>
+            <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+              Vas a cambiar la habitación <b>{stateRoom.RoomName}</b> de <b>{stateRoom.current || "—"}</b> a <b>{stateRoom.choice.name}</b>.
+              Esto cambia de verdad el aire acondicionado de esa habitación — confirma solo si estás seguro.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button onClick={confirmSetState} disabled={busyRoomId === stateRoom.RoomID}>
+                {busyRoomId === stateRoom.RoomID ? "Cambiando…" : "Sí, cambiar"}
+              </Button>
+              <Button variant="ghost" onClick={() => setStateRoom(null)}>Cancelar</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Historial de la habitación */}
+      {historyRoom && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={() => setHistoryRoom(null)}>
+          <div className="rounded-xl max-w-md w-full p-5 max-h-[80vh] overflow-y-auto" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold" style={{ color: C.ink }}>Historial — {historyRoom.RoomName}</h3>
+              <button onClick={() => setHistoryRoom(null)} style={{ color: C.gray }}><X size={18} /></button>
+            </div>
+            {historyRoom.loading && <div className="text-sm text-center py-6" style={{ color: C.gray }}>Cargando…</div>}
+            {historyRoom.error && <div className="rounded-md px-3 py-2 text-sm" style={{ background: C.redSoft, color: C.red }}>{historyRoom.error}</div>}
+            {!historyRoom.loading && !historyRoom.error && (
+              historyRoom.records.length === 0 ? (
+                <div className="text-sm text-center py-6" style={{ color: C.gray }}>Sin historial reciente.</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {historyRoom.records.map((rec, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: i % 2 === 0 ? "transparent" : (C.panelSoft || "#f8fafc") }}>
+                      <span style={{ color: C.inkSoft }}>{rec.DateTime}</span>
+                      <span style={{ color: C.ink }}>{rec.Temperature != null ? `${rec.Temperature}°F` : "—"} / set {rec.UserSetPoint != null ? `${rec.UserSetPoint}°F` : "—"}</span>
+                      <span style={{ color: C.gray }}>{rec.ThermostatMode || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -24142,6 +24369,9 @@ export default function App() {
           {view === "hotsos-import" && isAdmin && (
             <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
+          )}
+          {view === "hvac" && (isAdmin || isGerencia) && (
+            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}

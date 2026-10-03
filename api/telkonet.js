@@ -159,7 +159,8 @@ async function fetchAllRooms() {
     const data = await telkonetFetch("modules/ecosmart/ajax/data_roomstatus.php", {
       params: {
         nodeid: NODE_ID,
-        filter: "",
+        _nodeid: NODE_ID,
+        filter: "[]",
         page: String(Math.floor(start / limit) + 1),
         start: String(start),
         limit: String(limit),

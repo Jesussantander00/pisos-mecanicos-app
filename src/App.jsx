@@ -17004,6 +17004,7 @@ function HVACView({ isAdmin, isGerencia }) {
   const [busyRoomId, setBusyRoomId] = useState(null);
   const [flash, setFlash] = useState(null);
   const [expandedRoomId, setExpandedRoomId] = useState(null);
+  const [viewMode, setViewMode] = useState("list"); // "list" | "dashboard"
 
   const canControl = isAdmin || isGerencia;
 
@@ -17030,6 +17031,34 @@ function HVACView({ isAdmin, isGerencia }) {
   const filtered = searchNorm
     ? rooms.filter(r => normalizeSearchText(r.RoomName || "").includes(searchNorm) || normalizeSearchText(r.ProfileName || "").includes(searchNorm))
     : rooms;
+
+  // Estadísticas del Dashboard — todo se calcula de lo que ya trae /api/telkonet?action=rooms,
+  // sin pedirle nada extra a Telkonet (que ya es lento con 361 habitaciones).
+  const dashboard = useMemo(() => {
+    const occupiedCount = rooms.filter(r => r.Occupied && r.Occupied !== "0").length;
+    const vipCount = rooms.filter(r => r.ProfileName === "VIP").length;
+    const checkInCount = rooms.filter(r => (r.ProfileName || "").includes("Check IN")).length;
+    const checkOutCount = rooms.filter(r => (r.ProfileName || "").includes("Check OUT") && r.ProfileName !== "VIP").length;
+    const lowBattery = rooms.filter(r => r.BatteryPercent != null && Number(r.BatteryPercent) >= 0 && Number(r.BatteryPercent) < 30)
+      .sort((a, b) => Number(a.BatteryPercent) - Number(b.BatteryPercent));
+    const withAlerts = rooms.filter(r => Number(r.AlertCount || 0) > 0 || Number(r.TKOAlertCount || 0) > 0)
+      .sort((a, b) => (Number(b.AlertCount || 0) + Number(b.TKOAlertCount || 0)) - (Number(a.AlertCount || 0) + Number(a.TKOAlertCount || 0)));
+    const tempIssues = rooms
+      .map(r => ({ r, delta: (r.Temperature != null && r.UserSetPoint != null) ? Math.abs(Number(r.Temperature) - Number(r.UserSetPoint)) : null }))
+      .filter(x => x.delta != null && x.delta >= 6)
+      .sort((a, b) => b.delta - a.delta);
+    // Ocupación por piso — se infiere del primer dígito(s) del nombre de habitación (1701 -> piso 17).
+    const byFloor = {};
+    for (const r of rooms) {
+      const m = String(r.RoomName || "").match(/^(\d{1,2})\d{2}/);
+      const floor = m ? m[1] : "otro";
+      byFloor[floor] = byFloor[floor] || { floor, total: 0, occupied: 0 };
+      byFloor[floor].total += 1;
+      if (r.Occupied && r.Occupied !== "0") byFloor[floor].occupied += 1;
+    }
+    const floors = Object.values(byFloor).sort((a, b) => a.floor.localeCompare(b.floor, undefined, { numeric: true }));
+    return { occupiedCount, vipCount, checkInCount, checkOutCount, lowBattery, withAlerts, tempIssues, floors };
+  }, [rooms]);
 
   const openHistory = async (room) => {
     setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: true, graphs: {}, startDate: null, endDate: null, dataLog: [], error: null });
@@ -17084,14 +17113,24 @@ function HVACView({ isAdmin, isGerencia }) {
         {canControl ? " Puedes cambiar el estado (VIP, Check IN, Check OUT) de cualquier habitación desde aquí." : " Para cambiar el estado de una habitación, pide a un administrador o a gerencia."}
       </p>
 
+      <div className="flex gap-1.5 mb-4">
+        <button onClick={() => setViewMode("list")}
+          className="text-sm font-medium px-3 py-1.5 rounded-md"
+          style={viewMode === "list" ? { background: C.blue, color: "#fff" } : { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
+          Habitaciones
+        </button>
+        <button onClick={() => setViewMode("dashboard")}
+          className="text-sm font-medium px-3 py-1.5 rounded-md"
+          style={viewMode === "dashboard" ? { background: C.blue, color: "#fff" } : { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
+          Dashboard
+        </button>
+      </div>
+
       {flash && (
         <div className="rounded-md px-3 py-2 text-sm mb-3" style={{ background: flash.ok ? C.greenSoft || "#dcfce7" : C.redSoft, color: flash.ok ? C.green : C.red }}>
           {flash.msg}
         </div>
       )}
-
-      <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar habitación o estado (VIP, Check IN...)"
-        className="w-full text-sm border rounded-md px-3 py-2 outline-none mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
 
       {loading && <div className="text-sm text-center py-8" style={{ color: C.gray }}>Cargando habitaciones…</div>}
       {error && !loading && (
@@ -17100,8 +17139,99 @@ function HVACView({ isAdmin, isGerencia }) {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && viewMode === "dashboard" && (
+        <div className="space-y-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="rounded-lg border p-4 flex items-center gap-4" style={{ borderColor: C.line, background: C.panel }}>
+              <MiniDonut
+                size={96} stroke={16}
+                segments={[
+                  { name: "Ocupadas", value: dashboard.occupiedCount, color: "#3b82f6" },
+                  { name: "Desocupadas", value: rooms.length - dashboard.occupiedCount, color: "#d1d5db" },
+                ]}
+                centerValue={dashboard.occupiedCount} centerLabel="ocupadas"
+              />
+              <div className="text-sm" style={{ color: C.inkSoft }}>
+                <div><b style={{ color: C.ink }}>{dashboard.occupiedCount}</b> de {rooms.length} habitaciones ocupadas</div>
+                <div className="mt-1">{rooms.length - dashboard.occupiedCount} desocupadas</div>
+              </div>
+            </div>
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-2" style={{ color: C.inkSoft }}>Estados activos</div>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Check IN</span><b style={{ color: C.ink }}>{dashboard.checkInCount}</b></div>
+                <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Check OUT</span><b style={{ color: C.ink }}>{dashboard.checkOutCount}</b></div>
+                <div className="flex justify-between"><span style={{ color: C.purple || "#9333ea" }}>VIP</span><b style={{ color: C.ink }}>{dashboard.vipCount}</b></div>
+              </div>
+            </div>
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-2" style={{ color: C.inkSoft }}>Señales de mantenimiento</div>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Temp. fuera de rango (≥6°F del set point)</span><b style={{ color: dashboard.tempIssues.length ? C.red : C.ink }}>{dashboard.tempIssues.length}</b></div>
+                <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Batería baja (&lt;30%)</span><b style={{ color: dashboard.lowBattery.length ? C.red : C.ink }}>{dashboard.lowBattery.length}</b></div>
+                <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Con alertas</span><b style={{ color: dashboard.withAlerts.length ? C.red : C.ink }}>{dashboard.withAlerts.length}</b></div>
+              </div>
+            </div>
+          </div>
+
+          {dashboard.floors.length > 0 && (
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-3" style={{ color: C.inkSoft }}>Ocupación por piso</div>
+              <HorizontalBarChart data={dashboard.floors} labelKey="floor" valueKey="occupied" max={Math.max(...dashboard.floors.map(f => f.total), 1)}
+                colorFor={() => "#3b82f6"} formatValue={(v, d) => `${v}/${d.total}`} />
+            </div>
+          )}
+
+          {dashboard.tempIssues.length > 0 && (
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>Habitaciones con temperatura fuera de rango ahora mismo</div>
+              <p className="text-[11px] mb-2" style={{ color: C.gray }}>Diferencia entre temperatura actual y set point de 6°F o más — candidatas a revisión de equipo.</p>
+              <div className="space-y-1">
+                {dashboard.tempIssues.slice(0, 20).map(({ r, delta }) => (
+                  <div key={r.RoomID} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
+                    <span style={{ color: C.ink }}>{r.RoomName}</span>
+                    <span style={{ color: C.inkSoft }}>{r.Temperature}°F / set {Number(r.UserSetPoint)}°F</span>
+                    <span className="font-semibold" style={{ color: C.red }}>Δ {delta.toFixed(1)}°F</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dashboard.lowBattery.length > 0 && (
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-2" style={{ color: C.inkSoft }}>Batería baja</div>
+              <div className="space-y-1">
+                {dashboard.lowBattery.slice(0, 20).map(r => (
+                  <div key={r.RoomID} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
+                    <span style={{ color: C.ink }}>{r.RoomName}</span>
+                    <span className="font-semibold" style={{ color: C.red }}>{r.BatteryPercent}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dashboard.withAlerts.length > 0 && (
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-2" style={{ color: C.inkSoft }}>Habitaciones con alertas</div>
+              <div className="space-y-1">
+                {dashboard.withAlerts.slice(0, 20).map(r => (
+                  <div key={r.RoomID} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
+                    <span style={{ color: C.ink }}>{r.RoomName}</span>
+                    <span style={{ color: C.inkSoft }}>{Number(r.AlertCount || 0)} alerta(s) · {Number(r.TKOAlertCount || 0)} TKO</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && viewMode === "list" && (
         <>
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar habitación o estado (VIP, Check IN...)"
+            className="w-full text-sm border rounded-md px-3 py-2 outline-none mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <div className="text-xs mb-2" style={{ color: C.gray }}>{filtered.length} de {rooms.length} habitaciones</div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {filtered.map(r => {
@@ -17110,7 +17240,10 @@ function HVACView({ isAdmin, isGerencia }) {
               return (
                 <div key={r.RoomID} className="rounded-lg border p-3" style={{ borderColor: hasAlert ? C.red : C.line, background: C.panel, color: C.ink }}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>
+                      <Users size={14} color={r.Occupied && r.Occupied !== "0" ? "#3b82f6" : "#9ca3af"} title={r.Occupied && r.Occupied !== "0" ? "Ocupada" : "Desocupada"} />
+                    </div>
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm mb-1.5">
@@ -17145,7 +17278,7 @@ function HVACView({ isAdmin, isGerencia }) {
                   </div>
                   {expandedRoomId === r.RoomID && (
                     <div className="mt-2.5 pt-2.5 border-t grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]" style={{ borderColor: C.line, color: C.inkSoft }}>
-                      <span>Ocupada: <b style={{ color: C.ink }}>{r.Occupied === "1" ? "Sí" : r.Occupied === "0" ? "No" : "—"}</b></span>
+                      <span>Ocupada: <b style={{ color: C.ink }}>{r.Occupied != null ? (r.Occupied !== "0" ? "Sí" : "No") : "—"}</b></span>
                       <span>Config. HVAC: <b style={{ color: C.ink }}>{r.HVACConfigName || "—"}</b></span>
                       <span>Termostatos: <b style={{ color: C.ink }}>{r.NumThermostat ?? "—"}</b></span>
                       <span>EcoGuard: <b style={{ color: C.ink }}>{r.NumEcoGuard ?? "—"}</b></span>

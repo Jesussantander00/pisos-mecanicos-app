@@ -29,6 +29,17 @@ const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
 const NODE_ID = "p101414";
 
+// Encabezados que manda cualquier navegador real y que nuestro fetch() del servidor no mandaba
+// antes. Si Telkonet (o algo delante de Telkonet, como un firewall de aplicación) rechaza pedidos
+// que no "parecen" venir de un navegador, esto debería arreglarlo.
+const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+  "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+  "Origin": BASE.replace(/\/Central$/, ""),
+  "Referer": `${BASE}/index.php`,
+};
+
 // Estados activos que tiene sentido poder poner desde la app. Se dejan fuera a propósito
 // "TestValve"/"TestOccupancy" (ids 4 y 5), que son pruebas técnicas internas de Telkonet, no
 // estados operativos de una habitación.
@@ -61,17 +72,27 @@ async function telkonetLogin() {
   if (!username || !password) {
     throw new Error("Falta configurar TELKONET_USERNAME y TELKONET_PASSWORD en Vercel.");
   }
+  // Primero un GET (como hace un navegador real al abrir la página de login) para recibir la
+  // cookie de sesión inicial, y luego el POST reutilizando esa misma cookie — algunos backends
+  // rechazan un POST "en frío" que nunca pasó por el GET inicial.
+  const getResp = await fetch(`${BASE}/index.php`, { headers: BROWSER_HEADERS });
+  const initialCookies = getSetCookies(getResp).map(c => c.split(";")[0].trim()).join("; ");
+
   const resp = await fetch(`${BASE}/index.php`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      ...BROWSER_HEADERS,
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...(initialCookies ? { Cookie: initialCookies } : {}),
+    },
     body: new URLSearchParams({ username, password }).toString(),
     redirect: "manual",
   });
-  const cookies = getSetCookies(resp);
-  if (!cookies.length) {
+  const postCookies = getSetCookies(resp).map(c => c.split(";")[0].trim()).join("; ");
+  const cookie = [initialCookies, postCookies].filter(Boolean).join("; ");
+  if (!cookie) {
     throw new Error("Telkonet no devolvió una sesión — revisa que TELKONET_USERNAME/TELKONET_PASSWORD sean correctos.");
   }
-  const cookie = cookies.map(c => c.split(";")[0].trim()).join("; ");
   cachedCookie = cookie;
   cachedCookieAt = Date.now();
   return cookie;
@@ -92,6 +113,7 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true 
   const resp = await fetch(url.toString(), {
     method,
     headers: {
+      ...BROWSER_HEADERS,
       Cookie: cookie,
       ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
     },
@@ -293,6 +315,25 @@ export default async function handler(req, res) {
         const cookiesC = [initialCookies, cookiesCExtra].filter(Boolean).join("; ");
         const titleC = await getTitle(cookiesC);
 
+        // Variante D: igual que B (GET inicial + POST con esa cookie) pero agregando encabezados
+        // de navegador real (User-Agent, Origin, Referer, Accept-Language) — por si Telkonet (o
+        // algo delante de Telkonet) rechaza pedidos que no "parecen" venir de un navegador.
+        const getRespD = await fetch(`${BASE}/index.php`, { headers: BROWSER_HEADERS });
+        const initialCookiesD = getSetCookies(getRespD).map(c => c.split(";")[0].trim()).join("; ");
+        const respD = await fetch(`${BASE}/index.php`, {
+          method: "POST",
+          headers: {
+            ...BROWSER_HEADERS,
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...(initialCookiesD ? { Cookie: initialCookiesD } : {}),
+          },
+          body: new URLSearchParams({ username, password }).toString(),
+          redirect: "manual",
+        });
+        const cookiesDExtra = getSetCookies(respD).map(c => c.split(";")[0].trim()).join("; ");
+        const cookiesD = [initialCookiesD, cookiesDExtra].filter(Boolean).join("; ");
+        const titleD = await getTitle(cookiesD);
+
         res.status(200).json({
           ok: true,
           hasUser, hasPass,
@@ -300,6 +341,7 @@ export default async function handler(req, res) {
           variantA: { cookieCount: cookiesA ? cookiesA.split(";").length : 0, title: titleA },
           variantB: { cookieCount: cookiesB ? cookiesB.split(";").length : 0, title: titleB },
           variantC: { cookieCount: cookiesC ? cookiesC.split(";").length : 0, title: titleC },
+          variantD: { cookieCount: cookiesD ? cookiesD.split(";").length : 0, title: titleD },
         });
         return;
       }

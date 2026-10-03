@@ -125,6 +125,9 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true,
 
   let data = null;
   try { data = JSON.parse(text); } catch { /* no era JSON — probablemente sesión vencida */ }
+  if (!data) {
+    console.log("[telkonet debug] respuesta no-JSON", { path, status: resp.status, textLength: text.length, snippet: text.slice(0, 200) });
+  }
 
   if (!data && retry) {
     await getCookie(true);

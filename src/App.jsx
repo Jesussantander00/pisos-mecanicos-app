@@ -23871,6 +23871,7 @@ export default function App() {
         { id: "tasks", label: "Tareas", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, urgentBadge: false },
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
+        ...((isAdmin || isGerencia) ? [{ id: "hvac", label: "TelkHab", icon: Thermometer }] : []),
       ],
     },
     {

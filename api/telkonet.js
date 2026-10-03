@@ -90,6 +90,10 @@ async function telkonetLogin() {
   if (!cookie) {
     throw new Error("Telkonet no devolvió una sesión — revisa que TELKONET_USERNAME/TELKONET_PASSWORD sean correctos.");
   }
+  // Un navegador real, tras el login, carga la página del panel autenticado antes de pedir datos —
+  // eso parece inicializar algo en la sesión de Telkonet del lado del servidor (sin este paso,
+  // algunas consultas de habitaciones devuelven un error de SQL interno de Telkonet).
+  await fetch(`${BASE}/index.php`, { headers: { ...BROWSER_HEADERS, Cookie: cookie } }).catch(() => {});
   cachedCookie = cookie;
   cachedCookieAt = Date.now();
   return cookie;

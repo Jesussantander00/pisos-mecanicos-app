@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
-import { sGet, sSet, uploadPhoto, uploadVideo, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount, getPendingPhotoQueue } from "./lib/storage";
+import { sGet, sSet, uploadPhoto, uploadVideo, getPendingCount, flushOfflineQueue, exportFullBackup, saveRecordWithPhotos, flushPhotoRecordQueue, getPendingPhotoRecordsCount, getPendingPhotoQueue, getPendingQueueDetail } from "./lib/storage";
 import { supabase } from "./lib/supabaseClient";
 
 /* ============================================================
@@ -9181,7 +9181,7 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   );
 }
 
-function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked }) {
+function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
@@ -9505,6 +9505,19 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
               </div>
               <div className="rounded-md p-2.5" style={{ background: C.bg }}>
                 <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>Cerrar tarea — sube al menos una foto de cómo quedó</div>
+                {mySignature ? (
+                  <div className="flex items-center gap-2 mb-2 p-1.5 rounded-md" style={{ background: C.greenSoft }}>
+                    <img loading="lazy" src={mySignature} alt="Tu firma" className="rounded border shrink-0" style={{ borderColor: C.line, width: 60, height: 28, objectFit: "contain", background: "#fff" }} />
+                    <span className="text-[11px] font-medium" style={{ color: C.green }}>✓ Se firma sola con tu firma guardada — no hace falta volver a dibujarla.</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 mb-2 p-1.5 rounded-md flex-wrap" style={{ background: C.amberSoft }}>
+                    <span className="text-[11px] font-medium" style={{ color: C.amber }}>Todavía no has guardado tu firma — guárdala una sola vez y de ahí en adelante se agrega sola al cerrar tareas.</span>
+                    {onGoToProfile && (
+                      <button onClick={onGoToProfile} className="text-[11px] font-bold underline shrink-0" style={{ color: C.amber }}>Ir a Mi Perfil</button>
+                    )}
+                  </div>
+                )}
                 <PhotoPicker photos={closePhotos} onChange={setClosePhotos} max={4} />
                 <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
@@ -9537,7 +9550,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked, onGoToProfile }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
@@ -10576,7 +10589,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl}
           hasPendingUpload={pendingTaskCloseIds && pendingTaskCloseIds.has(drawerTask.id)}
           onUpdateTask={onUpdateTask} onAddComment={onAddTaskComment} currentUsername={currentUsername} currentUser={currentUser}
-          allUsernames={Object.keys(accounts || {})} mySignature={mySignature} signerCargo={signerCargo} viewerLocked={viewerLocked} />
+          allUsernames={Object.keys(accounts || {})} mySignature={mySignature} signerCargo={signerCargo} viewerLocked={viewerLocked} onGoToProfile={onGoToProfile} />
       )}
       <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
@@ -21316,10 +21329,13 @@ export default function App() {
   }, []);
   const [justSynced, setJustSynced] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [lastSyncError, setLastSyncError] = useState(null);
+  const [showSyncDetail, setShowSyncDetail] = useState(false);
   const tryFlush = useCallback(async () => {
     const res = await flushOfflineQueue();
     const remaining = getPendingCount();
     setPendingSync(remaining);
+    setLastSyncError(res.lastError || null);
     if (res.synced > 0 && remaining === 0) {
       setJustSynced(true);
       setTimeout(() => setJustSynced(false), 4000);
@@ -23863,15 +23879,25 @@ export default function App() {
           <div className="flex items-center gap-2">
             <NetworkStatusIndicator pendingCount={pendingSync + pendingPhotoRecords} />
             {pendingSync > 0 && (
-              <span className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: C.amberSoft, color: C.amber }}>
-                <AlertTriangle size={12} /> {pendingSync} sin subir
-                <button
-                  onClick={async () => { setRetrying(true); await tryFlush(); setRetrying(false); }}
-                  disabled={retrying}
-                  className="underline font-semibold disabled:opacity-60"
-                  style={{ color: C.amber }}>
-                  {retrying ? "Subiendo…" : "Reintentar ahora"}
-                </button>
+              <span className="flex flex-col text-xs font-medium px-2 py-1 rounded-md max-w-[220px]" style={{ background: C.amberSoft, color: C.amber }}>
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle size={12} className="shrink-0" />
+                  <button onClick={() => setShowSyncDetail(s => !s)} className="underline decoration-dotted">{pendingSync} sin subir</button>
+                  <button
+                    onClick={async () => { setRetrying(true); await tryFlush(); setShowSyncDetail(true); setRetrying(false); }}
+                    disabled={retrying}
+                    className="underline font-semibold disabled:opacity-60 shrink-0"
+                    style={{ color: C.amber }}>
+                    {retrying ? "Subiendo…" : "Reintentar ahora"}
+                  </button>
+                </span>
+                {showSyncDetail && (
+                  <span className="mt-1 text-[10px] font-normal whitespace-normal" style={{ color: C.amber }}>
+                    {lastSyncError
+                      ? `No se pudo subir "${lastSyncError.key}": ${lastSyncError.message}`
+                      : "Sigue guardado en tu celular, esperando a subir. Toca \"Reintentar ahora\" para ver el motivo si sigue fallando."}
+                  </span>
+                )}
               </span>
             )}
             {pendingPhotoRecords > 0 && (
@@ -24175,7 +24201,7 @@ export default function App() {
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
               onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} onAddTaskComment={addTaskComment}
-              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} />
+              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

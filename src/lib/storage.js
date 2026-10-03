@@ -89,22 +89,37 @@ export async function sSet(key, value, shared) {
   }
 }
 
-/** Reintenta subir todo lo que quedó pendiente por falta de señal. Se llama sola al reconectar. */
+/** Reintenta subir todo lo que quedó pendiente por falta de señal. Se llama sola al reconectar.
+ *
+ * Antes, si algo fallaba por una razón que NO era falta de señal (por ejemplo, la sesión venció,
+ * o el servidor rechazó el dato por algún motivo), el error se descartaba en silencio: la persona
+ * solo veía "1 sin subir" para siempre, sin ninguna pista de por qué, y "Reintentar" nunca servía
+ * de nada porque el mismo error se repetía cada vez. Ahora se guarda el último error de cada cosa
+ * pendiente, para poder mostrarlo en pantalla y saber de verdad qué está pasando.
+ */
 export async function flushOfflineQueue() {
   const q = readQueue();
-  if (q.length === 0) return { synced: 0, remaining: 0 };
+  if (q.length === 0) return { synced: 0, remaining: 0, lastError: null };
   let synced = 0;
   const stillPending = [];
+  let lastError = null;
   for (const item of q) {
     try {
       await writeToSupabase(item.key, item.value);
       synced++;
-    } catch {
-      stillPending.push(item);
+    } catch (e) {
+      lastError = { key: item.key, message: e?.message || String(e) };
+      stillPending.push({ ...item, lastError: lastError.message });
     }
   }
   writeQueue(stillPending);
-  return { synced, remaining: stillPending.length };
+  return { synced, remaining: stillPending.length, lastError };
+}
+
+/** La cola completa de cambios pendientes (con su último error, si ya se intentó y falló) — para
+ *  poder mostrarle a la persona qué es exactamente lo que no se ha podido subir. */
+export function getPendingQueueDetail() {
+  return readQueue();
 }
 
 /** Trae TODA la información guardada en la base de datos compartida, para hacer un respaldo completo. */

@@ -219,6 +219,36 @@ export default async function handler(req, res) {
         return;
       }
 
+      // Acción temporal de diagnóstico — no expone la contraseña, solo confirma si el login
+      // contra Telkonet realmente autenticó la cuenta y qué trae crudo data_roomstatus.php.
+      if (action === "debug") {
+        const hasUser = !!process.env.TELKONET_USERNAME;
+        const hasPass = !!process.env.TELKONET_PASSWORD;
+        const cookie = await getCookie(true);
+        const cookieCount = cookie ? cookie.split(";").length : 0;
+        const indexResp = await fetch(`${BASE}/index.php`, { headers: { Cookie: cookie } });
+        const indexHtml = await indexResp.text();
+        const looksLoggedIn = /Logout|cerrar sesión|guillermo/i.test(indexHtml) && !/<input[^>]*name="password"/i.test(indexHtml);
+        const url = new URL(`${BASE}/modules/ecosmart/ajax/data_roomstatus.php`);
+        url.searchParams.set("nodeid", NODE_ID);
+        url.searchParams.set("_nodeid", NODE_ID);
+        url.searchParams.set("filter", "");
+        url.searchParams.set("page", "1");
+        url.searchParams.set("start", "0");
+        url.searchParams.set("limit", "5");
+        url.searchParams.set("sort", JSON.stringify([{ property: "RoomName", direction: "ASC" }]));
+        const roomsResp = await fetch(url.toString(), { headers: { Cookie: cookie } });
+        const roomsRaw = await roomsResp.text();
+        res.status(200).json({
+          ok: true,
+          hasUser, hasPass, cookieCount,
+          looksLoggedIn,
+          indexHtmlSnippet: indexHtml.replace(/\s+/g, " ").slice(0, 400),
+          roomsRawSnippet: roomsRaw.slice(0, 500),
+        });
+        return;
+      }
+
       res.status(400).json({ ok: false, message: "Acción no reconocida." });
       return;
     }

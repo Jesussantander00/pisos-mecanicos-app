@@ -160,7 +160,6 @@ async function fetchAllRooms() {
       params: {
         nodeid: NODE_ID,
         _nodeid: NODE_ID,
-        filter: "[]",
         page: String(Math.floor(start / limit) + 1),
         start: String(start),
         limit: String(limit),

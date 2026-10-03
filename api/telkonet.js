@@ -227,6 +227,23 @@ export default async function handler(req, res) {
         const password = process.env.TELKONET_PASSWORD;
         const hasUser = !!username;
         const hasPass = !!password;
+        // Chequeos que no revelan el contenido de la contraseña, solo su "forma" — para
+        // detectar espacios, saltos de línea u otros caracteres invisibles de más al pegarla.
+        const passwordChecks = password ? {
+          length: password.length,
+          hasLeadingWhitespace: /^\s/.test(password),
+          hasTrailingWhitespace: /\s$/.test(password),
+          hasNewline: /[\r\n]/.test(password),
+          hasTab: /\t/.test(password),
+          isAllPrintableAscii: /^[\x20-\x7E]+$/.test(password),
+          trimmedLength: password.trim().length,
+        } : null;
+        const usernameChecks = username ? {
+          length: username.length,
+          hasLeadingWhitespace: /^\s/.test(username),
+          hasTrailingWhitespace: /\s$/.test(username),
+          trimmedLength: username.trim().length,
+        } : null;
 
         async function getTitle(cookie) {
           const resp = await fetch(`${BASE}/index.php`, { headers: { Cookie: cookie || "" } });
@@ -279,8 +296,7 @@ export default async function handler(req, res) {
         res.status(200).json({
           ok: true,
           hasUser, hasPass,
-          usernameLength: username ? username.length : 0,
-          passwordLength: password ? password.length : 0,
+          usernameChecks, passwordChecks,
           variantA: { cookieCount: cookiesA ? cookiesA.split(";").length : 0, title: titleA },
           variantB: { cookieCount: cookiesB ? cookiesB.split(";").length : 0, title: titleB },
           variantC: { cookieCount: cookiesC ? cookiesC.split(";").length : 0, title: titleC },

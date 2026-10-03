@@ -119,6 +119,7 @@ async function fetchAllRooms() {
     const data = await telkonetFetch("modules/ecosmart/ajax/data_roomstatus.php", {
       params: {
         nodeid: NODE_ID,
+        _nodeid: NODE_ID,
         filter: "",
         page: String(Math.floor(start / limit) + 1),
         start: String(start),
@@ -142,6 +143,7 @@ async function fetchRoomDeviceId(roomId) {
       propID: "0",
       RoomID: String(roomId),
       nodeid: NODE_ID,
+      _nodeid: NODE_ID,
       page: "1",
       start: "0",
       limit: "25",
@@ -158,7 +160,7 @@ async function fetchHistory(roomId) {
   if (!deviceId) throw new Error("No se encontró el termostato de esa habitación.");
   const data = await telkonetFetch("modules/ecosmart/ajax/data_opmodal_ems.php", {
     method: "POST",
-    body: { DeviceID: deviceId, propID: PROP_ID, nodeid: NODE_ID, page: "1", start: "0", limit: "20" },
+    body: { DeviceID: deviceId, propID: PROP_ID, nodeid: NODE_ID, _nodeid: NODE_ID, page: "1", start: "0", limit: "20" },
   });
   return Array.isArray(data?.data) ? data.data : [];
 }
@@ -175,6 +177,7 @@ async function setRoomState(roomId, profileTypeId, profileTypeName) {
       DeviceID: deviceId,
       propID: PROP_ID,
       nodeid: NODE_ID,
+      _nodeid: NODE_ID,
     },
   });
   return data;

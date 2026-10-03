@@ -133,9 +133,6 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true,
 
   let data = null;
   try { data = JSON.parse(text); } catch { /* no era JSON — probablemente sesión vencida */ }
-  if (!data) {
-    console.log("[telkonet debug] respuesta no-JSON", { path, status: resp.status, textLength: text.length, snippet: text.slice(0, 1500) });
-  }
 
   if (!data && retry) {
     await getCookie(true);
@@ -276,7 +273,24 @@ async function fetchHistory(roomId, days = 7) {
  *  incluyendo qué "Active State" (perfil: VIP, Check IN, Check OUT) tenía en ese momento exacto.
  *  Trae las últimas `limit` lecturas (más recientes primero, igual que en Telkonet). */
 async function fetchDataLog(deviceId, limit = 40) {
-  const fields = ["DateTime", "CurrentlyActiveProfileType", "UserSetPoint", "Temperature", "ThermostatMode", "Occupied"];
+  // Telkonet exige, igual que hace su propio navegador al abrir la pestaña "Data", pedir primero
+  // las preferencias de la grilla (columnas guardadas del usuario) antes de pedir los datos —
+  // si se salta este paso, el registro vuelve vacío (longitud 0) aunque "totalCount" sí sea
+  // correcto, porque esa cuenta se calcula aparte y no depende de este paso.
+  await telkonetFetch("modules/ecosmart/ajax/data_gridpreferences.php", {
+    method: "POST",
+    body: { gridid: "EMSInfoDataGrid", _nodeid: NODE_ID },
+  });
+
+  // Lista exacta de columnas que pide el navegador real de Telkonet en la pestaña "Data" (capturada
+  // en vivo). Importante: el nombre real de la columna de ocupación es "SensorOccupiedBits", no
+  // "Occupied" (ese nombre no existe en Telkonet) — pedir un campo inexistente era lo que hacía
+  // que toda la respuesta volviera vacía.
+  const fields = [
+    "DateTime", "CurrentlyActiveProfileType", "FirmwareVersion", "UserSetPoint", "Temperature",
+    "ThermostatMode", "DryContactMap", "SensorOccupiedBits", "SensorTimeoutBits",
+    "Flags1", "Flags2", "Flags3", "Flags4", "Flags5", "BootCount",
+  ];
   const data = await telkonetFetch("modules/ecosmart/ajax/data_opmodal_ems.php", {
     method: "POST",
     body: {
@@ -299,7 +313,7 @@ async function fetchDataLog(deviceId, limit = 40) {
     userSetPoint: r.UserSetPoint != null ? Number(r.UserSetPoint) : null,
     temperature: r.Temperature != null ? Number(r.Temperature) : null,
     thermostatMode: r.ThermostatMode || null,
-    occupied: r.Occupied === "1",
+    occupied: r.SensorOccupiedBits != null && Number(r.SensorOccupiedBits) !== 0,
   }));
 }
 

@@ -334,6 +334,21 @@ export default async function handler(req, res) {
         const cookiesD = [initialCookiesD, cookiesDExtra].filter(Boolean).join("; ");
         const titleD = await getTitle(cookiesD);
 
+        // Qué respondió Telkonet AL POST MISMO de la variante D (antes de seguir cualquier
+        // redirección) — el status y a dónde redirige (si acaso) suelen decir mucho más que el
+        // título de la página de después. No expone nada del usuario/contraseña.
+        const postStatusD = respD.status;
+        const postLocationD = respD.headers.get("location");
+
+        // Revisa el HTML de la respuesta del POST (no el usuario/contraseña) buscando palabras
+        // clave que delaten un bloqueo, un error de credenciales o un reto (captcha, IP, etc.) —
+        // sin devolver el HTML real, solo si cada palabra aparece o no.
+        const postBodyD = await respD.text().catch(() => "");
+        const keywordHits = {};
+        for (const kw of ["captcha", "blocked", "bloque", "denied", "denegad", "incorrect", "incorrecta", "invalid", "inválid", "attempts", "intentos", "locked", "bloqueada", "disabled", "deshabilitada", "ip address", "dirección ip", "too many", "demasiados"]) {
+          keywordHits[kw] = postBodyD.toLowerCase().includes(kw);
+        }
+
         res.status(200).json({
           ok: true,
           hasUser, hasPass,
@@ -341,7 +356,14 @@ export default async function handler(req, res) {
           variantA: { cookieCount: cookiesA ? cookiesA.split(";").length : 0, title: titleA },
           variantB: { cookieCount: cookiesB ? cookiesB.split(";").length : 0, title: titleB },
           variantC: { cookieCount: cookiesC ? cookiesC.split(";").length : 0, title: titleC },
-          variantD: { cookieCount: cookiesD ? cookiesD.split(";").length : 0, title: titleD },
+          variantD: {
+            cookieCount: cookiesD ? cookiesD.split(";").length : 0,
+            title: titleD,
+            postStatus: postStatusD,
+            postLocation: postLocationD,
+            postBodyLength: postBodyD.length,
+            keywordHits,
+          },
         });
         return;
       }

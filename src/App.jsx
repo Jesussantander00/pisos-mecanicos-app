@@ -15847,7 +15847,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
-    { id: "hvac", label: "Clima de habitaciones (BMS)", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin || isGerencia, group: "Operación en Campo" },
+    { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin || isGerencia, group: "Operación en Campo" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);
@@ -17074,7 +17074,7 @@ function HVACView({ isAdmin, isGerencia }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Clima de habitaciones (BMS)</h2>
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>TelkHab — Clima de habitaciones (BMS)</h2>
         <Button size="sm" variant="ghost" icon={RotateCcw} onClick={load} disabled={loading}>Actualizar</Button>
       </div>
       <p className="text-sm mb-4" style={{ color: C.inkSoft }}>

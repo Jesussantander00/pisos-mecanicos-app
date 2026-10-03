@@ -220,31 +220,70 @@ export default async function handler(req, res) {
       }
 
       // Acción temporal de diagnóstico — no expone la contraseña, solo confirma si el login
-      // contra Telkonet realmente autenticó la cuenta y qué trae crudo data_roomstatus.php.
+      // contra Telkonet realmente autenticó la cuenta. Prueba tres variantes del login para
+      // encontrar cuál de ellas sí deja la sesión autenticada.
       if (action === "debug") {
-        const hasUser = !!process.env.TELKONET_USERNAME;
-        const hasPass = !!process.env.TELKONET_PASSWORD;
-        const cookie = await getCookie(true);
-        const cookieCount = cookie ? cookie.split(";").length : 0;
-        const indexResp = await fetch(`${BASE}/index.php`, { headers: { Cookie: cookie } });
-        const indexHtml = await indexResp.text();
-        const looksLoggedIn = /Logout|cerrar sesión|guillermo/i.test(indexHtml) && !/<input[^>]*name="password"/i.test(indexHtml);
-        const url = new URL(`${BASE}/modules/ecosmart/ajax/data_roomstatus.php`);
-        url.searchParams.set("nodeid", NODE_ID);
-        url.searchParams.set("_nodeid", NODE_ID);
-        url.searchParams.set("filter", "");
-        url.searchParams.set("page", "1");
-        url.searchParams.set("start", "0");
-        url.searchParams.set("limit", "5");
-        url.searchParams.set("sort", JSON.stringify([{ property: "RoomName", direction: "ASC" }]));
-        const roomsResp = await fetch(url.toString(), { headers: { Cookie: cookie } });
-        const roomsRaw = await roomsResp.text();
+        const username = process.env.TELKONET_USERNAME;
+        const password = process.env.TELKONET_PASSWORD;
+        const hasUser = !!username;
+        const hasPass = !!password;
+
+        async function getTitle(cookie) {
+          const resp = await fetch(`${BASE}/index.php`, { headers: { Cookie: cookie || "" } });
+          const html = await resp.text();
+          const m = html.match(/<title>(.*?)<\/title>/i);
+          return m ? m[1] : null;
+        }
+
+        // Variante A: POST directo en frío (lo que hace hoy telkonetLogin()).
+        const respA = await fetch(`${BASE}/index.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ username, password }).toString(),
+          redirect: "manual",
+        });
+        const cookiesA = getSetCookies(respA).map(c => c.split(";")[0].trim()).join("; ");
+        const titleA = await getTitle(cookiesA);
+
+        // Variante B: primero GET (sin cookie) para obtener sesión inicial, luego POST
+        // reutilizando esa cookie inicial.
+        const getResp = await fetch(`${BASE}/index.php`);
+        const initialCookies = getSetCookies(getResp).map(c => c.split(";")[0].trim()).join("; ");
+        const respB = await fetch(`${BASE}/index.php`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...(initialCookies ? { Cookie: initialCookies } : {}),
+          },
+          body: new URLSearchParams({ username, password }).toString(),
+          redirect: "manual",
+        });
+        const cookiesBExtra = getSetCookies(respB).map(c => c.split(";")[0].trim()).join("; ");
+        const cookiesB = [initialCookies, cookiesBExtra].filter(Boolean).join("; ");
+        const titleB = await getTitle(cookiesB);
+
+        // Variante C: igual que B pero agregando un campo submit, por si el backend lo exige.
+        const respC = await fetch(`${BASE}/index.php`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...(initialCookies ? { Cookie: initialCookies } : {}),
+          },
+          body: new URLSearchParams({ username, password, submit: "Login" }).toString(),
+          redirect: "manual",
+        });
+        const cookiesCExtra = getSetCookies(respC).map(c => c.split(";")[0].trim()).join("; ");
+        const cookiesC = [initialCookies, cookiesCExtra].filter(Boolean).join("; ");
+        const titleC = await getTitle(cookiesC);
+
         res.status(200).json({
           ok: true,
-          hasUser, hasPass, cookieCount,
-          looksLoggedIn,
-          indexHtmlSnippet: indexHtml.replace(/\s+/g, " ").slice(0, 400),
-          roomsRawSnippet: roomsRaw.slice(0, 500),
+          hasUser, hasPass,
+          usernameLength: username ? username.length : 0,
+          passwordLength: password ? password.length : 0,
+          variantA: { cookieCount: cookiesA ? cookiesA.split(";").length : 0, title: titleA },
+          variantB: { cookieCount: cookiesB ? cookiesB.split(";").length : 0, title: titleB },
+          variantC: { cookieCount: cookiesC ? cookiesC.split(";").length : 0, title: titleC },
         });
         return;
       }

@@ -29,9 +29,8 @@ const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
 const NODE_ID = "p101414";
 
-// Encabezados que manda cualquier navegador real y que nuestro fetch() del servidor no mandaba
-// antes. Si Telkonet (o algo delante de Telkonet, como un firewall de aplicación) rechaza pedidos
-// que no "parecen" venir de un navegador, esto debería arreglarlo.
+// Headers de navegador real — Telkonet rechaza silenciosamente peticiones que no parezcan venir
+// de un navegador normal (sin esto, el login puede fallar incluso con usuario/contraseña correctos).
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -72,12 +71,10 @@ async function telkonetLogin() {
   if (!username || !password) {
     throw new Error("Falta configurar TELKONET_USERNAME y TELKONET_PASSWORD en Vercel.");
   }
-  // Primero un GET (como hace un navegador real al abrir la página de login) para recibir la
-  // cookie de sesión inicial, y luego el POST reutilizando esa misma cookie — algunos backends
-  // rechazan un POST "en frío" que nunca pasó por el GET inicial.
+  // Primero un GET (como hace un navegador real al abrir la página) para recibir una cookie de
+  // sesión inicial, y luego el POST de login reutilizando esa cookie — Telkonet exige este orden.
   const getResp = await fetch(`${BASE}/index.php`, { headers: BROWSER_HEADERS });
   const initialCookies = getSetCookies(getResp).map(c => c.split(";")[0].trim()).join("; ");
-
   const resp = await fetch(`${BASE}/index.php`, {
     method: "POST",
     headers: {
@@ -105,8 +102,11 @@ async function getCookie(forceFresh = false) {
 
 /** Llama un endpoint interno de Telkonet con la cookie de sesión. Si la respuesta no viene en
  *  JSON válido (típicamente porque la sesión expiró y Telkonet devolvió la página de login),
- *  reintenta UNA vez iniciando sesión de nuevo antes de rendirse. */
-async function telkonetFetch(path, { method = "GET", params, body, retry = true } = {}) {
+ *  reintenta UNA vez iniciando sesión de nuevo antes de rendirse.
+ *
+ *  Con raw:true devuelve el texto tal cual (sin intentar parsear JSON ni reintentar login) — lo
+ *  usan los endpoints de gráficas de historial, que responden HTML con imágenes incrustadas, no JSON. */
+async function telkonetFetch(path, { method = "GET", params, body, retry = true, raw = false } = {}) {
   const cookie = await getCookie();
   const url = new URL(`${BASE}/${path}`);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
@@ -120,6 +120,9 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true 
     body: body ? new URLSearchParams(body).toString() : undefined,
   });
   const text = await resp.text();
+
+  if (raw) return text;
+
   let data = null;
   try { data = JSON.parse(text); } catch { /* no era JSON — probablemente sesión vencida */ }
 
@@ -131,7 +134,11 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true 
 }
 
 /** Trae TODAS las habitaciones de la propiedad, paginando (Telkonet solo entrega de a un bloque
- *  por pedido — en este hotel hay más de 360 habitaciones). */
+ *  por pedido — en este hotel hay más de 360 habitaciones).
+ *
+ *  Telkonet devuelve cada habitación repetida varias veces (su "filterCount" cuenta filas, no
+ *  habitaciones únicas) — por eso aquí se filtra por RoomID, quedándonos con una sola copia de
+ *  cada habitación real. */
 async function fetchAllRooms() {
   const limit = 100;
   let start = 0;
@@ -141,7 +148,6 @@ async function fetchAllRooms() {
     const data = await telkonetFetch("modules/ecosmart/ajax/data_roomstatus.php", {
       params: {
         nodeid: NODE_ID,
-        _nodeid: NODE_ID,
         filter: "",
         page: String(Math.floor(start / limit) + 1),
         start: String(start),
@@ -154,7 +160,15 @@ async function fetchAllRooms() {
     total = Number(data.filterCount || data.totalCount || all.length);
     start += limit;
   }
-  return all;
+  const seen = new Set();
+  const unique = [];
+  for (const room of all) {
+    const id = room.RoomID;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(room);
+  }
+  return unique;
 }
 
 /** Encuentra el termostato (DeviceID) de una habitación a partir de su RoomID — hace falta para
@@ -177,14 +191,55 @@ async function fetchRoomDeviceId(roomId) {
   return thermostat.DeviceID.replace(/^d_/, "");
 }
 
-async function fetchHistory(roomId) {
+function telkonetDateFormat(date) {
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+/** Trae el panel de historial real de una habitación — las mismas 3 gráficas (Temperatura vs.
+ *  Setpoint, Ciclo de encendido del aire, y Porcentaje de ocupación por hora) que muestra el panel
+ *  "Historical Data" de Telkonet. Telkonet las genera como imágenes PNG ya dibujadas en su
+ *  servidor (no hay datos numéricos sueltos que pedir aparte), así que aquí se extraen esas 3
+ *  imágenes y se devuelven listas para mostrar tal cual en QuinTech. */
+async function fetchHistory(roomId, days = 7) {
   const deviceId = await fetchRoomDeviceId(roomId);
   if (!deviceId) throw new Error("No se encontró el termostato de esa habitación.");
-  const data = await telkonetFetch("modules/ecosmart/ajax/data_opmodal_ems.php", {
+
+  const end = new Date();
+  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const html = await telkonetFetch("modules/ecosmart/ajax/data_ecoinsightopmodal_historicaldata.php", {
     method: "POST",
-    body: { DeviceID: deviceId, propID: PROP_ID, nodeid: NODE_ID, _nodeid: NODE_ID, page: "1", start: "0", limit: "20" },
+    raw: true,
+    body: {
+      action: "getTempvssetpointGraph",
+      deviceid: deviceId,
+      propID: PROP_ID,
+      isTouch: "false",
+      startdate: telkonetDateFormat(start),
+      enddate: telkonetDateFormat(end),
+      _nodeid: NODE_ID,
+    },
   });
-  return Array.isArray(data?.data) ? data.data : [];
+
+  const graphs = {};
+  const labels = {
+    TempvssetpointGraph: "Temperatura vs. Setpoint",
+    DutycycleGraph: "Ciclo de encendido del aire (duty cycle)",
+    OccupancyTimeOfDayGraph: "Ocupación física por hora del día",
+  };
+  const imgPattern = /<img id="([^"]+)"[^>]*src="(data:image\/[a-zA-Z]+;base64,[^"]+)"/g;
+  let match;
+  while ((match = imgPattern.exec(html)) !== null) {
+    const [, id, src] = match;
+    graphs[id] = { label: labels[id] || id, image: src };
+  }
+
+  return {
+    deviceId,
+    startDate: telkonetDateFormat(start),
+    endDate: telkonetDateFormat(end),
+    graphs,
+  };
 }
 
 async function setRoomState(roomId, profileTypeId, profileTypeName) {
@@ -199,7 +254,6 @@ async function setRoomState(roomId, profileTypeId, profileTypeName) {
       DeviceID: deviceId,
       propID: PROP_ID,
       nodeid: NODE_ID,
-      _nodeid: NODE_ID,
     },
   });
   return data;
@@ -236,7 +290,8 @@ export default async function handler(req, res) {
       if (action === "history") {
         const roomId = req.query.roomId;
         if (!roomId) { res.status(400).json({ ok: false, message: "Falta roomId." }); return; }
-        const history = await fetchHistory(roomId);
+        const days = req.query.days ? Number(req.query.days) : 7;
+        const history = await fetchHistory(roomId, days);
         res.status(200).json({ ok: true, history });
         return;
       }

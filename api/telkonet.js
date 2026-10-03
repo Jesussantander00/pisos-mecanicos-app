@@ -147,7 +147,7 @@ async function telkonetFetch(path, { method = "GET", params, body, retry = true,
  *  Telkonet devuelve cada habitación repetida varias veces (su "filterCount" cuenta filas, no
  *  habitaciones únicas) — por eso aquí se filtra por RoomID, quedándonos con una sola copia de
  *  cada habitación real. */
-async function fetchAllRooms() {
+export async function fetchAllRooms() {
   const limit = 100;
   let start = 0;
   let all = [];
@@ -181,7 +181,7 @@ async function fetchAllRooms() {
 
 /** Encuentra el termostato (DeviceID) de una habitación a partir de su RoomID — hace falta para
  *  tanto el histórico como el cambio de estado, que se piden por DeviceID, no por RoomID. */
-async function fetchRoomDeviceId(roomId) {
+export async function fetchRoomDeviceId(roomId) {
   const data = await telkonetFetch("modules/ecosmart/ajax/data_roomopmodal.php", {
     params: {
       propID: "0",
@@ -272,7 +272,7 @@ async function fetchHistory(roomId, days = 7) {
 /** Pestaña "Data" de Telkonet: el registro crudo de lecturas del termostato, una cada ~15 minutos,
  *  incluyendo qué "Active State" (perfil: VIP, Check IN, Check OUT) tenía en ese momento exacto.
  *  Trae las últimas `limit` lecturas (más recientes primero, igual que en Telkonet). */
-async function fetchDataLog(deviceId, limit = 40) {
+export async function fetchDataLog(deviceId, limit = 40) {
   // Telkonet exige, igual que hace su propio navegador al abrir la pestaña "Data", pedir primero
   // las preferencias de la grilla (columnas guardadas del usuario) antes de pedir los datos —
   // si se salta este paso, el registro vuelve vacío (longitud 0) aunque "totalCount" sí sea
@@ -305,7 +305,6 @@ async function fetchDataLog(deviceId, limit = 40) {
       _nodeid: NODE_ID,
     },
   });
-  console.log("[telkonet debug] fetchDataLog", { deviceId, dataIsNull: data === null, isArray: Array.isArray(data?.data), length: data?.data?.length, keys: data ? Object.keys(data) : null, totalCount: data?.totalCount });
   return (data?.data || []).map(r => ({
     dateTime: r.DateTime,
     profileId: r.CurrentlyActiveProfileType,
@@ -368,6 +367,28 @@ export default async function handler(req, res) {
         const days = req.query.days ? Number(req.query.days) : 7;
         const history = await fetchHistory(roomId, days);
         res.status(200).json({ ok: true, history });
+        return;
+      }
+
+      // Reporte de mantenimiento semanal: lee lo que el cron "telkonet-scan" ya calculó y guardó
+      // en Supabase (cuántas lecturas de los últimos ~7 días estuvieron fuera de rango de
+      // temperatura, por habitación). No vuelve a pedirle nada a Telkonet — por eso es rápido,
+      // a diferencia de calcular esto en vivo, que requeriría revisar las 361 habitaciones una
+      // por una cada vez que alguien abre el Dashboard.
+      if (action === "maintenanceReport") {
+        const { data: rows, error: selErr } = await supabaseAdmin
+          .from("telkonet_room_health")
+          .select("*")
+          .order("out_of_range_pct", { ascending: false, nullsFirst: false });
+        if (selErr) throw selErr;
+        const scannedAts = (rows || []).map(r => r.last_scanned_at).filter(Boolean).sort();
+        res.status(200).json({
+          ok: true,
+          rows: rows || [],
+          totalRoomsKnown: (rows || []).length,
+          oldestScan: scannedAts[0] || null,
+          newestScan: scannedAts[scannedAts.length - 1] || null,
+        });
         return;
       }
 

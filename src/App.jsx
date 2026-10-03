@@ -17005,6 +17005,7 @@ function HVACView({ isAdmin, isGerencia }) {
   const [flash, setFlash] = useState(null);
   const [expandedRoomId, setExpandedRoomId] = useState(null);
   const [viewMode, setViewMode] = useState("list"); // "list" | "dashboard"
+  const [maintenanceReport, setMaintenanceReport] = useState({ rows: [], loading: true, error: null, oldestScan: null, newestScan: null });
 
   const canControl = isAdmin || isGerencia;
 
@@ -17025,7 +17026,23 @@ function HVACView({ isAdmin, isGerencia }) {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Reporte de "última semana" para mantenimiento — lo calcula un proceso en segundo plano una
+  // vez al día (api/telkonet-scan.js) y aquí solo se lee lo que ya quedó guardado, así que es
+  // rápido aunque haya 361 habitaciones.
+  const loadMaintenanceReport = async () => {
+    setMaintenanceReport(m => ({ ...m, loading: true, error: null }));
+    try {
+      const headers = await authHeaders();
+      const resp = await fetch("/api/telkonet?action=maintenanceReport", { headers });
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el reporte de mantenimiento.");
+      setMaintenanceReport({ rows: data.rows || [], loading: false, error: null, oldestScan: data.oldestScan || null, newestScan: data.newestScan || null });
+    } catch (e) {
+      setMaintenanceReport(m => ({ ...m, loading: false, error: e.message || "No se pudo cargar el reporte de mantenimiento." }));
+    }
+  };
+
+  useEffect(() => { load(); loadMaintenanceReport(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const searchNorm = normalizeSearchText(search.trim());
   const filtered = searchNorm
@@ -17225,6 +17242,50 @@ function HVACView({ isAdmin, isGerencia }) {
               </div>
             </div>
           )}
+
+          <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs font-semibold" style={{ color: C.inkSoft }}>Mantenimiento recomendado (últimos ~7 días)</div>
+              <Button size="sm" variant="ghost" icon={RotateCcw} onClick={loadMaintenanceReport} disabled={maintenanceReport.loading}>Actualizar</Button>
+            </div>
+            <p className="text-[11px] mb-2" style={{ color: C.gray }}>
+              Habitaciones cuya temperatura estuvo fuera de rango (6°F o más del set point) en al menos el 25% de las lecturas de la última semana — buenas candidatas para revisar el equipo.
+              Este número se calcula una vez al día en segundo plano, no en vivo, por eso puede tardar un día en reflejar habitaciones nuevas.
+            </p>
+            {maintenanceReport.loading && <div className="text-sm text-center py-4" style={{ color: C.gray }}>Cargando…</div>}
+            {maintenanceReport.error && !maintenanceReport.loading && (
+              <div className="rounded-md px-3 py-2 text-sm" style={{ background: C.redSoft, color: C.red }}>
+                {maintenanceReport.error} <button className="underline ml-1" onClick={loadMaintenanceReport}>Reintentar</button>
+              </div>
+            )}
+            {!maintenanceReport.loading && !maintenanceReport.error && (
+              maintenanceReport.rows.length === 0 ? (
+                <div className="text-sm text-center py-4" style={{ color: C.gray }}>
+                  Todavía no hay datos — el proceso en segundo plano corre una vez al día y puede tardar unos días en cubrir las 361 habitaciones.
+                </div>
+              ) : (() => {
+                const flagged = maintenanceReport.rows.filter(r => r.needs_maintenance).sort((a, b) => (b.out_of_range_pct || 0) - (a.out_of_range_pct || 0));
+                return flagged.length === 0 ? (
+                  <div className="text-sm text-center py-4" style={{ color: C.gray }}>Ninguna habitación supera el umbral esta semana. 👍</div>
+                ) : (
+                  <div className="space-y-1">
+                    {flagged.slice(0, 20).map(r => (
+                      <div key={r.room_id} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
+                        <span style={{ color: C.ink }}>{r.room_name}</span>
+                        <span style={{ color: C.inkSoft }}>{Number(r.out_of_range_count)} de {Number(r.total_readings)} lecturas fuera de rango</span>
+                        <span className="font-semibold" style={{ color: C.red }}>{Number(r.out_of_range_pct).toFixed(0)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
+            {!maintenanceReport.loading && !maintenanceReport.error && maintenanceReport.rows.length > 0 && (
+              <p className="text-[11px] mt-2" style={{ color: C.gray }}>
+                {maintenanceReport.rows.length} de {rooms.length} habitaciones ya revisadas · última actualización: {maintenanceReport.newestScan ? new Date(maintenanceReport.newestScan).toLocaleString() : "—"}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

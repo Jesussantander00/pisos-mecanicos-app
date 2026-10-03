@@ -203,11 +203,26 @@ function telkonetDateFormat(date) {
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
+// Nombres de todos los "Active State"/perfil que Telkonet puede reportar en el registro (Data) —
+// incluye los 3 que se pueden asignar desde QuinTech (ver PROFILE_TYPES) más los que Telkonet usa
+// internamente y que sí pueden aparecer en el historial aunque no se puedan elegir desde acá.
+const PROFILE_TYPE_NAMES = {
+  "1": "Check IN",
+  "2": "Check OUT",
+  "3": "VIP",
+  "4": "TestValve",
+  "5": "TestOccupancy",
+};
+
 /** Trae el panel de historial real de una habitación — las mismas 3 gráficas (Temperatura vs.
  *  Setpoint, Ciclo de encendido del aire, y Porcentaje de ocupación por hora) que muestra el panel
- *  "Historical Data" de Telkonet. Telkonet las genera como imágenes PNG ya dibujadas en su
- *  servidor (no hay datos numéricos sueltos que pedir aparte), así que aquí se extraen esas 3
- *  imágenes y se devuelven listas para mostrar tal cual en QuinTech. */
+ *  "Historical Data" de Telkonet, MÁS el registro fila-por-fila (pestaña "Data" en Telkonet) con
+ *  una lectura cada ~15 minutos: fecha/hora, el "Active State" (VIP, Check IN, Check OUT) que tenía
+ *  en ese momento, temperatura y setpoint. Telkonet genera las gráficas como imágenes PNG ya
+ *  dibujadas en su servidor (no hay datos numéricos sueltos que pedir aparte para esas), así que
+ *  aquí se extraen esas 3 imágenes tal cual para mostrarlas, y por separado se trae el registro de
+ *  la pestaña "Data" — este último sirve para poder comprobar, mirando la columna de estado, si un
+ *  cambio de estado (p.ej. a VIP) se mantuvo con el tiempo o Telkonet lo revirtió solo. */
 async function fetchHistory(roomId, days = 7) {
   const deviceId = await fetchRoomDeviceId(roomId);
   if (!deviceId) throw new Error("No se encontró el termostato de esa habitación.");
@@ -215,19 +230,22 @@ async function fetchHistory(roomId, days = 7) {
   const end = new Date();
   const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
 
-  const html = await telkonetFetch("modules/ecosmart/ajax/data_ecoinsightopmodal_historicaldata.php", {
-    method: "POST",
-    raw: true,
-    body: {
-      action: "getTempvssetpointGraph",
-      deviceid: deviceId,
-      propID: PROP_ID,
-      isTouch: "false",
-      startdate: telkonetDateFormat(start),
-      enddate: telkonetDateFormat(end),
-      _nodeid: NODE_ID,
-    },
-  });
+  const [html, log] = await Promise.all([
+    telkonetFetch("modules/ecosmart/ajax/data_ecoinsightopmodal_historicaldata.php", {
+      method: "POST",
+      raw: true,
+      body: {
+        action: "getTempvssetpointGraph",
+        deviceid: deviceId,
+        propID: PROP_ID,
+        isTouch: "false",
+        startdate: telkonetDateFormat(start),
+        enddate: telkonetDateFormat(end),
+        _nodeid: NODE_ID,
+      },
+    }),
+    fetchDataLog(deviceId),
+  ]);
 
   const graphs = {};
   const labels = {
@@ -247,7 +265,38 @@ async function fetchHistory(roomId, days = 7) {
     startDate: telkonetDateFormat(start),
     endDate: telkonetDateFormat(end),
     graphs,
+    dataLog: log,
   };
+}
+
+/** Pestaña "Data" de Telkonet: el registro crudo de lecturas del termostato, una cada ~15 minutos,
+ *  incluyendo qué "Active State" (perfil: VIP, Check IN, Check OUT) tenía en ese momento exacto.
+ *  Trae las últimas `limit` lecturas (más recientes primero, igual que en Telkonet). */
+async function fetchDataLog(deviceId, limit = 40) {
+  const fields = ["DateTime", "CurrentlyActiveProfileType", "UserSetPoint", "Temperature", "ThermostatMode", "Occupied"];
+  const data = await telkonetFetch("modules/ecosmart/ajax/data_opmodal_ems.php", {
+    method: "POST",
+    body: {
+      deviceID: deviceId,
+      propID: PROP_ID,
+      deviceType: "5.2",
+      fields: JSON.stringify(fields),
+      startDate: "",
+      page: "1",
+      start: "0",
+      limit: String(limit),
+      _nodeid: NODE_ID,
+    },
+  });
+  return (data?.data || []).map(r => ({
+    dateTime: r.DateTime,
+    profileId: r.CurrentlyActiveProfileType,
+    profileName: PROFILE_TYPE_NAMES[r.CurrentlyActiveProfileType] || `Perfil ${r.CurrentlyActiveProfileType}`,
+    userSetPoint: r.UserSetPoint != null ? Number(r.UserSetPoint) : null,
+    temperature: r.Temperature != null ? Number(r.Temperature) : null,
+    thermostatMode: r.ThermostatMode || null,
+    occupied: r.Occupied === "1",
+  }));
 }
 
 async function setRoomState(roomId, profileTypeId, profileTypeName) {

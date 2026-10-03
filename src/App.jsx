@@ -17032,14 +17032,14 @@ function HVACView({ isAdmin, isGerencia }) {
     : rooms;
 
   const openHistory = async (room) => {
-    setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: true, graphs: {}, startDate: null, endDate: null, error: null });
+    setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: true, graphs: {}, startDate: null, endDate: null, dataLog: [], error: null });
     try {
       const headers = await authHeaders();
       const resp = await fetch(`/api/telkonet?action=history&roomId=${encodeURIComponent(room.RoomID)}`, { headers });
       const data = await resp.json();
       if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el historial.");
       const h = data.history || {};
-      setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: false, graphs: h.graphs || {}, startDate: h.startDate || null, endDate: h.endDate || null, error: null });
+      setHistoryRoom({ RoomID: room.RoomID, RoomName: room.RoomName, loading: false, graphs: h.graphs || {}, startDate: h.startDate || null, endDate: h.endDate || null, dataLog: h.dataLog || [], error: null });
     } catch (e) {
       setHistoryRoom(h => h && ({ ...h, loading: false, error: e.message || "No se pudo cargar el historial." }));
     }
@@ -17215,6 +17215,30 @@ function HVACView({ isAdmin, isGerencia }) {
                   ))}
                 </div>
               )
+            )}
+            {!historyRoom.loading && !historyRoom.error && (historyRoom.dataLog || []).length > 0 && (
+              <div className="mt-4 pt-4 border-t" style={{ borderColor: C.line }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>
+                  Registro de estado (Data) — últimas {historyRoom.dataLog.length} lecturas
+                </div>
+                <p className="text-[11px] mb-2" style={{ color: C.gray }}>
+                  Una lectura cada ~15 min. Útil para comprobar si un cambio de estado (p.ej. a VIP) se mantuvo o Telkonet lo revirtió solo — mira si "Estado" cambia entre filas sin que nadie lo haya tocado desde aquí.
+                </p>
+                <div className="space-y-1">
+                  {historyRoom.dataLog.map((rec, i) => {
+                    const prev = historyRoom.dataLog[i + 1]; // el array viene más reciente primero
+                    const changed = prev && prev.profileName !== rec.profileName;
+                    const tone = hvacStateTone(rec.profileName);
+                    return (
+                      <div key={i} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: changed ? (C.amberSoft || "#fef3c7") : (i % 2 === 0 ? "transparent" : (C.panelSoft || "#f8fafc")) }}>
+                        <span style={{ color: C.inkSoft }}>{rec.dateTime}</span>
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{rec.profileName}</span>
+                        <span style={{ color: C.ink }}>{rec.temperature != null ? `${rec.temperature}°F` : "—"} / set {rec.userSetPoint != null ? `${rec.userSetPoint}°F` : "—"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
         </div>

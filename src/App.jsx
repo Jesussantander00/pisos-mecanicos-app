@@ -15895,68 +15895,58 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     activeIssuesList.filter(iss => hoursBetween(iss.openedAt, nowIso()) / 24 >= 30).sort((a, b) => new Date(a.openedAt) - new Date(b.openedAt))
   ), [activeIssuesList]);
 
+  // Progreso general del turno (recorrido + tareas de hoy) — se muestra como tercera cifra del encabezado.
+  const shiftPct = (() => {
+    if (gerenciaLocked) return null;
+    const tasksDone = (tasksToday || []).filter(t => normalizeTaskState(t.estado) === "finalizada").length;
+    const totalExpected = (tourProgress?.total || 0) + (tasksToday?.length || 0);
+    if (totalExpected <= 0) return null;
+    return Math.round((((tourProgress?.done || 0) + tasksDone) / totalExpected) * 100);
+  })();
+
   return (
     <div className="pb-20">
       {/* pb-20: deja espacio para que el botón flotante "Asistente IA" nunca tape
           contenido real (como "Ver todos los módulos") cuando se hace scroll hasta el final. */}
-      <div className="relative rounded-xl p-3.5 mb-4 overflow-hidden" style={{ background: `linear-gradient(135deg, ${C.steelDark} 0%, #0a1521 100%)` }}>
-        <style>{`
-          @keyframes pmNodePulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
-          @keyframes pmTracePulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.75; } }
-        `}</style>
-        {/* Fondo decorativo tipo placa de circuito iluminada — solo estético, no interactivo */}
-        <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" aria-hidden="true" style={{ pointerEvents: "none" }}>
-          <defs>
-            <pattern id="pmCircuitPattern" width="130" height="100" patternUnits="userSpaceOnUse">
-              <path d="M0 22 H38 V54 H76 V12 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 5s ease-in-out infinite" }} />
-              <path d="M16 100 V70 H58 V90 H96 V48 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 6.5s ease-in-out infinite 1.2s" }} />
-              <path d="M0 85 H24 V60 H0" fill="none" stroke="#245a91" strokeWidth="1" style={{ animation: "pmTracePulse 7s ease-in-out infinite 0.6s" }} />
-              <circle cx="38" cy="22" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.2s ease-in-out infinite" }} />
-              <circle cx="76" cy="54" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4s ease-in-out infinite 0.8s" }} />
-              <circle cx="58" cy="70" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.6s ease-in-out infinite 1.6s" }} />
-              <circle cx="96" cy="48" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4.4s ease-in-out infinite 0.3s" }} />
-            </pattern>
-            <radialGradient id="pmCircuitGlow" cx="82%" cy="15%" r="90%">
-              <stop offset="0%" stopColor="#3fa9ff" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#3fa9ff" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#pmCircuitPattern)" opacity="0.65" />
-          <rect width="100%" height="100%" fill="url(#pmCircuitGlow)" />
-        </svg>
-        <div className="relative z-10">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <div className="text-white text-lg font-semibold">Hola, {(currentUser || "").trim().split(/\s+/)[0]}</div>
-              <div className="text-sm hidden sm:block" style={{ color: "#8fa3b8" }}>
+      <div className="rounded-2xl p-4 mb-4" style={{ background: C.steel }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/icon-192.png" alt="" className="w-10 h-10 rounded-xl object-cover shrink-0" />
+            <div className="min-w-0">
+              <div className="text-white text-lg font-bold leading-tight truncate">Hola, {(currentUser || "").trim().split(/\s+/)[0]}</div>
+              <div className="text-xs" style={{ color: "#c3d0dd" }}>
                 {isAdmin ? "Administrador" : isAlmacenista ? "Almacenista" : gerenciaLocked ? "Gerencia (solo consulta)" : "Operador"}
               </div>
             </div>
-            <Gauge size={28} color={C.amber} />
           </div>
-          {!gerenciaLocked && (tourProgress.total > 0 || tasksToday?.length > 0) && (() => {
-            const tasksDone = (tasksToday || []).filter(t => normalizeTaskState(t.estado) === "finalizada").length;
-            const tasksTotal = tasksToday?.length || 0;
-            const totalDone = tourProgress.done + tasksDone;
-            const totalExpected = tourProgress.total + tasksTotal;
-            const pct = totalExpected > 0 ? Math.round((totalDone / totalExpected) * 100) : 0;
-            return (
-              <div className="mt-3" title={`${tourProgress.done}/${tourProgress.total} pisos del recorrido · ${tasksDone}/${tasksTotal} tareas de hoy`}>
-                <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: "#8fa3b8" }}>
-                  <span>Progreso general del turno</span>
-                  <span className="font-semibold" style={{ color: pct >= 100 ? C.green : "#cdd8e2" }}>{pct}%</span>
-                </div>
-                <div className="w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)", height: 6 }}>
-                  <div className="h-full rounded-full" style={{
-                    width: `${Math.min(100, pct)}%`,
-                    background: pct >= 100 ? C.green : C.amber,
-                    transition: "width 700ms var(--ease-out)",
-                  }} />
-                </div>
-              </div>
-            );
-          })()}
+          <Gauge size={26} color={C.amber} className="shrink-0" />
         </div>
+        <div className="relative mt-3.5">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.inkSoft }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar módulo… (ej: cuartos fríos, tareas)" aria-label="Buscar módulo"
+            className="w-full text-sm rounded-xl pl-9 pr-9 outline-none" style={{ background: "#fff", color: C.ink, minHeight: 46 }} />
+          {search && (
+            <button onClick={() => setSearch("")} aria-label="Borrar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1" style={{ color: C.inkSoft }}>
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        {!gerenciaLocked && (
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <button onClick={() => { __pmTasksEntryFilter = "vencidas"; onNavigate("tasks"); }} className="text-left rounded-xl px-3 py-2.5" style={{ background: "#2a4058" }} title="Tareas asignadas a ti con más de 24 horas abiertas">
+              <div className="text-2xl font-extrabold leading-none tabular-nums" style={{ color: (counts.misTareasVencidas || 0) > 0 ? "#ffb4a0" : "#8fdca0" }}>{counts.misTareasVencidas || 0}</div>
+              <div className="text-[11.5px] mt-1" style={{ color: "#c3d0dd" }}>Tareas vencidas</div>
+            </button>
+            <button onClick={() => onNavigate("issues")} className="text-left rounded-xl px-3 py-2.5" style={{ background: "#2a4058" }}>
+              <div className="text-2xl font-extrabold leading-none tabular-nums" style={{ color: (counts.activeIssues || 0) > 0 ? "#f3b73f" : "#8fdca0" }}>{counts.activeIssues || 0}</div>
+              <div className="text-[11.5px] mt-1" style={{ color: "#c3d0dd" }}>Fuera de servicio</div>
+            </button>
+            <div className="rounded-xl px-3 py-2.5" style={{ background: "#2a4058" }} title="Recorrido y tareas de hoy">
+              <div className="text-2xl font-extrabold leading-none tabular-nums" style={{ color: shiftPct != null && shiftPct >= 100 ? "#8fdca0" : "#fff" }}>{shiftPct != null ? `${shiftPct}%` : "—"}</div>
+              <div className="text-[11.5px] mt-1" style={{ color: "#c3d0dd" }}>Progreso del turno</div>
+            </div>
+          </div>
+        )}
       </div>
 
       <WhatsNewBanner entries={changelogEntries} currentUser={currentUser} />
@@ -15988,17 +15978,6 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
           </div>
         );
       })()}
-
-      <div className="relative mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.gray }} />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar una herramienta… (ej: cuartos fríos, tareas, reportes)"
-          className="w-full text-sm border rounded-lg pl-9 pr-8 py-2.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-        {search && (
-          <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5" style={{ color: C.gray }}>
-            <X size={16} />
-          </button>
-        )}
-      </div>
 
       {!hasSignature && !dismissedSigReminder && (
         <div className="rounded-lg p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
@@ -16160,37 +16139,15 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         </div>
       )}
 
-      {/* PILAR 3 — Accesos rápidos: barra integrada de una sola pieza, en vez de bloques de color separados. */}
-      {!gerenciaLocked && !searchNorm && (
-        <div className="mb-4">
-          <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Accesos rápidos</div>
-          <div className="flex items-stretch rounded-xl border overflow-hidden shadow-sm" style={{ borderColor: C.line, background: C.panel }}>
-            {[
-              { id: "ronda", label: "Nueva ronda", icon: ClipboardList, color: C.amber },
-              { id: "issues", label: "Fuera de servicio", icon: Wrench, color: C.red },
-              { id: "maintenance", label: "Mantenimiento", icon: PlusCircle, color: C.green },
-              { id: "tasks", label: "Nueva tarea", icon: ClipboardCheck, color: C.blue },
-            ].filter(qa => qa.id !== "maintenance" || isAdmin).map((qa, i, arr) => (
-              <button key={qa.id} onClick={() => onNavigate(qa.id)}
-                className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06]"
-                style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none" }}>
-                <qa.icon size={18} color={qa.color} />
-                <span className="text-xs font-semibold text-center" style={{ color: C.ink }}>{qa.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {!searchNorm && (
         <div className="flex items-center justify-between mb-3 gap-2">
           <p className="text-sm" style={{ color: C.inkSoft }}>
             {gerenciaLocked
               ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
-              : "Arriba tienes tus favoritos y lo más reciente. Si necesitas algo más, está en el menú lateral o aquí abajo."}
+              : "Todas tus herramientas, a un toque. Fija con la estrella las que más usas."}
           </p>
           <div className="flex items-center gap-2 shrink-0">
-            {(showAllModules || gerenciaLocked) && (
+            {(
               <div className="flex rounded-md border overflow-hidden" style={{ borderColor: C.line }}>
                 <button onClick={() => setModuleView("cards")} title="Vista de tarjetas" className="p-1.5" style={{ background: moduleViewMode === "cards" ? C.amberSoft : C.panel }}>
                   <LayoutGrid size={14} color={moduleViewMode === "cards" ? "#7a5405" : C.gray} />
@@ -16199,11 +16156,6 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                   <List size={14} color={moduleViewMode === "list" ? "#7a5405" : C.gray} />
                 </button>
               </div>
-            )}
-            {!gerenciaLocked && (
-              <button onClick={() => setShowAllModules(v => !v)} className="text-xs font-semibold whitespace-nowrap" style={{ color: C.amber }}>
-                {showAllModules ? "Ocultar todos los módulos" : "Ver todos los módulos"}
-              </button>
             )}
           </div>
         </div>
@@ -16218,7 +16170,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
         <div className="text-sm text-center py-10" style={{ color: C.gray }}>
           No encontré nada para "{search.trim()}". Intenta con otra palabra.
         </div>
-      ) : (searchNorm || showAllModules || gerenciaLocked) && (
+      ) : (
         <div className="space-y-5">
           {groupedModules.map(({ group, items }) => (
             <div key={group}>
@@ -16237,33 +16189,28 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                   ))}
                 </div>
               ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                {items.map(m => (
-                  <button key={m.id} onClick={() => goTo(m.id)}
-                    className="group text-left rounded-lg border p-3 transition duration-150 ease-out relative hover:-translate-y-0.5 hover:shadow-md hover:border-[var(--pm-amber)] active:translate-y-0 active:shadow-sm active:border-[var(--pm-amber)] active:scale-[0.98]"
-                    style={{
-                      borderColor: m.highlight ? C.amber : C.line, background: C.panel, minHeight: 60,
-                      boxShadow: m.highlight ? `0 0 0 1px ${C.amber}` : "none",
-                    }}>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                {items.map(m => {
+                  const gc = GROUP_COLORS[m.group] || C.amber;
+                  return (
+                  <button key={m.id} onClick={() => goTo(m.id)} title={m.desc}
+                    className="group rounded-2xl border p-2 transition duration-150 ease-out relative hover:-translate-y-0.5 hover:shadow-md flex flex-col items-center justify-center gap-2 text-center"
+                    style={{ borderColor: m.highlight ? C.amber : C.line, background: C.panel, minHeight: 104, boxShadow: m.highlight ? `0 0 0 1px ${C.amber}` : "none" }}>
                     {!gerenciaLocked && (
                       <span role="button" tabIndex={0} title={favorites.includes(m.id) ? "Quitar de favoritos" : "Fijar en favoritos"}
                         onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); toggleFavorite(m.id); } }}
-                        className={`absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center transition-opacity ${favorites.includes(m.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
+                        className={`absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full flex items-center justify-center transition-opacity ${favorites.includes(m.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
                         style={{ background: C.panel, border: `1px solid ${C.line}`, minWidth: 24, minHeight: 24 }}>
                         <Sparkles size={12} color={favorites.includes(m.id) ? C.amber : C.gray} fill={favorites.includes(m.id) ? C.amber : "none"} />
                       </span>
                     )}
-                    <div className="flex items-center gap-2 mb-1">
-                      <m.icon size={16} className="shrink-0" style={{ color: GROUP_COLORS[m.group] || C.amber }} />
-                      <div className="text-sm font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }} title={m.label}>{m.label}</div>
-                      <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
-                    </div>
-                    <div className="text-xs" style={{ color: C.inkSoft, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={m.desc}>
-                      {m.desc}
-                    </div>
+                    <span className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${gc}22`, color: gc }}><m.icon size={22} /></span>
+                    <span className="text-xs font-semibold leading-tight" style={{ color: C.ink, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{m.label}</span>
+                    <span className="absolute top-1.5 right-1.5"><NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} /></span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
               )}
             </div>

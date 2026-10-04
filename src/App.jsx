@@ -9550,7 +9550,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked, onGoToProfile }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked, onGoToProfile, myWorkMode = false }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
@@ -9766,6 +9766,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); setFilterOrigen(""); setFilterEtiqueta(""); };
 
   const [onlyMine, setOnlyMine] = useState(() => {
+    if (myWorkMode) return true; // técnico: "Mi trabajo" siempre muestra solo lo suyo
     try { const saved = localStorage.getItem(`pm-local:tasks-only-mine:${currentUsername}`); return saved != null ? saved === "1" : !isAdmin; } catch { return !isAdmin; }
   });
   // Si se llegó aquí desde la tarjeta "Mis tareas vencidas" de Inicio, arranca ya con ese
@@ -10000,13 +10001,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Tareas / Pendientes</h2>
-          <p className="text-sm" style={{ color: C.inkSoft }}>El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento.</p>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>{myWorkMode ? "Mi trabajo" : "Tareas / Pendientes"}</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>{myWorkMode ? "Lo que tienes asignado hoy y lo que está pendiente, listo para ejecutar y hacer seguimiento." : "El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento."}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={toggleOnlyMine} className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
+          {!myWorkMode && <button onClick={toggleOnlyMine} className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
             {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
-          </button>
+          </button>}
           <button onClick={() => setOnlyVencidas(v => !v)} title="Sin cerrar y abiertas hace más de 24 horas" className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyVencidas ? C.red : C.panel, color: onlyVencidas ? "#fff" : C.inkSoft, borderColor: onlyVencidas ? C.red : C.line, minHeight: 36 }}>
             {onlyVencidas ? "✓ Vencidas" : "Vencidas"}
           </button>
@@ -15834,7 +15835,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays, desc: "Seguimiento del año completo", access: isAdmin, group: "Gestión e Inventario" },
     { id: "fichas-tecnicas", label: "Fichas técnicas", icon: ClipboardList, desc: "Lavandería, gimnasio y caldera", access: true, group: "Operación en Campo" },
     { id: "schedules", label: "Horario mensual", icon: Users, desc: "Turnos del personal", access: true, group: "Gestión e Inventario" },
-    { id: "tasks", label: "Tareas", icon: ClipboardCheck, desc: "El buzón de lo que va saliendo", access: true, badge: counts.openTasks, urgentBadge: false, group: "Operación en Campo" },
+    { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, desc: isAdmin ? "El buzón de lo que va saliendo" : "Lo que tienes asignado, listo para ejecutar", access: true, badge: counts.openTasks, urgentBadge: false, group: "Operación en Campo" },
     { id: "changelog", label: "Novedades", icon: Sparkles, desc: "Qué ha cambiado en la app", access: true, group: "Reportes y Análisis" },
     { id: "handoff", label: "Entrega de turno", icon: Send, desc: "Resumen del recorrido, por correo", access: true, badge: counts.justFinished ? "!" : 0, pulse: true, group: "Operación en Campo" },
     { id: "issues", label: "Fuera de servicio", icon: Wrench, desc: "Equipos dañados activos", access: true, badge: counts.activeIssues, pulse: true, group: "Operación en Campo" },
@@ -15845,6 +15846,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "wiki", label: "Wiki interna", icon: BookOpen, desc: "Protocolos generales — emergencias, qué hacer si...", access: true, group: "Reportes y Análisis" },
     { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos y tipos de habitación", access: true, group: "Gestión e Inventario" },
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
+    { id: "today", label: "Panel de hoy", icon: Gauge, desc: "Qué tiene cada técnico, hecho hoy y programado", access: isAdmin, group: "Operación en Campo" },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin || isGerencia, group: "Operación en Campo" },
@@ -16993,7 +16995,160 @@ function hvacStateTone(profileName) {
  * navegador. El cambio de estado SÍ mueve equipo físico real, así que pide confirmación explícita
  * y el propio servidor vuelve a comprobar que quien llama es admin/gerencia antes de ejecutarlo.
  */
-function HVACView({ isAdmin, isGerencia }) {
+/**
+ * Panel "Hoy" para el supervisor: por cada técnico, sus órdenes en tres columnas (pendientes,
+ * en proceso, hechas hoy), lo que queda programado para mañana en adelante, y alertas de lo que
+ * lleva demasiado tiempo abierto o sigue sin asignar. Puede verse solo con lo de HotSOS.
+ * Todo sale de las tareas que ya existen (incluidas las importadas de HotSOS) — no guarda nada nuevo.
+ */
+function TodayBoardView({ tasks, accounts, onNavigate }) {
+  const [onlyHotsos, setOnlyHotsos] = useState(false);
+  const [staleHours, setStaleHours] = useState(24);
+  const [showTomorrow, setShowTomorrow] = useState(true);
+
+  const data = useMemo(() => {
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    const tomorrow0 = new Date(today0); tomorrow0.setDate(tomorrow0.getDate() + 1);
+    const dayAfter0 = new Date(tomorrow0); dayAfter0.setDate(dayAfter0.getDate() + 1);
+    const base = (tasks || []).filter(t => !onlyHotsos || t.origen === "hotsos");
+    const byUser = {};
+    const bucket = (u) => (byUser[u] = byUser[u] || { username: u, pendientes: [], enProceso: [], hechasHoy: [] });
+    const programadas = [];
+    const alertas = [];
+    base.forEach(t => {
+      const est = normalizeTaskState(t.estado);
+      const u = t.asignadoA || "";
+      if (est === "finalizada") {
+        if (t.finishedAt && new Date(t.finishedAt) >= today0) bucket(u).hechasHoy.push(t);
+        return;
+      }
+      if (isTaskSnoozed(t) && new Date(t.snoozedUntil) >= tomorrow0) { programadas.push(t); return; }
+      if (est === "en-proceso") bucket(u).enProceso.push(t); else bucket(u).pendientes.push(t);
+      const horas = hoursBetween(t.createdAt || t.assignedAt || nowIso(), nowIso());
+      if (!u) alertas.push({ t, motivo: "Sin asignar", horas });
+      else if (horas > staleHours) alertas.push({ t, motivo: `Abierta hace ${horas >= 48 ? Math.floor(horas / 24) + " días" : Math.floor(horas) + " h"}`, horas });
+    });
+    alertas.sort((a, b) => b.horas - a.horas);
+    const users = Object.values(byUser).sort((a, b) => (a.username === "") - (b.username === "") || (b.pendientes.length + b.enProceso.length) - (a.pendientes.length + a.enProceso.length));
+    const manana = programadas.filter(t => new Date(t.snoozedUntil) < dayAfter0);
+    const hotsosTimes = (tasks || []).filter(t => t.origen === "hotsos").map(t => new Date(t.createdAt || 0).getTime()).filter(Boolean);
+    const lastImportAt = hotsosTimes.length ? Math.max(...hotsosTimes) : null;
+    const totals = users.reduce((a, u) => ({ p: a.p + u.pendientes.length, e: a.e + u.enProceso.length, h: a.h + u.hechasHoy.length }), { p: 0, e: 0, h: 0 });
+    return { users, programadas, manana, alertas, lastImportAt, totals };
+  }, [tasks, onlyHotsos, staleHours]);
+
+  const nameOf = (u) => (u ? (accounts?.[u]?.display_name || u) : "Sin asignar");
+  const lugarOf = (t) => (t.origen === "hotsos" ? String(t.descripcion || "").split(" — ")[0] : "");
+  const horasDesdeImport = data.lastImportAt ? (Date.now() - data.lastImportAt) / 36e5 : null;
+  const importStale = data.lastImportAt == null || horasDesdeImport > 6;
+
+  const Row = ({ t }) => (
+    <button onClick={() => onNavigate("tasks")} className="w-full text-left rounded-md border px-2 py-1.5 text-xs flex items-start gap-1.5" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+      <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: TASK_PRIORITY_COLORS[t.prioridad] || C.gray }} />
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{t.titulo}</span>
+        <span className="block truncate" style={{ color: C.gray }}>{[lugarOf(t), t.origen === "hotsos" ? "🛎️ HotSOS" : ""].filter(Boolean).join(" · ") || "—"}</span>
+      </span>
+    </button>
+  );
+  const Col = ({ title, color, items }) => (
+    <div className="min-w-0">
+      <div className="text-[11px] font-semibold mb-1.5 flex items-center justify-between" style={{ color }}>
+        <span>{title}</span><span className="px-1.5 rounded-full" style={{ background: C.bg }}>{items.length}</span>
+      </div>
+      <div className="space-y-1">
+        {items.slice(0, 5).map(t => <Row key={t.id} t={t} />)}
+        {items.length > 5 && <div className="text-[11px] px-1" style={{ color: C.gray }}>+{items.length - 5} más</div>}
+        {items.length === 0 && <div className="text-[11px] px-1" style={{ color: C.gray }}>—</div>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="pm-tab-in">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Panel de hoy</h2>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Qué tiene cada técnico, qué se hizo hoy y qué queda para mañana.</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setOnlyHotsos(v => !v)} className="text-xs font-semibold px-3 rounded-md border" style={{ minHeight: 36, background: onlyHotsos ? C.steelDark : C.panel, color: onlyHotsos ? "#fff" : C.inkSoft, borderColor: onlyHotsos ? C.steelDark : C.line }}>
+            {onlyHotsos ? "✓ Solo HotSOS" : "Solo HotSOS"}
+          </button>
+          <select value={staleHours} onChange={e => setStaleHours(Number(e.target.value))} className="text-xs border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }} title="Desde cuántas horas abierta se marca como atrasada">
+            <option value={8}>Alerta: más de 8 h</option>
+            <option value={24}>Alerta: más de 24 h</option>
+            <option value={48}>Alerta: más de 48 h</option>
+          </select>
+        </div>
+      </div>
+
+      {importStale && (
+        <div className="rounded-md px-3 py-2 text-sm mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#fff3d6", color: "#8a5a00" }}>
+          <span>🛎️ {data.lastImportAt == null ? "Todavía no hay órdenes importadas de HotSOS." : `Las órdenes de HotSOS se importaron hace ${horasDesdeImport >= 24 ? Math.floor(horasDesdeImport / 24) + " día(s)" : Math.floor(horasDesdeImport) + " h"} — puede que haya órdenes nuevas.`}</span>
+          <button onClick={() => onNavigate("hotsos-import")} className="text-xs font-semibold underline">Importar ahora</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        {[["Pendientes", data.totals.p, C.amber], ["En proceso", data.totals.e, C.blue], ["Hechas hoy", data.totals.h, C.green]].map(([l, n, c]) => (
+          <div key={l} className="rounded-lg border p-3 text-center" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-2xl font-bold tabular-nums" style={{ color: c }}>{n}</div>
+            <div className="text-xs" style={{ color: C.inkSoft }}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {data.alertas.length > 0 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.red, background: C.panel }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: C.red }}>⚠️ Requieren atención ({data.alertas.length})</div>
+          <div className="space-y-1">
+            {data.alertas.slice(0, 8).map(({ t, motivo }) => (
+              <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate" style={{ color: C.ink }}>{t.titulo}{lugarOf(t) ? ` — ${lugarOf(t)}` : ""}</span>
+                <span className="shrink-0 font-semibold" style={{ color: C.red }}>{motivo}</span>
+              </div>
+            ))}
+            {data.alertas.length > 8 && <div className="text-xs" style={{ color: C.gray }}>+{data.alertas.length - 8} más</div>}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {data.users.map(u => (
+          <div key={u.username || "_none"} className="rounded-lg border p-3" style={{ borderColor: u.username ? C.line : C.amber, background: C.panel }}>
+            <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>{u.username ? "👷 " : "📥 "}{nameOf(u.username)}</div>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <Col title="Pendientes" color={C.amber} items={u.pendientes} />
+              <Col title="En proceso" color={C.blue} items={u.enProceso} />
+              <Col title="Hechas hoy" color={C.green} items={u.hechasHoy} />
+            </div>
+          </div>
+        ))}
+        {data.users.length === 0 && <div className="text-sm text-center py-8" style={{ color: C.gray }}>No hay tareas para mostrar.</div>}
+      </div>
+
+      <div className="rounded-lg border p-3 mt-4" style={{ borderColor: C.line, background: C.panel }}>
+        <button onClick={() => setShowTomorrow(v => !v)} className="w-full flex items-center justify-between text-sm font-semibold" style={{ color: C.ink }}>
+          <span>📅 Programadas para mañana en adelante ({data.programadas.length})</span><span className="text-xs" style={{ color: C.gray }}>{showTomorrow ? "Ocultar" : "Ver"}</span>
+        </button>
+        {showTomorrow && (
+          <div className="mt-2 space-y-1">
+            {data.programadas.length === 0 && <div className="text-xs" style={{ color: C.gray }}>Nada programado. Para dejar una orden para otro día, abre la tarea y usa "Posponer".</div>}
+            {data.programadas.sort((a, b) => new Date(a.snoozedUntil) - new Date(b.snoozedUntil)).slice(0, 15).map(t => (
+              <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate" style={{ color: C.ink }}>{t.titulo}{lugarOf(t) ? ` — ${lugarOf(t)}` : ""} <span style={{ color: C.gray }}>· {nameOf(t.asignadoA)}</span></span>
+                <span className="shrink-0" style={{ color: C.blue }}>{new Date(t.snoozedUntil).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" })}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HVACView({ isAdmin, isGerencia, tasks = [] }) {
   const [rooms, setRooms] = useState([]);
   const [profileTypes, setProfileTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17008,6 +17163,17 @@ function HVACView({ isAdmin, isGerencia }) {
   const [maintenanceReport, setMaintenanceReport] = useState({ rows: [], loading: true, error: null, oldestScan: null, newestScan: null });
 
   const canControl = isAdmin || isGerencia;
+  // Órdenes de HotSOS todavía abiertas, agrupadas por número de habitación (se toma de "lugar",
+  // que HotSOS escribe al inicio de la descripción) — para ver junto al aire si ya hay una orden.
+  const hotsosByRoom = useMemo(() => {
+    const map = {};
+    (tasks || []).forEach(t => {
+      if (t.origen !== "hotsos" || normalizeTaskState(t.estado) === "finalizada") return;
+      const m = /\b(\d{3,5})\b/.exec(String(t.descripcion || "").split(" — ")[0]);
+      if (m) (map[m[1]] = map[m[1]] || []).push(t);
+    });
+    return map;
+  }, [tasks]);
 
   const load = async () => {
     setLoading(true);
@@ -17305,7 +17471,15 @@ function HVACView({ isAdmin, isGerencia }) {
                       <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>
                       <Users size={14} color={r.Occupied && r.Occupied !== "0" ? "#3b82f6" : "#9ca3af"} title={r.Occupied && r.Occupied !== "0" ? "Ocupada" : "Desocupada"} />
                     </div>
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
+                    {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length > 0 && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#ede9fe", color: "#6d28d9" }}
+                        title={(hotsosByRoom[String(r.RoomName || "").trim()] || []).map(t => t.titulo).join(" · ")}>
+                        🛎️ {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length} orden(es)
+                      </span>
+                    )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 text-sm mb-1.5">
                     <span style={{ color: C.ink }}>{r.Temperature != null ? `${r.Temperature}°F` : "—"} <span className="text-xs" style={{ color: C.gray }}>amb.</span></span>
@@ -24109,7 +24283,8 @@ export default function App() {
         { id: "fichas-tecnicas", label: "Fichas técnicas", icon: ClipboardList },
         { id: "maintenance", label: "Mantenimiento", icon: Wrench },
         { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false },
-        { id: "tasks", label: "Tareas", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada").length, urgentBadge: false },
+        { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && (isAdmin || t.asignadoA === currentUser)).length, urgentBadge: false },
+        ...(isAdmin ? [{ id: "today", label: "Panel de hoy", icon: Gauge }] : []),
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
         ...((isAdmin || isGerencia) ? [{ id: "hvac", label: "TelkHab", icon: Thermometer }] : []),
@@ -24516,7 +24691,7 @@ export default function App() {
         <nav className="pm-safe-bottom sm:hidden fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t" style={{ background: C.panel, borderColor: C.line }}>
           {[
             { id: "home", label: "Inicio", icon: Home, onClick: () => setView("home") },
-            { id: "tasks", label: "Tareas", icon: ClipboardCheck, onClick: () => setView("tasks") },
+            { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, onClick: () => setView("tasks") },
             { id: "qr", label: "Escanear", icon: QrCode, onClick: () => setShowQrScanner(true) },
             { id: "profile", label: "Menú", icon: MenuIcon, onClick: () => setSidebarOpen(true) },
           ].map(item => (
@@ -24613,7 +24788,7 @@ export default function App() {
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "hvac" && (isAdmin || isGerencia) && (
-            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} />
+            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
@@ -24673,7 +24848,10 @@ export default function App() {
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
               onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} onAddTaskComment={addTaskComment}
-              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} />
+              mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} myWorkMode={!isAdmin} />
+          )}
+          {view === "today" && isAdmin && (
+            <TodayBoardView tasks={tasks} accounts={profiles} onNavigate={setView} />
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

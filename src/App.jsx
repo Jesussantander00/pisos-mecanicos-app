@@ -9181,6 +9181,20 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   );
 }
 
+/** Pasos sugeridos según el tipo de orden (item 1): se detecta por palabras del título/descripción. */
+const CHECKLIST_TEMPLATES = [
+  { label: "Aire acondicionado", re: /aire|fan ?coil|clima|enfri|termostato|a\/c/, steps: ["Revisar y limpiar el filtro", "Revisar drenaje (sin goteo ni obstrucción)", "Probar enfriamiento y termostato", "Revisar ruido o vibración", "Confirmar con el huésped/recepción que quedó bien"] },
+  { label: "Fuga de agua", re: /fuga|gote|lavamanos|ducha|grifo|llave|sanitario|inodoro|tuber|desag|ca[ñn]er/, steps: ["Cerrar la llave de paso si hace falta", "Ubicar el origen de la fuga", "Reparar o cambiar empaque/pieza", "Probar 5 minutos sin fuga", "Secar y dejar limpia la zona"] },
+  { label: "Televisor", re: /\btv\b|televis|se[ñn]al|canales|control remoto/, steps: ["Revisar cable y fuente de poder", "Probar con otro control", "Reiniciar y volver a sintonizar canales", "Confirmar imagen y sonido"] },
+  { label: "Iluminación", re: /luz|luces|l[aá]mpara|bombill|luminaria|apagador|interruptor/, steps: ["Verificar bombillo/balastro", "Revisar breaker y conexiones", "Cambiar la pieza dañada", "Probar encendido"] },
+  { label: "Cerradura / puerta", re: /cerradura|chapa|puerta|tarjeta|bisagra/, steps: ["Revisar batería de la cerradura", "Probar tarjeta/llave", "Ajustar o cambiar mecanismo", "Probar apertura y cierre 3 veces"] },
+];
+function suggestChecklist(task) {
+  const txt = normalizeSearchText(`${task?.titulo || ""} ${task?.descripcion || ""}`);
+  return CHECKLIST_TEMPLATES.find(t => t.re.test(txt)) || null;
+}
+const ROOM_PREVENTIVE_STEPS = ["Limpiar o cambiar el filtro del fan coil", "Revisar drenaje y ausencia de goteo", "Probar enfriamiento y termostato", "Revisar ruido o vibración", "Revisar sensor/control de temperatura"];
+
 function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
@@ -9189,6 +9203,8 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   const [closeWitnessSignature, setCloseWitnessSignature] = useState(null);
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
+  const [closeParts, setCloseParts] = useState([]);
+  const [closeWarned, setCloseWarned] = useState(false);
   const [showMttoForm, setShowMttoForm] = useState(false);
   const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
   const [mttoSaving, setMttoSaving] = useState(false);
@@ -9218,9 +9234,15 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
       setCloseMsg({ ok: false, text: "Por ser Prioridad Alta, necesitas el nombre de un testigo que verificó cómo quedó, antes de cerrarla." });
       return;
     }
+    const pasosSinMarcar = (task.checklist || []).filter(c => !c.done).length;
+    if (pasosSinMarcar > 0 && !closeWarned) {
+      setCloseWarned(true);
+      setCloseMsg({ ok: false, text: `Quedan ${pasosSinMarcar} paso(s) del checklist sin marcar. Márcalos, o toca "Confirmar cierre" otra vez para cerrar igual.` });
+      return;
+    }
     setCloseSaving(true); setCloseMsg(null);
     try {
-      await onCloseTask(task, closePhotos, closeNote.trim(), closeWitness.trim(), closeWitnessSignature);
+      await onCloseTask(task, closePhotos, closeNote.trim(), closeWitness.trim(), closeWitnessSignature, closeParts);
       onClose();
     } catch (e) {
       setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo." });
@@ -9238,6 +9260,11 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
     const checklist = [...(task.checklist || []), { id: uid("chk"), text, done: false }];
     onUpdateTask(task.id, { checklist });
     setChecklistDraft("");
+  };
+  const sugerido = estado !== "finalizada" && canAct && !(task.checklist || []).length ? suggestChecklist(task) : null;
+  const loadSuggestedChecklist = () => {
+    if (!sugerido) return;
+    onUpdateTask(task.id, { checklist: sugerido.steps.map(text => ({ id: uid("chk"), text, done: false })) });
   };
   const removeChecklistItem = (id) => {
     onUpdateTask(task.id, { checklist: (task.checklist || []).filter(c => c.id !== id) });
@@ -9339,6 +9366,11 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
 
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Checklist {task.checklist?.length > 0 ? `(${task.checklist.filter(c => c.done).length}/${task.checklist.length})` : ""}</div>
+            {sugerido && (
+              <button type="button" onClick={loadSuggestedChecklist} className="text-xs font-semibold rounded-lg px-3 mb-1.5" style={{ minHeight: 36, background: C.amberSoft, color: C.amber }}>
+                ✨ Cargar pasos sugeridos ({sugerido.label})
+              </button>
+            )}
             {(task.checklist || []).map(item => (
               <label key={item.id} className="flex items-center gap-2 py-1 text-sm cursor-pointer" style={{ color: item.done ? C.gray : C.ink, textDecoration: item.done ? "line-through" : "none" }}>
                 <input type="checkbox" checked={!!item.done} onChange={() => canAct && toggleChecklistItem(item.id)} disabled={!canAct} />
@@ -9533,6 +9565,12 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                       className="text-xs font-semibold rounded-full border px-3" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 36 }}>{chip}</button>
                   ))}
                 </div>
+                {invItems && invItems.length > 0 && (
+                  <div className="mt-2">
+                    <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Repuestos usados (opcional) — se descuentan solos del inventario</div>
+                    <PartsPicker invItems={invItems} parts={closeParts} onChange={setCloseParts} />
+                  </div>
+                )}
                 <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 {task.prioridad === "alta" && (
@@ -9564,7 +9602,7 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   );
 }
 
-function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked, onGoToProfile, myWorkMode = false }) {
+function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, currentUsername, isAdmin, equipos, mttoLog, mttoCronograma, invItems, onLogMaintenance, onCreateTask, onUpdateTask, onUpdateTasksBatch, onDeleteTask, onAddTaskComment, mySignature, signerCargo, pendingTaskCloseIds, viewerLocked, onGoToProfile, myWorkMode = false, onConsumeParts }) {
   const [viewMode, setViewMode] = useState("kanban"); // "kanban" | "list"
   const [filterEstado, setFilterEstado] = useState("");
   const [filterOrigen, setFilterOrigen] = useState("");
@@ -9934,11 +9972,12 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     onUpdateTask(t.id, { vistoPor: next });
   };
 
-  const doCloseTask = async (t, photos, note, witness, witnessSignature) => {
+  const doCloseTask = async (t, photos, note, witness, witnessSignature, parts = []) => {
     try {
+      const repuestosUsados = (parts || []).filter(r => r.itemId && Number(r.cantidad) > 0).map(r => ({ itemId: r.itemId, cantidad: Number(r.cantidad) }));
       const res = await saveRecordWithPhotos(
         "task-close",
-        { taskId: t.id, notaCierre: note, testigoCierre: witness || null },
+        { taskId: t.id, notaCierre: note, testigoCierre: witness || null, repuestos: repuestosUsados },
         photos,
         async (payload, urls) => {
           await onUpdateTask(payload.taskId, {
@@ -9952,8 +9991,10 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
             await onLogMaintenance(t.equipoId, {
               tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
               descripcion: `${t.titulo}${payload.notaCierre ? " — " + payload.notaCierre : ""}`,
-              fotos: urls,
+              fotos: urls, repuestos: payload.repuestos || [], taskId: t.id,
             });
+          } else if ((payload.repuestos || []).length > 0 && onConsumeParts) {
+            await onConsumeParts(payload.repuestos, `Usado en la orden: ${t.titulo}`, t.id);
           }
         }
       );
@@ -17361,7 +17402,7 @@ function RoomHistoryView({ tasks, mttoLog, equipos, accounts }) {
  * lleva demasiado tiempo abierto o sigue sin asignar. Puede verse solo con lo de HotSOS.
  * Todo sale de las tareas que ya existen (incluidas las importadas de HotSOS) — no guarda nada nuevo.
  */
-function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigate, onAssign }) {
+function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigate, onAssign, onReview, pushSubscriptions = [] }) {
   const [onlyHotsos, setOnlyHotsos] = useState(false);
   const [staleHours, setStaleHours] = useState(24);
   const [showTomorrow, setShowTomorrow] = useState(true);
@@ -17393,8 +17434,21 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
     const manana = programadas.filter(t => new Date(t.snoozedUntil) < dayAfter0);
     const hotsosTimes = (tasks || []).filter(t => t.origen === "hotsos").map(t => new Date(t.createdAt || 0).getTime()).filter(Boolean);
     const lastImportAt = hotsosTimes.length ? Math.max(...hotsosTimes) : null;
+    // Cierres para revisar (item 10): cerradas en los últimos 7 días que conviene mirar — "sin falla",
+    // "en observación", cierres en menos de 3 minutos — y que nadie ha marcado como revisadas.
+    const weekAgo = Date.now() - 7 * 86400000;
+    const porRevisar = [];
+    (tasks || []).forEach(t => {
+      if (normalizeTaskState(t.estado) !== "finalizada" || t.revisadaAt || !t.finishedAt || new Date(t.finishedAt).getTime() < weekAgo) return;
+      const nota = String(t.notaCierre || "");
+      let motivo = null;
+      if (/sin falla/i.test(nota)) motivo = "Cerrada como \"sin falla\"";
+      else if (/observaci[oó]n/i.test(nota)) motivo = "Queda en observación";
+      else if (t.startedAt && (new Date(t.finishedAt) - new Date(t.startedAt)) < 3 * 60000) motivo = "Cerrada en menos de 3 min";
+      if (motivo) porRevisar.push({ t, motivo });
+    });
     const totals = users.reduce((a, u) => ({ p: a.p + u.pendientes.length, e: a.e + u.enProceso.length, h: a.h + u.hechasHoy.length }), { p: 0, e: 0, h: 0 });
-    return { users, programadas, manana, alertas, lastImportAt, totals };
+    return { users, programadas, manana, alertas, lastImportAt, totals, porRevisar };
   }, [tasks, onlyHotsos, staleHours]);
 
   // Candidatos para asignar: primero quienes están trabajando ahora mismo (según el Horario Mensual),
@@ -17431,6 +17485,7 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
   );
 
   const nameOf = (u) => (u ? (accounts?.[u]?.display_name || u) : "Sin asignar");
+  const sinAvisos = candidates.map(c => c.u).filter(u => !(pushSubscriptions || []).some(s => s.ownerUsername === u));
   const lugarOf = (t) => (t.origen === "hotsos" ? String(t.descripcion || "").split(" — ")[0] : "");
   const horasDesdeImport = data.lastImportAt ? (Date.now() - data.lastImportAt) / 36e5 : null;
   const importStale = data.lastImportAt == null || horasDesdeImport > 6;
@@ -17507,6 +17562,39 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
         </div>
       )}
 
+      {data.porRevisar.length > 0 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.amber, background: C.panel }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: C.amber }}>🔎 Cierres para revisar ({data.porRevisar.length})</div>
+          <div className="space-y-2">
+            {data.porRevisar.slice(0, 8).map(({ t, motivo }) => (
+              <div key={t.id} className="text-xs">
+                <div className="flex justify-between gap-2" style={{ color: C.ink }}>
+                  <span className="truncate font-medium">{t.titulo}{lugarOf(t) ? ` — ${lugarOf(t)}` : ""}</span>
+                  <span className="shrink-0" style={{ color: C.gray }}>{nameOf(t.asignadoA)}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <span style={{ color: C.amber }}>{motivo}</span>
+                  {onReview && (
+                    <>
+                      <button onClick={() => onReview(t.id, { revisadaAt: nowIso() })} className="font-semibold rounded-lg px-2.5" style={{ minHeight: 32, background: C.greenSoft, color: C.green }}>✓ Revisada</button>
+                      <button onClick={() => onReview(t.id, { estado: "en-proceso", finishedAt: null, devueltaAt: nowIso(), timeLog: [...(t.timeLog || []), { estado: "en-proceso", at: nowIso(), nota: "Devuelta por el administrador" }] })} className="font-semibold rounded-lg px-2.5" style={{ minHeight: 32, background: C.redSoft, color: C.red }}>↩ Devolver</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sinAvisos.length > 0 && (
+        <div className="rounded-lg border p-3 mb-4 text-xs" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
+          <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>🔔 Sin avisos activados ({sinAvisos.length})</div>
+          <div className="mb-1">{sinAvisos.map(u => nameOf(u)).join(", ")}</div>
+          <div style={{ color: C.gray }}>A ellos no les llegan las notificaciones de órdenes nuevas. Pídeles abrir Inicio en su celular y tocar "Activar avisos".</div>
+        </div>
+      )}
+
       <div className="space-y-3">
         {data.users.map(u => (
           <div key={u.username || "_none"} className="rounded-lg border p-3" style={{ borderColor: u.username ? C.line : C.amber, background: C.panel }}>
@@ -17551,7 +17639,7 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
   );
 }
 
-function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask }) {
+function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasksBatch, accounts = {} }) {
   const [rooms, setRooms] = useState([]);
   const [profileTypes, setProfileTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17588,6 +17676,44 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask }) {
     return map;
   }, [tasks]);
   const [creatingRoom, setCreatingRoom] = useState(null);
+  // ---- Preventivo por habitación (item 14): propone las habitaciones que llevan más tiempo sin
+  // revisión de aire/filtros y crea el lote con un toque, sin que el administrador arme una a una.
+  const [showPrev, setShowPrev] = useState(false);
+  const [prevMonths, setPrevMonths] = useState(6);
+  const [prevCount, setPrevCount] = useState(20);
+  const [prevAssignee, setPrevAssignee] = useState("");
+  const [prevConfirm, setPrevConfirm] = useState(false);
+  const [prevBusy, setPrevBusy] = useState(false);
+  const prevPlan = useMemo(() => {
+    const last = {}, open = new Set();
+    (tasks || []).forEach(t => {
+      if (t.origen !== "preventivo-hab" || !t.roomKey) return;
+      if (normalizeTaskState(t.estado) !== "finalizada") { open.add(t.roomKey); return; }
+      const ts = new Date(t.finishedAt || t.updatedAt || 0).getTime();
+      if (ts > (last[t.roomKey] || 0)) last[t.roomKey] = ts;
+    });
+    const limit = Date.now() - prevMonths * 30.4 * 86400000;
+    const due = (rooms || []).map(r => String(r.RoomName || "").trim()).filter(Boolean)
+      .filter((n, i, a) => a.indexOf(n) === i && !open.has(n) && (!last[n] || last[n] < limit))
+      .sort((a, b) => ((last[a] || 0) - (last[b] || 0)) || a.localeCompare(b, "es", { numeric: true }));
+    return { due, openCount: open.size };
+  }, [tasks, rooms, prevMonths]);
+  const generatePrev = async () => {
+    if (!onCreateTasksBatch) return;
+    setPrevBusy(true);
+    try {
+      const lote = prevPlan.due.slice(0, prevCount);
+      const n = await onCreateTasksBatch(lote.map(name => ({
+        titulo: `Preventivo aire hab. ${name}`,
+        descripcion: `Habitación ${name} — revisión preventiva programada (filtros, drenaje y funcionamiento del aire).`,
+        prioridad: "baja", asignadoA: prevAssignee, checklist: ROOM_PREVENTIVE_STEPS, origen: "preventivo-hab", roomKey: name,
+      })));
+      setFlash({ ok: true, msg: `Se crearon ${n} tareas de preventivo${prevAssignee ? "" : " (sin asignar, aparecen en Panel de hoy)"}.` });
+      setPrevConfirm(false);
+    } catch (e) {
+      setFlash({ ok: false, msg: e.message || "No se pudieron crear las tareas." });
+    } finally { setPrevBusy(false); }
+  };
   // Desde la lista "Mantenimiento recomendado": una tarea por habitación, que revisa y aprueba el
   // administrador con un toque (no se crean solas, para no llenar la lista de tareas sin que lo decida).
   const createMaintTask = async (r) => {
@@ -17758,6 +17884,45 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask }) {
       {flash && (
         <div className="rounded-md px-3 py-2 text-sm mb-3" style={{ background: flash.ok ? C.greenSoft || "#dcfce7" : C.redSoft, color: flash.ok ? C.green : C.red }}>
           {flash.msg}
+        </div>
+      )}
+
+      {isAdmin && onCreateTasksBatch && rooms.length > 0 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <button onClick={() => setShowPrev(v => !v)} className="w-full flex items-center justify-between text-sm font-semibold" style={{ color: C.ink }}>
+            <span>🗓️ Preventivo por habitación ({prevPlan.due.length} por revisar)</span><span className="text-xs" style={{ color: C.gray }}>{showPrev ? "Ocultar" : "Abrir"}</span>
+          </button>
+          {showPrev && (
+            <div className="mt-2 text-xs space-y-2" style={{ color: C.inkSoft }}>
+              <p>Habitaciones sin revisión de aire en los últimos meses. Crea un lote con los pasos ya cargados (filtro, drenaje, enfriamiento). {prevPlan.openCount > 0 ? `Ya hay ${prevPlan.openCount} abiertas.` : ""}</p>
+              <div className="flex gap-2 flex-wrap items-center">
+                <select value={prevMonths} onChange={e => { setPrevMonths(Number(e.target.value)); setPrevConfirm(false); }} className="border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <option value={3}>Más de 3 meses</option><option value={6}>Más de 6 meses</option><option value={12}>Más de 12 meses</option>
+                </select>
+                <select value={prevCount} onChange={e => { setPrevCount(Number(e.target.value)); setPrevConfirm(false); }} className="border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <option value={10}>Lote de 10</option><option value={20}>Lote de 20</option><option value={40}>Lote de 40</option>
+                </select>
+                <select value={prevAssignee} onChange={e => { setPrevAssignee(e.target.value); setPrevConfirm(false); }} className="border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+                  <option value="">Sin asignar</option>
+                  {Object.keys(accounts || {}).filter(u => accounts[u]?.approved !== false && !accounts[u]?.is_viewer && !accounts[u]?.is_gerencia).map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
+                </select>
+              </div>
+              {prevPlan.due.length === 0 ? <div style={{ color: C.green }}>Todas las habitaciones están al día.</div> : (
+                <>
+                  <div>Próximas: {prevPlan.due.slice(0, Math.min(prevCount, 12)).join(", ")}{prevPlan.due.length > 12 ? "…" : ""}</div>
+                  {!prevConfirm ? (
+                    <Button size="sm" onClick={() => setPrevConfirm(true)}>Crear {Math.min(prevCount, prevPlan.due.length)} tareas</Button>
+                  ) : (
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <span className="font-semibold" style={{ color: C.ink }}>¿Crear {Math.min(prevCount, prevPlan.due.length)} tareas ahora?</span>
+                      <Button size="sm" disabled={prevBusy} onClick={generatePrev}>{prevBusy ? "Creando…" : "Sí, crear"}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setPrevConfirm(false)}>Cancelar</Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -23367,11 +23532,25 @@ export default function App() {
     setMttoLog(next);
     await sSet("mtto-log", next, true);
 
-    for (const r of repuestosUsados) {
-      const item = invItems.find(it => it.id === r.itemId);
-      if (item) await adjustInvStock(item, -Math.abs(Number(r.cantidad)), "retiro", `Usado en mantenimiento de equipo (${rec.tipo})`, form.taskId || null);
-    }
+    await consumeParts(repuestosUsados, `Usado en mantenimiento de equipo (${rec.tipo})`, form.taskId || null);
     return rec;
+  };
+
+  /** Descuenta varios repuestos del inventario con UNA sola escritura (antes, descontar dos
+   *  repuestos seguidos hacía que el segundo pisara al primero) y deja cada movimiento anotado. */
+  const consumeParts = async (parts, note, taskId) => {
+    const used = (parts || []).filter(r => r.itemId && Number(r.cantidad) > 0);
+    if (used.length === 0) return;
+    const nextItems = invItems.map(it => {
+      const r = used.find(x => x.itemId === it.id);
+      return r ? { ...it, quantity: Math.max(0, it.quantity - Math.abs(Number(r.cantidad))), updatedAt: nowIso() } : it;
+    });
+    setInvItems(nextItems);
+    await sSet("inventory-items", nextItems, true);
+    for (const r of used) {
+      const after = nextItems.find(x => x.id === r.itemId);
+      if (after) await logInvMovement(after.id, "retiro", -Math.abs(Number(r.cantidad)), after.quantity, note, undefined, taskId || undefined);
+    }
   };
 
   /** El supervisor cierra el ciclo de un mantenimiento — aprobándolo o devolviéndolo con un
@@ -23826,6 +24005,32 @@ export default function App() {
     await sSet("tasks", next, true);
     logGeneralEdit({ kind: "tarea", action: "eliminacion", entityLabel: `${toRemove.length} tarea(s) importadas de HotSOS (borrado en bloque para reimportar)` });
     return toRemove.length;
+  };
+
+  /** Crea varias tareas con una sola escritura (createTask usa la lista vieja de tareas y, en un
+   *  ciclo, cada una pisaría a la anterior). Cada item: { titulo, descripcion, prioridad, asignadoA, checklist, origen, roomKey }. */
+  const createTasksBatch = async (items) => {
+    const now = nowIso();
+    const recs = items.map(f => ({
+      id: uid("task"), titulo: f.titulo, descripcion: f.descripcion || "",
+      estado: "asignada", prioridad: f.prioridad || "baja", asignadoA: f.asignadoA || "",
+      recurrencia: "", recurrenceGroupId: null, recurrencePeriodKey: null,
+      fotosAntes: [], fotosDespues: [], notaCierre: "",
+      checklist: (f.checklist || []).map(text => ({ id: uid("chk"), text, done: false })),
+      equipoId: null, origen: f.origen || "manual", roomKey: f.roomKey || null,
+      assignedAt: f.asignadoA ? now : null, startedAt: null, finishedAt: null,
+      timeLog: [{ estado: "asignada", at: now }],
+      createdBy: displayName, createdAt: now, updatedAt: now,
+    }));
+    if (recs.length === 0) return 0;
+    const next = [...recs, ...tasks];
+    setTasks(next);
+    await sSet("tasks", next, true);
+    logGeneralEdit({ kind: "tarea", action: "creacion", entityLabel: `${recs.length} tarea(s) de preventivo por habitación` });
+    const grupos = {};
+    recs.forEach(r => { if (r.asignadoA) (grupos[r.asignadoA] ||= []).push(r.titulo); });
+    notifyAssignedGroups(grupos);
+    return recs.length;
   };
 
   /** Revisa las tareas que se repiten: si ya empezó un nuevo periodo (semana/mes) y no hay una instancia de ese ciclo, crea una nueva copia en "asignada". */
@@ -25286,7 +25491,7 @@ export default function App() {
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "hvac" && isAdmin && (
-            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} onCreateTask={createTask} />
+            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} onCreateTask={createTask} onCreateTasksBatch={createTasksBatch} accounts={profiles} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
@@ -25344,7 +25549,7 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} currentUser={displayName} currentUsername={currentUser} isAdmin={isAdmin}
-              equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
+              equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance} onConsumeParts={consumeParts}
               onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} onAddTaskComment={addTaskComment}
               mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} myWorkMode={!isAdmin} />
           )}
@@ -25353,7 +25558,7 @@ export default function App() {
             <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />
           )}
           {view === "today" && isAdmin && (
-            <TodayBoardView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} onAssign={(id, username) => updateTask(id, { asignadoA: username, assignedAt: nowIso() })} />
+            <TodayBoardView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} onAssign={(id, username) => updateTask(id, { asignadoA: username, assignedAt: nowIso() })} onReview={updateTask} pushSubscriptions={pushSubscriptions} />
           )}
           {((view === "inventory" && !(isAdmin || isAlmacenista)) || (view === "maintenance" && !isAdmin) || (view === "hvac" && !isAdmin)) && (
             <div className="rounded-lg border p-6 text-center text-sm" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>

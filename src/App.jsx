@@ -10545,6 +10545,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                     <Badge tone={badgeToneFor("prioridad", t.prioridad)}>{TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</Badge>
                     <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.titulo}</div>
                     <Badge tone={badgeToneFor("taskEstado", t.estado)}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</Badge>
+                    {t.reincidencia && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.redSoft, color: C.red }} title={`Mismo problema cerrado hace ${t.reincidencia.dias} día(s): ${t.reincidencia.titulo}`}>↻ Reincidencia</span>}
                     {estado === "pausada" && (
                       <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>
                         ⏳ En espera
@@ -17244,6 +17245,24 @@ function categoryOfTask(t) {
   return m ? m[1].trim() : null;
 }
 
+/** Reincidencia (item 5): ¿esta habitación tuvo el mismo problema cerrado en los últimos N días?
+ * Devuelve { id, titulo, dias } de la tarea cerrada más reciente que coincide, o null. */
+function findReincidencia(room, problema, categoria, closedTasks, days = 15) {
+  if (!room) return null;
+  const nb = normalizeSearchText(problema);
+  const limit = Date.now() - days * 86400000;
+  let best = null;
+  (closedTasks || []).forEach(t => {
+    if (!t.finishedAt) return;
+    const ts = new Date(t.finishedAt).getTime();
+    if (ts < limit || roomOfTask(t) !== room) return;
+    const na = normalizeSearchText(t.titulo);
+    const same = na === nb || (nb.length > 6 && (na.includes(nb) || nb.includes(na))) || (categoria && String(t.descripcion || "").includes(`categoría sugerida: ${categoria}`));
+    if (same && (!best || ts > best.ts)) best = { id: t.id, titulo: t.titulo, ts };
+  });
+  return best ? { id: best.id, titulo: best.titulo, dias: Math.max(0, Math.floor((Date.now() - best.ts) / 86400000)) } : null;
+}
+
 function RoomHistoryView({ tasks, mttoLog, equipos, accounts }) {
   const [tab, setTab] = useState("room"); // "room" | "repeat"
   const [room, setRoom] = useState("");
@@ -17495,7 +17514,7 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
       <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: TASK_PRIORITY_COLORS[t.prioridad] || C.gray }} />
       <span className="min-w-0">
         <span className="block truncate font-medium">{t.titulo}</span>
-        <span className="block truncate" style={{ color: C.gray }}>{[lugarOf(t), t.origen === "hotsos" ? "🛎️ HotSOS" : ""].filter(Boolean).join(" · ") || "—"}</span>
+        <span className="block truncate" style={{ color: C.gray }}>{[lugarOf(t), t.origen === "hotsos" ? "🛎️ HotSOS" : "", t.reincidencia ? "↻ Reincidencia" : ""].filter(Boolean).join(" · ") || "—"}</span>
       </span>
     </button>
   );
@@ -18742,7 +18761,7 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
  * cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide.
  * No duplica órdenes ya importadas antes (las reconoce por su número de orden de HotSOS).
  */
-function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete, equipos, openTasks = [] }) {
+function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete, equipos, openTasks = [], recentClosed = [] }) {
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState({});
   const [parseError, setParseError] = useState(null);
@@ -18798,6 +18817,8 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
             if (inFile) p.possibleDup = `se repite en este Excel (orden ${inFile.orderId})`;
           }
           seen.push({ room, nb, categoria: p.categoria, orderId: p.orderId });
+          const rei = findReincidencia(room, p.problema, p.categoria, recentClosed);
+          if (rei) p.reincidencia = rei;
         });
       }
       if (parsed.length === 0) {
@@ -18941,7 +18962,7 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
                 ) : visibleRows.map((r, i) => (
                   <tr key={r.orderId} style={{ background: i % 2 ? C.cardAlt : C.panel, opacity: r.alreadyImported ? 0.5 : 1 }}>
                     <td className="p-2"><input type="checkbox" disabled={r.alreadyImported} checked={!!selected[r.orderId]} onChange={e => setSelected(s => ({ ...s, [r.orderId]: e.target.checked }))} /></td>
-                    <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}{r.possibleDup && <div style={{ color: C.amber, fontWeight: 600 }}>⚠ Posible duplicado: {r.possibleDup}</div>}</td>
+                    <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}{r.possibleDup && <div style={{ color: C.amber, fontWeight: 600 }}>⚠ Posible duplicado: {r.possibleDup}</div>}{r.reincidencia && <div style={{ color: C.red, fontWeight: 600 }}>↻ Reincidencia: «{r.reincidencia.titulo}» se cerró {r.reincidencia.dias === 0 ? "hoy" : `hace ${r.reincidencia.dias} día(s)`}</div>}</td>
                     <td className="p-2" style={{ color: C.ink }}>{r.problema}</td>
                     <td className="p-2" style={{ color: C.inkSoft }}>{r.lugar}</td>
                     <td className="p-2"><Badge tone="blue">{r.categoria}</Badge></td>
@@ -23947,9 +23968,12 @@ export default function App() {
     const newRecs = rowsToImport.map(r => {
       const createdAt = new Date(Date.now() - r.edadHoras * 3600000).toISOString();
       const id = uid("task");
+      const prioBase = r.edadHoras > 48 ? "alta" : r.edadHoras > 12 ? "media" : "baja";
+      const prioFinal = r.reincidencia ? (prioBase === "baja" ? "media" : "alta") : prioBase; // una reincidencia sube un nivel
       return {
         id, titulo: r.problema, descripcion: `${r.lugar} — orden HotSOS #${r.orderId} (categoría sugerida: ${r.categoria})`,
-        estado: "asignada", prioridad: r.edadHoras > 48 ? "alta" : r.edadHoras > 12 ? "media" : "baja",
+        reincidencia: r.reincidencia || null,
+        estado: "asignada", prioridad: prioFinal,
         asignadoA: r.matchedUser || "",
         recurrencia: "", recurrenceGroupId: null, recurrencePeriodKey: null,
         fotosAntes: [], fotosDespues: [], notaCierre: "",
@@ -25487,7 +25511,7 @@ export default function App() {
               onSetComponentPosition={setComponentPosition} />
           )}
           {view === "hotsos-import" && isAdmin && (
-            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos} openTasks={tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada")}
+            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos} openTasks={tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada")} recentClosed={tasks.filter(t => normalizeTaskState(t.estado) === "finalizada" && t.finishedAt && Date.now() - new Date(t.finishedAt).getTime() < 15 * 86400000)}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "hvac" && isAdmin && (

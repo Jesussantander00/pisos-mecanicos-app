@@ -23214,6 +23214,23 @@ export default function App() {
     return rec;
   };
 
+  /** Avisa por push a cada persona a la que le acaban de asignar trabajo, en UN solo mensaje por
+   *  persona (si fueron varias órdenes de golpe, no le llegan 20 notificaciones seguidas). No avisa
+   *  a quien hizo la asignación sobre lo que se asignó a sí mismo. `grupos` = { usuario: [títulos] }. */
+  const notifyAssignedGroups = (grupos, { hotsos = false } = {}) => {
+    if (!pushSubscriptions || pushSubscriptions.length === 0) return;
+    Object.entries(grupos).forEach(([username, titulos]) => {
+      if (!username || username === currentUser || titulos.length === 0) return;
+      const suyas = pushSubscriptions.filter(s => s.ownerUsername === username);
+      if (suyas.length === 0) return;
+      const title = titulos.length === 1
+        ? (hotsos ? "🛎️ Te asignaron una orden de HotSOS" : "📋 Te asignaron una tarea")
+        : (hotsos ? `🛎️ Te asignaron ${titulos.length} órdenes de HotSOS` : `📋 Te asignaron ${titulos.length} tareas`);
+      const body = titulos.length === 1 ? titulos[0] : titulos.slice(0, 3).join(" · ") + (titulos.length > 3 ? ` y ${titulos.length - 3} más` : "");
+      sendPushToSubscriptions(suyas, title, body, "/");
+    });
+  };
+
   /** Convierte filas ya revisadas del Excel de HotSOS en tareas — reconstruye la fecha real de
    *  apertura usando la "Edad" que trae HotSOS (no la fecha de hoy, que es solo cuándo se
    *  importó), y prioriza alto automáticamente lo que ya lleva más de 2 días abierto. */
@@ -23238,6 +23255,11 @@ export default function App() {
     setTasks(next);
     await sSet("tasks", next, true);
     logGeneralEdit({ kind: "tarea", action: "creacion", entityLabel: `${newRecs.length} orden(es) importadas de HotSOS` });
+    {
+      const grupos = {};
+      newRecs.forEach(t => { if (t.asignadoA) (grupos[t.asignadoA] ||= []).push(t.titulo); });
+      notifyAssignedGroups(grupos, { hotsos: true });
+    }
     return newRecs.length;
   };
 
@@ -23249,14 +23271,16 @@ export default function App() {
   const retryHotsosAssignments = async () => {
     const ts = nowIso();
     let fixed = 0;
+    const grupoReintento = {};
     const next = tasks.map(t => {
       if (t.origen !== "hotsos" || t.asignadoA || !t.hotsosAsignadoOriginal) return t;
       const matched = matchHotsosAssignee(t.hotsosAsignadoOriginal, profiles);
       if (!matched) return t;
       fixed++;
+      (grupoReintento[matched] ||= []).push(t.titulo);
       return { ...t, asignadoA: matched, assignedAt: t.assignedAt || ts, timeLog: [...(t.timeLog || []), { estado: normalizeTaskState(t.estado), at: ts, nota: "Asignación reintentada" }] };
     });
-    if (fixed > 0) { setTasks(next); await sSet("tasks", next, true); }
+    if (fixed > 0) { setTasks(next); await sSet("tasks", next, true); notifyAssignedGroups(grupoReintento, { hotsos: true }); }
     return fixed;
   };
 
@@ -23407,6 +23431,7 @@ export default function App() {
       kind: "tarea", action: "edicion", entityLabel: `${toMove.length} tarea${toMove.length === 1 ? "" : "s"}`,
       field: "Asignado a", before: profiles[fromUsername]?.display_name || fromUsername, after: profiles[toUsername]?.display_name || toUsername,
     });
+    notifyAssignedGroups({ [toUsername]: toMove.map(t => t.titulo) });
     return toMove.length;
   };
 

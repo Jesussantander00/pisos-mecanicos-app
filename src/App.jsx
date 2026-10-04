@@ -15193,7 +15193,7 @@ function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatValue, m
               <span className="font-bold shrink-0 tabular-nums" style={{ color, fontSize: 15 }}>{formatValue ? formatValue(val, d) : val}</span>
             </div>
             <div className="w-full rounded-full overflow-hidden" style={{ background: C.bg, height: 10 }}>
-              <div className="h-full rounded-full" style={{
+              <div className="pm-bar-grow h-full rounded-full" style={{
                 width: `${pct}%`,
                 background: gradient ? `linear-gradient(90deg, ${color}99, ${color})` : color,
                 transition: "width 600ms var(--ease-out)",
@@ -17157,7 +17157,7 @@ function HVACView({ isAdmin, isGerencia }) {
       )}
 
       {!loading && !error && viewMode === "dashboard" && (
-        <div className="space-y-5">
+        <div className="pm-tab-in space-y-5">
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="rounded-lg border p-4 flex items-center gap-4" style={{ borderColor: C.line, background: C.panel }}>
               <MiniDonut
@@ -17294,12 +17294,12 @@ function HVACView({ isAdmin, isGerencia }) {
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar habitación o estado (VIP, Check IN...)"
             className="w-full text-sm border rounded-md px-3 py-2 outline-none mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
           <div className="text-xs mb-2" style={{ color: C.gray }}>{filtered.length} de {rooms.length} habitaciones</div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <div className="pm-tab-in grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {filtered.map(r => {
               const tone = hvacStateTone(r.ProfileName);
               const hasAlert = Number(r.AlertCount || 0) > 0;
               return (
-                <div key={r.RoomID} className="rounded-lg border p-3" style={{ borderColor: hasAlert ? C.red : C.line, background: C.panel, color: C.ink }}>
+                <div key={r.RoomID} className="pm-card-hover rounded-lg border p-3" style={{ borderColor: hasAlert ? C.red : C.line, background: C.panel, color: C.ink }}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-1.5">
                       <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>

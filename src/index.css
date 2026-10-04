@@ -106,3 +106,51 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .pm-skeleton { animation: none; }
 }
+
+/* ---------------------------------------------------------------------------------------
+ * Capa global de animaciones (principios de Emil Kowalski): respuesta inmediata al toque,
+ * entradas cortas (<300 ms) con curva "ease-out", y nada que bloquee al usuario.
+ * Todo esto se aplica automáticamente a TODOS los botones y ventanas de la app.
+ * --------------------------------------------------------------------------------------- */
+
+/* 1) Botones: transición suave de color/fondo y "hundimiento" al presionar. Usamos la propiedad
+      "scale" (no "transform") para no pisar los translate/rotate que algunos botones ya usan. */
+button, [role="button"], a.pm-press {
+  transition-property: background-color, border-color, color, opacity, box-shadow, scale;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+button:not(:disabled):active, [role="button"]:active, a.pm-press:active {
+  scale: 0.97;
+  transition-duration: 90ms;
+}
+button:disabled { cursor: not-allowed; }
+
+/* 2) Ventanas emergentes (modales): el fondo oscuro aparece con fundido y el panel entra con
+      un pequeño "pop". Solo se aplica al primer hijo directo de las capas a pantalla completa. */
+@keyframes pm-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+.fixed.inset-0 { animation: pm-backdrop-in 160ms var(--ease-out); }
+.fixed.inset-0 > div:first-child:not(.pm-animate-in):not(.pm-slide-up-in) {
+  animation: pm-fade-in-scale 200ms var(--ease-out);
+}
+
+/* 3) Cambio de pestaña/vista: el contenido nuevo entra con un fundido corto hacia arriba. */
+.pm-tab-in { animation: pm-fade-in-up 220ms var(--ease-out) both; }
+
+/* 4) Tarjetas interactivas: leve elevación solo en dispositivos con mouse (en celular el
+      "hover" se queda pegado después de tocar, por eso se limita). */
+@media (hover: hover) and (pointer: fine) {
+  .pm-card-hover { transition: translate 180ms var(--ease-out), box-shadow 180ms var(--ease-out); }
+  .pm-card-hover:hover { translate: 0 -2px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10); }
+}
+
+/* 5) Barras de progreso/gráficas: crecen desde cero al aparecer. */
+@keyframes pm-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.pm-bar-grow { transform-origin: left center; animation: pm-grow-x 450ms var(--ease-out) both; }
+
+/* Accesibilidad: quien pidió menos movimiento no ve nada de esto. */
+@media (prefers-reduced-motion: reduce) {
+  .fixed.inset-0, .fixed.inset-0 > div:first-child, .pm-tab-in, .pm-bar-grow { animation: none !important; }
+  button:not(:disabled):active, [role="button"]:active { scale: 1; }
+  .pm-card-hover:hover { translate: none; }
+}

@@ -1,8 +1,17 @@
 {
   "crons": [
-    { "path": "/api/telkonet?action=scan", "schedule": "0 9 * * *" }
+    {
+      "path": "/api/telkonet?action=scan",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/telkonet?action=digest",
+      "schedule": "0 12 * * *"
+    }
   ],
   "functions": {
-    "api/telkonet.js": { "maxDuration": 60 }
+    "api/telkonet.js": {
+      "maxDuration": 60
+    }
   }
 }

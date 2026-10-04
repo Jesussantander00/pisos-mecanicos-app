@@ -9251,9 +9251,10 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
     setPostingComment(false);
   };
 
-  const doSnooze = () => {
-    if (!snoozeDate) return;
-    onUpdateTask(task.id, { snoozedUntil: new Date(snoozeDate + "T00:00:00").toISOString() });
+  const doSnooze = (dateIso) => {
+    const d = typeof dateIso === "string" && dateIso ? dateIso : snoozeDate;
+    if (!d) return;
+    onUpdateTask(task.id, { snoozedUntil: new Date(d + "T00:00:00").toISOString() });
     setShowSnoozeForm(false); setSnoozeDate("");
     showToast("Tarea pospuesta — se esconde de las listas hasta esa fecha.", true);
   };
@@ -9320,8 +9321,15 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                 <div className="flex items-center gap-2 flex-wrap">
                   <input type="date" value={snoozeDate} onChange={e => setSnoozeDate(e.target.value)} min={localDateIso(new Date())}
                     className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                  <Button size="sm" onClick={doSnooze} disabled={!snoozeDate}>Posponer</Button>
+                  <Button size="sm" onClick={() => doSnooze()} disabled={!snoozeDate}>Posponer</Button>
                   <button onClick={() => setShowSnoozeForm(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+                  <div className="w-full flex items-center gap-1.5 flex-wrap">
+                    {[["Mañana", 1], ["En 2 días", 2], ["Próximo lunes", "lunes"], ["En 1 semana", 7]].map(([label, n]) => {
+                      const d = new Date(); d.setHours(0, 0, 0, 0);
+                      if (n === "lunes") { const add = ((8 - d.getDay()) % 7) || 7; d.setDate(d.getDate() + add); } else d.setDate(d.getDate() + n);
+                      return <button key={label} onClick={() => doSnooze(localDateIso(d))} className="text-xs font-semibold rounded-full border px-3" style={{ borderColor: C.line, background: C.bg, color: C.ink, minHeight: 36 }}>{label}</button>;
+                    })}
+                  </div>
                 </div>
               ) : (
                 <button onClick={() => setShowSnoozeForm(true)} className="text-xs font-semibold" style={{ color: C.inkSoft }}>😴 Posponer hasta una fecha (ej: falta el repuesto)</button>
@@ -9519,6 +9527,12 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                   </div>
                 )}
                 <PhotoPicker photos={closePhotos} onChange={setClosePhotos} max={4} />
+                <div className="flex gap-1.5 flex-wrap mt-2">
+                  {["Reparado", "Repuesto cambiado", "Limpieza y ajuste", "Sin falla, se ajustó", "Queda en observación"].map(chip => (
+                    <button key={chip} type="button" onClick={() => setCloseNote(prev => (prev && !prev.includes(chip) ? prev.replace(/\s+$/, "") + ". " + chip : (prev || chip)))}
+                      className="text-xs font-semibold rounded-full border px-3" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 36 }}>{chip}</button>
+                  ))}
+                </div>
                 <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 {task.prioridad === "alta" && (
@@ -9584,8 +9598,13 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
     () => new Set(employeesOnShift(employees, scheduleEntries, assignDate, assignShift).map(e => e.id)),
     [employees, scheduleEntries, assignDate, assignShift]
   );
+  const openCountByUser = useMemo(() => {
+    const m = {};
+    (tasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada") m[t.asignadoA] = (m[t.asignadoA] || 0) + 1; });
+    return m;
+  }, [tasks]);
   const assignableUsernames = assignMode === "now"
-    ? usernames.filter(u => workingNowIds.has(accounts[u]?.linked_employee_id))
+    ? usernames.filter(u => workingNowIds.has(accounts[u]?.linked_employee_id)).sort((a, b) => (openCountByUser[a] || 0) - (openCountByUser[b] || 0))
     : showAllForAssign
       ? usernames
       : usernames.filter(u => onShiftEmployeeIds.has(accounts[u]?.linked_employee_id));
@@ -16948,7 +16967,7 @@ function hvacStateTone(profileName) {
  * lleva demasiado tiempo abierto o sigue sin asignar. Puede verse solo con lo de HotSOS.
  * Todo sale de las tareas que ya existen (incluidas las importadas de HotSOS) — no guarda nada nuevo.
  */
-function TodayBoardView({ tasks, accounts, onNavigate }) {
+function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigate, onAssign }) {
   const [onlyHotsos, setOnlyHotsos] = useState(false);
   const [staleHours, setStaleHours] = useState(24);
   const [showTomorrow, setShowTomorrow] = useState(true);
@@ -16983,6 +17002,39 @@ function TodayBoardView({ tasks, accounts, onNavigate }) {
     const totals = users.reduce((a, u) => ({ p: a.p + u.pendientes.length, e: a.e + u.enProceso.length, h: a.h + u.hechasHoy.length }), { p: 0, e: 0, h: 0 });
     return { users, programadas, manana, alertas, lastImportAt, totals };
   }, [tasks, onlyHotsos, staleHours]);
+
+  // Candidatos para asignar: primero quienes están trabajando ahora mismo (según el Horario Mensual),
+  // y entre ellos quien tenga menos tareas abiertas — esa persona es la "sugerida".
+  const candidates = useMemo(() => {
+    const working = new Set(employeesWorkingNow(employees || [], scheduleEntries || []).map(e => e.id));
+    const open = {};
+    (tasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada") open[t.asignadoA] = (open[t.asignadoA] || 0) + 1; });
+    return Object.keys(accounts || {})
+      .filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia; })
+      .map(u => ({ u, working: working.has(accounts[u]?.linked_employee_id), open: open[u] || 0 }))
+      .sort((a, b) => (b.working - a.working) || (a.open - b.open));
+  }, [tasks, accounts, employees, scheduleEntries]);
+  const suggested = candidates[0] || null;
+  const [assigning, setAssigning] = useState(null);
+  const doAssign = async (taskId, username) => {
+    if (!username || !onAssign) return;
+    setAssigning(taskId);
+    try { await onAssign(taskId, username); } finally { setAssigning(null); }
+  };
+  const AssignControl = ({ t }) => (
+    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+      {suggested && (
+        <button disabled={assigning === t.id} onClick={() => doAssign(t.id, suggested.u)} className="text-xs font-semibold rounded-lg px-2.5" style={{ background: C.amber, color: C.steelDark, minHeight: 36 }}
+          title={`${suggested.working ? "Está de turno ahora" : "No está de turno ahora"} · ${suggested.open} abiertas`}>
+          Asignar a {(accounts[suggested.u]?.display_name || suggested.u).split(" ")[0]} (sugerido)
+        </button>
+      )}
+      <select disabled={assigning === t.id} value="" onChange={e => doAssign(t.id, e.target.value)} className="text-xs border rounded-lg px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }} aria-label="Asignar a otra persona">
+        <option value="">Otra persona…</option>
+        {candidates.map(c => <option key={c.u} value={c.u}>{(accounts[c.u]?.display_name || c.u)} · {c.open} abiertas{c.working ? " · de turno" : ""}</option>)}
+      </select>
+    </div>
+  );
 
   const nameOf = (u) => (u ? (accounts?.[u]?.display_name || u) : "Sin asignar");
   const lugarOf = (t) => (t.origen === "hotsos" ? String(t.descripcion || "").split(" — ")[0] : "");
@@ -17065,11 +17117,21 @@ function TodayBoardView({ tasks, accounts, onNavigate }) {
         {data.users.map(u => (
           <div key={u.username || "_none"} className="rounded-lg border p-3" style={{ borderColor: u.username ? C.line : C.amber, background: C.panel }}>
             <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>{u.username ? "👷 " : "📥 "}{nameOf(u.username)}</div>
+            {!u.username && onAssign ? (
+              <div className="space-y-2">
+                {u.pendientes.slice(0, 12).map(t => (
+                  <div key={t.id}><Row t={t} /><AssignControl t={t} /></div>
+                ))}
+                {u.pendientes.length > 12 && <div className="text-[11px] px-1" style={{ color: C.gray }}>+{u.pendientes.length - 12} más</div>}
+                {u.pendientes.length === 0 && <div className="text-[11px] px-1" style={{ color: C.gray }}>Nada sin asignar.</div>}
+              </div>
+            ) : (
             <div className="grid sm:grid-cols-3 gap-3">
               <Col title="Pendientes" color={C.amber} items={u.pendientes} />
               <Col title="En proceso" color={C.blue} items={u.enProceso} />
               <Col title="Hechas hoy" color={C.green} items={u.hechasHoy} />
             </div>
+            )}
           </div>
         ))}
         {data.users.length === 0 && <div className="text-sm text-center py-8" style={{ color: C.gray }}>No hay tareas para mostrar.</div>}
@@ -17095,7 +17157,7 @@ function TodayBoardView({ tasks, accounts, onNavigate }) {
   );
 }
 
-function HVACView({ isAdmin, isGerencia, tasks = [] }) {
+function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask }) {
   const [rooms, setRooms] = useState([]);
   const [profileTypes, setProfileTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17121,6 +17183,49 @@ function HVACView({ isAdmin, isGerencia, tasks = [] }) {
     });
     return map;
   }, [tasks]);
+  // Tareas ya creadas desde esta pantalla (por habitación) que siguen abiertas — para no crear dos veces.
+  const telkTaskByRoom = useMemo(() => {
+    const map = {};
+    (tasks || []).forEach(t => {
+      if (normalizeTaskState(t.estado) === "finalizada") return;
+      const m = /^Revisar aire hab\. (\S+)/.exec(t.titulo || "");
+      if (m) map[m[1]] = t;
+    });
+    return map;
+  }, [tasks]);
+  const [creatingRoom, setCreatingRoom] = useState(null);
+  // Desde la lista "Mantenimiento recomendado": una tarea por habitación, que revisa y aprueba el
+  // administrador con un toque (no se crean solas, para no llenar la lista de tareas sin que lo decida).
+  const createMaintTask = async (r) => {
+    if (!onCreateTask) return;
+    setCreatingRoom(r.room_id);
+    try {
+      const room = String(r.room_name || "").trim();
+      await onCreateTask({
+        titulo: `Revisar aire hab. ${room}`,
+        descripcion: `Habitación ${room} — ${Number(r.out_of_range_count)} de ${Number(r.total_readings)} lecturas fuera de rango en la última semana (${Number(r.out_of_range_pct).toFixed(0)}%). Creada desde el reporte de Mantenimiento recomendado de TelkHab.`,
+        prioridad: Number(r.out_of_range_pct) >= 50 ? "alta" : "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null, etiquetas: [],
+      });
+      setFlash({ ok: true, msg: `Tarea creada para la habitación ${room}. Aparece en Panel de hoy, sin asignar.` });
+    } catch (e) {
+      setFlash({ ok: false, msg: e.message || "No se pudo crear la tarea." });
+    } finally { setCreatingRoom(null); }
+  };
+  const createRoomTask = async (r) => {
+    if (!onCreateTask) return;
+    setCreatingRoom(r.RoomID);
+    try {
+      const room = String(r.RoomName || "").trim();
+      await onCreateTask({
+        titulo: `Revisar aire hab. ${room}`,
+        descripcion: `Habitación ${room} — temperatura ambiente ${r.Temperature != null ? r.Temperature + "°F" : "—"}, punto de ajuste ${r.UserSetPoint != null ? Number(r.UserSetPoint) + "°F" : "—"}${Number(r.AlertCount || 0) > 0 ? `, ${r.AlertCount} alerta(s)` : ""}. Creada desde TelkHab.`,
+        prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null, etiquetas: [],
+      });
+      setFlash({ ok: true, msg: `Tarea creada para la habitación ${room}. Aparece en Panel de hoy, sin asignar.` });
+    } catch (e) {
+      setFlash({ ok: false, msg: e.message || "No se pudo crear la tarea." });
+    } finally { setCreatingRoom(null); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -17387,6 +17492,9 @@ function HVACView({ isAdmin, isGerencia, tasks = [] }) {
                         <span style={{ color: C.ink }}>{r.room_name}</span>
                         <span style={{ color: C.inkSoft }}>{Number(r.out_of_range_count)} de {Number(r.total_readings)} lecturas fuera de rango</span>
                         <span className="font-semibold" style={{ color: C.red }}>{Number(r.out_of_range_pct).toFixed(0)}%</span>
+                        {onCreateTask && (telkTaskByRoom[String(r.room_name || "").trim()]
+                          ? <span className="font-semibold" style={{ color: C.green }}>✓ Tarea</span>
+                          : <button disabled={creatingRoom === r.room_id} onClick={() => createMaintTask(r)} className="font-semibold rounded-md border px-2" style={{ borderColor: C.red, color: C.red, background: C.panel, minHeight: 32 }}>Crear tarea</button>)}
                       </div>
                     ))}
                   </div>
@@ -17442,6 +17550,9 @@ function HVACView({ isAdmin, isGerencia, tasks = [] }) {
                     <Button size="sm" variant="ghost" onClick={() => setExpandedRoomId(id => id === r.RoomID ? null : r.RoomID)}>
                       {expandedRoomId === r.RoomID ? "Menos datos" : "Más datos"}
                     </Button>
+                    {onCreateTask && (telkTaskByRoom[String(r.RoomName || "").trim()]
+                      ? <span className="text-xs font-semibold px-2" style={{ color: C.green }}>✓ Tarea abierta</span>
+                      : <Button size="sm" variant="ghost" disabled={creatingRoom === r.RoomID} onClick={() => createRoomTask(r)}>Crear tarea</Button>)}
                     {canControl && (
                       <select
                         value=""
@@ -24760,7 +24871,7 @@ export default function App() {
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "hvac" && isAdmin && (
-            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} />
+            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} onCreateTask={createTask} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
@@ -24823,7 +24934,7 @@ export default function App() {
               mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} myWorkMode={!isAdmin} />
           )}
           {view === "today" && isAdmin && (
-            <TodayBoardView tasks={tasks} accounts={profiles} onNavigate={setView} />
+            <TodayBoardView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} onAssign={(id, username) => updateTask(id, { asignadoA: username, assignedAt: nowIso() })} />
           )}
           {((view === "inventory" && !(isAdmin || isAlmacenista)) || (view === "maintenance" && !isAdmin) || (view === "hvac" && !isAdmin)) && (
             <div className="rounded-lg border p-6 text-center text-sm" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>

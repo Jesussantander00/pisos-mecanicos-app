@@ -24,6 +24,7 @@
 // internamente esto podría dejar de funcionar y haría falta revisar/actualizar las rutas de abajo.
 
 import { getSupabaseAdmin, requireApprovedUser } from "./_lib/security.js";
+import { runDailyDigest } from "./_lib/dailyDigest.js";
 
 const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
@@ -439,6 +440,28 @@ export default async function handler(req, res) {
   // Acción del cron de mantenimiento semanal — la dispara solo Vercel Cron (ver vercel.json),
   // nunca el navegador de nadie, así que no trae sesión de usuario ni "x-app-secret": se valida
   // aparte con CRON_SECRET, antes que cualquier otra comprobación de abajo.
+  // Resumen diario por notificación push (buenos días a cada técnico + vencidas para el admin).
+  // Mismo mecanismo de autenticación que el escaneo: solo Vercel Cron, con CRON_SECRET.
+  if (req.method === "GET" && req.query.action === "digest") {
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret || req.headers["authorization"] !== `Bearer ${cronSecret}`) {
+      res.status(401).json({ ok: false, message: "No autorizado." });
+      return;
+    }
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      res.status(500).json({ ok: false, message: "Falta configurar Supabase en el servidor." });
+      return;
+    }
+    try {
+      const result = await runDailyDigest(supabaseAdmin);
+      res.status(200).json({ ok: true, ...result });
+    } catch (e) {
+      res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario." });
+    }
+    return;
+  }
+
   if (req.method === "GET" && req.query.action === "scan") {
     const cronSecret = process.env.CRON_SECRET;
     if (!cronSecret || req.headers["authorization"] !== `Bearer ${cronSecret}`) {

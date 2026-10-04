@@ -14845,6 +14845,225 @@ function AiAssistantWidget({ contextSummary }) {
   );
 }
 
+
+/** Barra de estado de sincronización (item 16): una sola, visible también en el celular.
+ * - Sin señal: franja ámbar arriba, con cuántos registros esperan para subirse.
+ * - Con señal pero con registros guardados sin subir: píldora azul abajo con botón "Reintentar". */
+function SyncStatusBar({ online, pending = 0, retrying = false, onRetry }) {
+  if (!online) {
+    return (
+      <div className="pm-safe-top fixed top-0 left-0 right-0 flex items-center justify-center gap-2 text-xs font-semibold py-2 px-3 text-center"
+        style={{ background: "#7a5405", color: "#fff", zIndex: 500 }}>
+        <WifiOff size={13} className="shrink-0" />
+        <span>Sin señal — lo que registres (incluidas fotos) queda guardado en este celular y se sube solo cuando vuelva{pending > 0 ? ` · ${pending} por subir` : ""}</span>
+      </div>
+    );
+  }
+  if (pending <= 0) return null;
+  return (
+    <div className="pm-slide-up-in fixed left-3 right-3 sm:left-auto sm:right-4 bottom-[68px] sm:bottom-4 z-[90] flex items-center gap-2 rounded-xl shadow-lg px-3 py-2"
+      style={{ background: C.panel, border: `1.5px solid ${C.blue}`, color: C.ink }}>
+      <Cloud size={16} color={C.blue} className="animate-pulse shrink-0" />
+      <span className="text-xs font-semibold flex-1">{pending} registro{pending === 1 ? "" : "s"} guardado{pending === 1 ? "" : "s"} en este celular, subiendo…</span>
+      <button onClick={onRetry} disabled={retrying} className="text-xs font-bold px-2.5 rounded-lg disabled:opacity-60"
+        style={{ background: C.blue, color: "#fff", minHeight: 32 }}>{retrying ? "Subiendo…" : "Reintentar"}</button>
+    </div>
+  );
+}
+
+/** Ficha rápida al escanear el QR de un equipo cuando la persona no tiene acceso a Mantenimiento
+ * (item 17): muestra el equipo y sus tareas abiertas, sin sacarla de lo suyo. */
+function ScannedEquipoSheet({ equipo, tasks, accounts, onClose, onGoTasks }) {
+  useBackCloseModal(true, onClose);
+  const abiertas = (tasks || []).filter(t => t.equipoId === equipo?.id && normalizeTaskState(t.estado) !== "finalizada");
+  const nameOf = (u) => accounts?.[u]?.display_name || "Sin asignar";
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+      <div className="pm-animate-in rounded-2xl max-w-sm w-full p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+        {!equipo ? (
+          <p className="text-sm" style={{ color: C.inkSoft }}>Ese código QR es de un equipo que ya no está registrado.</p>
+        ) : (
+          <>
+            <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.gray }}>Equipo escaneado</div>
+            <h3 className="text-lg font-bold mt-0.5" style={{ color: C.ink }}>{equipo.nombre}</h3>
+            {equipo.sistema && <div className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema}</div>}
+            <div className="mt-3 text-xs font-bold uppercase tracking-wide" style={{ color: abiertas.length ? C.red : C.green }}>
+              {abiertas.length ? `Tareas abiertas · ${abiertas.length}` : "Sin tareas abiertas"}
+            </div>
+            {abiertas.slice(0, 5).map(t => (
+              <div key={t.id} className="flex justify-between gap-2 text-sm py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+                <span className="truncate">{t.titulo}</span>
+                <span className="text-xs shrink-0" style={{ color: C.inkSoft }}>{nameOf(t.asignadoA)}</span>
+              </div>
+            ))}
+          </>
+        )}
+        <div className="flex gap-2 mt-4">
+          <Button size="sm" variant="ghost" onClick={onClose}>Cerrar</Button>
+          <Button size="sm" onClick={onGoTasks}>Ir a mis tareas</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Tarjeta de arranque (item 18): guía corta para instalar la app y activar avisos. Se muestra en
+ * Inicio hasta que la persona tenga ambas cosas listas o la cierre. */
+function SetupGuideCard({ onEnablePush, userKey }) {
+  const dismissKey = `pm-local:setup-dismissed:${userKey}`;
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem(dismissKey) === "1"; } catch { return false; } });
+  const [perm, setPerm] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [installEvt, setInstallEvt] = useState(() => (typeof window !== "undefined" ? window.__pmInstallEvt || null : null));
+  useEffect(() => {
+    const h = (e) => { e.preventDefault(); window.__pmInstallEvt = e; setInstallEvt(e); };
+    window.addEventListener("beforeinstallprompt", h);
+    return () => window.removeEventListener("beforeinstallprompt", h);
+  }, []);
+  const standalone = typeof window !== "undefined" && ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true);
+  const isIos = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const pushOk = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+  const notifDone = perm === "granted";
+  if (dismissed || (standalone && (notifDone || !pushOk))) return null;
+  const dismiss = () => { setDismissed(true); try { localStorage.setItem(dismissKey, "1"); } catch { /* noop */ } };
+  const enable = async () => {
+    setBusy(true);
+    const res = await onEnablePush();
+    setMsg(res); setBusy(false);
+    setPerm(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  };
+  const install = async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch { /* noop */ }
+    window.__pmInstallEvt = null; setInstallEvt(null);
+  };
+  return (
+    <div className="rounded-2xl p-4 mb-4" style={{ background: C.panel, border: `1.5px solid ${C.amber}` }}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.amber }}>Deja la app lista</div>
+          <div className="text-sm font-semibold mt-0.5" style={{ color: C.ink }}>Para que te lleguen los avisos de tus tareas</div>
+        </div>
+        <button onClick={dismiss} aria-label="Cerrar" title="Cerrar" style={{ minWidth: 28, minHeight: 28 }}><X size={16} color={C.gray} /></button>
+      </div>
+      <div className="mt-3 space-y-3 text-sm" style={{ color: C.ink }}>
+        <div className="flex items-start gap-2">
+          <span className="font-bold" style={{ color: standalone ? C.green : C.amber }}>{standalone ? "✓" : "1"}</span>
+          <div className="flex-1">
+            <div className="font-semibold">Instalar en el celular</div>
+            {standalone ? <div className="text-xs" style={{ color: C.inkSoft }}>Ya está instalada.</div>
+              : installEvt ? <Button size="sm" onClick={install}>Instalar ahora</Button>
+              : <div className="text-xs" style={{ color: C.inkSoft }}>{isIos
+                  ? "En Safari toca el botón Compartir y luego \"Añadir a pantalla de inicio\". En iPhone es necesario para recibir avisos."
+                  : "En el menú ⋮ del navegador elige \"Instalar aplicación\" o \"Añadir a pantalla de inicio\"."}</div>}
+          </div>
+        </div>
+        {pushOk && (
+          <div className="flex items-start gap-2">
+            <span className="font-bold" style={{ color: notifDone ? C.green : C.amber }}>{notifDone ? "✓" : "2"}</span>
+            <div className="flex-1">
+              <div className="font-semibold">Activar notificaciones</div>
+              {notifDone ? <div className="text-xs" style={{ color: C.inkSoft }}>Activadas en este dispositivo.</div>
+                : perm === "denied" ? <div className="text-xs" style={{ color: C.red }}>Las bloqueaste. Actívalas en los ajustes del navegador para este sitio.</div>
+                : <Button size="sm" disabled={busy || (isIos && !standalone)} onClick={enable}>{busy ? "Activando…" : "Activar avisos"}</Button>}
+              {isIos && !standalone && !notifDone && <div className="text-xs mt-1" style={{ color: C.inkSoft }}>Primero instálala (paso 1) y ábrela desde el ícono.</div>}
+              {msg && <div className="text-xs mt-1" style={{ color: msg.ok ? C.green : C.red }}>{msg.message}</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Panel de uso y respaldo (item 20): cuánto espacio ocupan los datos, actividad del equipo y
+ * descargas (respaldo completo y tareas en Excel). Solo administrador. */
+function UsagePanelView({ tasks, accounts }) {
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const calc = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const data = await exportFullBackup();
+      setRows(data.map(r => { const txt = JSON.stringify(r.value ?? null); return { key: r.key, bytes: txt.length, items: Array.isArray(r.value) ? r.value.length : null }; }).sort((a, b) => b.bytes - a.bytes));
+    } catch (e) { setErr(e.message || "No se pudo leer el tamaño de los datos."); }
+    setBusy(false);
+  };
+  const total = (rows || []).reduce((a, r) => a + r.bytes, 0);
+  const fmt = (b) => b > 1048576 ? `${(b / 1048576).toFixed(2)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+  const LIMIT = 500 * 1048576;
+  const since = Date.now() - 30 * 86400000;
+  const perUser = {};
+  (tasks || []).forEach(t => {
+    const u = t.asignadoA || "";
+    if (!u) return;
+    perUser[u] = perUser[u] || { abiertas: 0, cerradas30: 0 };
+    if (normalizeTaskState(t.estado) === "finalizada") { if (t.finishedAt && new Date(t.finishedAt).getTime() >= since) perUser[u].cerradas30++; }
+    else perUser[u].abiertas++;
+  });
+  const users = Object.entries(perUser).sort((a, b) => b[1].cerradas30 - a[1].cerradas30);
+  const exportTasks = () => {
+    const nm = (u) => accounts?.[u]?.display_name || u || "";
+    const data = (tasks || []).map(t => ({
+      Titulo: t.titulo, Estado: normalizeTaskState(t.estado), Prioridad: t.prioridad, Asignado: nm(t.asignadoA),
+      Origen: t.origen || "", Creada: t.createdAt || "", Iniciada: t.startedAt || "", Finalizada: t.finishedAt || "", NotaCierre: t.notaCierre || "",
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Tareas");
+    XLSX.writeFile(wb, `tareas-${todayStr().replace(/\//g, "-")}.xlsx`);
+  };
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-xl font-bold mb-1" style={{ color: C.ink }}>Uso y respaldo</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Cuánto espacio llevan tus datos y cómo guardarlos fuera de la app.</p>
+
+      <div className="rounded-xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-bold" style={{ color: C.ink }}>Espacio de datos</div>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={calc}>{busy ? "Calculando…" : rows ? "Recalcular" : "Calcular"}</Button>
+        </div>
+        {err && <div className="text-xs" style={{ color: C.red }}>{err}</div>}
+        {rows ? (
+          <>
+            <div className="text-xs mb-1" style={{ color: C.inkSoft }}>{fmt(total)} de 500 MB del plan gratuito ({((total / LIMIT) * 100).toFixed(2)}%)</div>
+            <div className="h-2 rounded-full overflow-hidden mb-3" style={{ background: C.line }}>
+              <div className="h-full" style={{ width: `${Math.max(1, Math.min(100, (total / LIMIT) * 100))}%`, background: total / LIMIT > 0.7 ? C.red : C.green }} />
+            </div>
+            {rows.slice(0, 12).map(r => (
+              <div key={r.key} className="flex justify-between text-xs py-1 border-t" style={{ borderColor: C.line, color: C.ink }}>
+                <span className="truncate">{r.key}{r.items != null ? ` · ${r.items} registros` : ""}</span>
+                <span className="shrink-0 ml-2" style={{ color: C.inkSoft }}>{fmt(r.bytes)}</span>
+              </div>
+            ))}
+            <div className="text-[11px] mt-2" style={{ color: C.gray }}>No incluye las fotos guardadas en el almacenamiento (1 GB aparte).</div>
+          </>
+        ) : <div className="text-xs" style={{ color: C.inkSoft }}>Toca "Calcular" para medir los datos guardados.</div>}
+      </div>
+
+      <div className="rounded-xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        <div className="text-sm font-bold mb-2" style={{ color: C.ink }}>Actividad del equipo · últimos 30 días</div>
+        {users.length === 0 ? <div className="text-xs" style={{ color: C.inkSoft }}>Todavía no hay tareas asignadas.</div> : users.map(([u, v]) => (
+          <div key={u} className="flex justify-between text-sm py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+            <span>{accounts?.[u]?.display_name || u}</span>
+            <span className="text-xs" style={{ color: C.inkSoft }}>{v.cerradas30} cerradas · {v.abiertas} abiertas</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl p-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        <div className="text-sm font-bold mb-2" style={{ color: C.ink }}>Descargas</div>
+        <div className="flex flex-wrap gap-3 items-start">
+          <BackupButton />
+          <Button size="sm" variant="ghost" icon={Download} onClick={exportTasks}>Tareas en Excel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NetworkStatusIndicator({ pendingCount = 0 }) {
   const [online, setOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
@@ -15027,6 +15246,8 @@ const ONBOARDING_STEPS = [
   { title: "Tu ronda diaria", body: "Entra a \"Ronda de revisión\", elige tu turno arriba a la derecha, y ve marcando cada equipo piso por piso. Guarda al terminar cada piso, y sigue al siguiente." },
   { title: "Si algo está dañado", body: "Marca \"Dañado / Fuera de servicio\" en ese equipo y escribe qué pasó — es obligatorio. Queda registrado y avisa a los administradores." },
   { title: "Busca lo que necesites", body: "Arriba hay un buscador — te ayuda a encontrar cualquier equipo rápido, sin tener que navegar por los menús. Busca justo donde estés trabajando." },
+  { title: "Instálala y activa los avisos", body: "Añade la app a la pantalla de inicio del celular y activa las notificaciones (en Inicio verás una tarjeta que te guía). Así te avisamos apenas te asignen una orden." },
+  { title: "Escanea para ir directo", body: "El botón \"Escanear\" de abajo abre la cámara desde cualquier pantalla: apunta al QR de un equipo y ves su ficha." },
   { title: "¡Listo para empezar!", body: "Puedes volver a ver esta guía cuando quieras desde el botón de ayuda (?) arriba, junto al resto de íconos." },
 ];
 
@@ -15866,6 +16087,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos y tipos de habitación", access: true, group: "Gestión e Inventario" },
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
     { id: "today", label: "Panel de hoy", icon: Gauge, desc: "Qué tiene cada técnico, hecho hoy y programado", access: isAdmin, group: "Operación en Campo" },
+    { id: "usage", label: "Uso y respaldo", icon: Download, desc: "Espacio de datos, actividad del equipo y descargas", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "room-history", label: "Historial por habitación", icon: History, desc: "Órdenes y mantenimientos de un cuarto, y fallas repetidas", access: isAdmin, group: "Reportes y Análisis" },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin, group: "Operación en Campo" },
@@ -16961,6 +17184,177 @@ function hvacStateTone(profileName) {
  * navegador. El cambio de estado SÍ mueve equipo físico real, así que pide confirmación explícita
  * y el propio servidor vuelve a comprobar que quien llama es admin/gerencia antes de ejecutarlo.
  */
+/**
+ * Historial por habitación y fallas repetidas. Junta, para un cuarto, todas las tareas (incluidas las
+ * órdenes de HotSOS) y los mantenimientos de sus equipos, en una sola línea de tiempo; y en la otra
+ * pestaña muestra qué habitaciones, equipos y tipos de falla se repiten más en el periodo elegido.
+ * Solo lee lo que ya está en la app — no guarda nada nuevo.
+ */
+function roomOfTask(t) {
+  if (t.origen === "hotsos") {
+    const m = /\b(\d{3,5})\b/.exec(String(t.descripcion || "").split(" — ")[0]);
+    return m ? m[1] : null;
+  }
+  const m = /hab(?:itaci[oó]n)?\.?\s*#?\s*(\d{3,5})/i.exec(`${t.titulo || ""} ${t.descripcion || ""}`);
+  return m ? m[1] : null;
+}
+function categoryOfTask(t) {
+  const m = /categor[ií]a sugerida: ([^)]+)\)/i.exec(t.descripcion || "");
+  return m ? m[1].trim() : null;
+}
+
+function RoomHistoryView({ tasks, mttoLog, equipos, accounts }) {
+  const [tab, setTab] = useState("room"); // "room" | "repeat"
+  const [room, setRoom] = useState("");
+  const [days, setDays] = useState(30);
+  const nameOf = (u) => (u ? (accounts?.[u]?.display_name || u) : "Sin asignar");
+  const fmtD = (iso) => { try { return new Date(iso).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "2-digit" }); } catch { return "—"; } };
+
+  const roomClean = room.trim();
+  const events = useMemo(() => {
+    if (!/^\d{3,5}$/.test(roomClean)) return [];
+    const out = [];
+    (tasks || []).forEach(t => {
+      if (roomOfTask(t) !== roomClean) return;
+      const done = normalizeTaskState(t.estado) === "finalizada";
+      out.push({
+        key: "t" + t.id, at: t.createdAt || t.assignedAt, kind: t.origen === "hotsos" ? "HotSOS" : "Tarea",
+        title: t.titulo, detail: [categoryOfTask(t), nameOf(t.asignadoA)].filter(Boolean).join(" · "),
+        status: done ? "Cerrada" : "Abierta", tone: done ? "ok" : "open",
+      });
+    });
+    const eqIds = new Set((equipos || []).filter(e => String(e.nombre || "").includes(roomClean)).map(e => e.id));
+    (mttoLog || []).forEach(r => {
+      if (!eqIds.has(r.equipoId)) return;
+      const eq = (equipos || []).find(e => e.id === r.equipoId);
+      out.push({
+        key: "m" + (r.id || r.fecha + r.equipoId), at: r.fecha, kind: r.tipo === "correctivo" ? "Correctivo" : "Mantenimiento",
+        title: r.descripcion || "Mantenimiento registrado", detail: eq?.nombre || "", status: "Hecho", tone: "ok",
+      });
+    });
+    return out.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  }, [tasks, mttoLog, equipos, roomClean, accounts]);
+
+  const repeat = useMemo(() => {
+    const since = Date.now() - days * 86400000;
+    const byRoom = {}, byCat = {};
+    (tasks || []).forEach(t => {
+      if (new Date(t.createdAt || 0).getTime() < since) return;
+      const r = roomOfTask(t);
+      const c = categoryOfTask(t);
+      if (c) byCat[c] = (byCat[c] || 0) + 1;
+      if (!r) return;
+      const o = (byRoom[r] = byRoom[r] || { room: r, total: 0, abiertas: 0, cats: {} });
+      o.total++;
+      if (normalizeTaskState(t.estado) !== "finalizada") o.abiertas++;
+      if (c) o.cats[c] = (o.cats[c] || 0) + 1;
+    });
+    const rooms = Object.values(byRoom).filter(o => o.total >= 2).sort((a, b) => b.total - a.total).slice(0, 15);
+    const byEq = {};
+    (mttoLog || []).forEach(r => {
+      if (r.tipo !== "correctivo" || new Date(r.fecha || 0).getTime() < since) return;
+      byEq[r.equipoId] = (byEq[r.equipoId] || 0) + 1;
+    });
+    const equipos2 = Object.entries(byEq).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([id, n]) => ({ nombre: (equipos || []).find(e => e.id === id)?.nombre || "Equipo", n }));
+    const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    return { rooms, equipos: equipos2, cats };
+  }, [tasks, mttoLog, equipos, days]);
+
+  const tab1 = (id, label) => (
+    <button onClick={() => setTab(id)} className="text-sm font-medium px-3 py-1.5 rounded-md"
+      style={tab === id ? { background: C.blue, color: "#fff" } : { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>{label}</button>
+  );
+  const toneStyle = (tone) => tone === "open" ? { background: "#fff3d6", color: "#8a5a00" } : { background: "#dff5e3", color: "#1c7a34" };
+
+  return (
+    <div className="pm-tab-in">
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Historial por habitación</h2>
+      <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Todo lo que ha pasado en un cuarto, y qué se repite más.</p>
+      <div className="flex gap-1.5 mb-4">{tab1("room", "Por habitación")}{tab1("repeat", "Fallas repetidas")}</div>
+
+      {tab === "room" && (
+        <>
+          <input value={room} onChange={e => setRoom(e.target.value)} inputMode="numeric" placeholder="Número de habitación (ej: 1204)" aria-label="Número de habitación"
+            className="w-full text-sm border rounded-md px-3 outline-none mb-3" style={{ minHeight: 44, borderColor: C.line, background: C.panel, color: C.ink }} />
+          {roomClean === "" ? (
+            <div className="text-sm text-center py-8" style={{ color: C.gray }}>Escribe un número de habitación para ver su historial.</div>
+          ) : !/^\d{3,5}$/.test(roomClean) ? (
+            <div className="text-sm text-center py-8" style={{ color: C.gray }}>Usa solo el número, de 3 a 5 dígitos.</div>
+          ) : events.length === 0 ? (
+            <div className="text-sm text-center py-8" style={{ color: C.gray }}>No hay órdenes ni mantenimientos registrados para la habitación {roomClean}.</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[["Eventos", events.length, C.ink], ["Abiertas", events.filter(e => e.tone === "open").length, C.amber], ["Últimos 30 días", events.filter(e => new Date(e.at || 0).getTime() > Date.now() - 30 * 86400000).length, C.blue]].map(([l, n, c]) => (
+                  <div key={l} className="rounded-lg border p-2.5 text-center" style={{ borderColor: C.line, background: C.panel }}>
+                    <div className="text-xl font-bold tabular-nums" style={{ color: c }}>{n}</div>
+                    <div className="text-[11px]" style={{ color: C.inkSoft }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                {events.map(e => (
+                  <div key={e.key} className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[11px] font-semibold" style={{ color: C.inkSoft }}>{fmtD(e.at)} · {e.kind}</span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={toneStyle(e.tone)}>{e.status}</span>
+                    </div>
+                    <div className="text-sm font-medium" style={{ color: C.ink }}>{e.title}</div>
+                    {e.detail && <div className="text-xs mt-0.5" style={{ color: C.gray }}>{e.detail}</div>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {tab === "repeat" && (
+        <>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs" style={{ color: C.inkSoft }}>Periodo:</span>
+            {[30, 60, 90].map(d => (
+              <button key={d} onClick={() => setDays(d)} className="text-xs font-semibold px-3 rounded-full border" style={{ minHeight: 36, borderColor: days === d ? C.blue : C.line, background: days === d ? C.blue : C.panel, color: days === d ? "#fff" : C.inkSoft }}>{d} días</button>
+            ))}
+          </div>
+
+          <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Habitaciones con más órdenes</div>
+            {repeat.rooms.length === 0 ? <div className="text-xs" style={{ color: C.gray }}>Ninguna habitación tiene 2 o más órdenes en este periodo.</div> : repeat.rooms.map(o => (
+              <button key={o.room} onClick={() => { setRoom(o.room); setTab("room"); }} className="w-full flex items-center justify-between gap-2 py-2 border-t text-left" style={{ borderColor: C.line, minHeight: 44 }}>
+                <span className="text-sm font-bold" style={{ color: C.ink, width: 52 }}>{o.room}</span>
+                <span className="flex-1 text-xs truncate" style={{ color: C.inkSoft }}>{Object.entries(o.cats).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} ${n}`).join(" · ") || "—"}</span>
+                <span className="text-xs font-bold" style={{ color: o.abiertas > 0 ? C.red : C.ink }}>{o.total} órdenes{o.abiertas > 0 ? ` · ${o.abiertas} abiertas` : ""}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Equipos con más fallas (correctivos)</div>
+            {repeat.equipos.length === 0 ? <div className="text-xs" style={{ color: C.gray }}>Ningún equipo tiene 2 o más correctivos en este periodo.</div> : repeat.equipos.map((e, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 py-2 border-t text-sm" style={{ borderColor: C.line }}>
+                <span className="truncate" style={{ color: C.ink }}>{e.nombre}</span><span className="font-bold shrink-0" style={{ color: C.red }}>{e.n}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border p-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Tipos de falla más frecuentes</div>
+            {repeat.cats.length === 0 ? <div className="text-xs" style={{ color: C.gray }}>Sin datos de categoría todavía (vienen de las órdenes importadas de HotSOS).</div> : repeat.cats.map(([c, n]) => (
+              <div key={c} className="flex items-center gap-2 py-1.5 text-xs">
+                <span style={{ color: C.ink, width: 110 }} className="truncate">{c}</span>
+                <span className="flex-1 rounded-full overflow-hidden" style={{ background: C.bg, height: 8 }}><span className="block h-full" style={{ width: `${(n / repeat.cats[0][1]) * 100}%`, background: C.amber }} /></span>
+                <span className="font-bold tabular-nums">{n}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * Panel "Hoy" para el supervisor: por cada técnico, sus órdenes en tres columnas (pendientes,
  * en proceso, hechas hoy), lo que queda programado para mañana en adelante, y alertas de lo que
@@ -18183,7 +18577,7 @@ function ProcedureCopilotView({ equipos, mttoLog }) {
  * cruzando el técnico que HotSOS ya asignó con las cuentas de esta app cuando el nombre coincide.
  * No duplica órdenes ya importadas antes (las reconoce por su número de orden de HotSOS).
  */
-function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete, equipos }) {
+function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, hotsosTaskCount, onImport, onRetryAssignments, onBulkDelete, equipos, openTasks = [] }) {
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState({});
   const [parseError, setParseError] = useState(null);
@@ -18218,12 +18612,35 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
           alreadyImported: existingOrderIds.has(orderId),
         };
       });
+      // Posibles duplicados: misma habitación y mismo problema (o misma categoría) que una tarea que
+      // sigue abierta, o repetida dentro del propio Excel. No se marcan para importar por defecto.
+      {
+        const roomOf = (txt) => (/\b(\d{3,5})\b/.exec(txt || "") || [])[1] || null;
+        const seen = [];
+        parsed.forEach(p => {
+          if (p.alreadyImported) return;
+          const room = roomOf(p.lugar);
+          if (!room) return;
+          const nb = normalizeSearchText(p.problema);
+          const dup = openTasks.find(t => {
+            if (roomOf(String(t.descripcion || "").split(" — ")[0]) !== room) return false;
+            const na = normalizeSearchText(t.titulo);
+            return na === nb || (nb.length > 6 && (na.includes(nb) || nb.includes(na))) || String(t.descripcion || "").includes(`categoría sugerida: ${p.categoria}`);
+          });
+          if (dup) p.possibleDup = `ya hay una tarea abierta: «${dup.titulo}»`;
+          else {
+            const inFile = seen.find(x => x.room === room && (x.nb === nb || x.categoria === p.categoria));
+            if (inFile) p.possibleDup = `se repite en este Excel (orden ${inFile.orderId})`;
+          }
+          seen.push({ room, nb, categoria: p.categoria, orderId: p.orderId });
+        });
+      }
       if (parsed.length === 0) {
         setParseError("No se encontró ninguna orden reconocible — revisa que sea el mismo formato que exporta HotSOS (Núm. de orden, Edad, Problema, Habitación/equipo, Asignado).");
       } else {
         setRows(parsed);
         const initSel = {};
-        parsed.forEach(p => { initSel[p.orderId] = !p.alreadyImported; });
+        parsed.forEach(p => { initSel[p.orderId] = !p.alreadyImported && !p.possibleDup; });
         setSelected(initSel);
       }
     } catch {
@@ -18331,7 +18748,7 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
           </div>
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="text-xs" style={{ color: C.inkSoft }}>
-              {visibleRows.length} de {rows.length} órdenes visibles · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {selectedCount} seleccionadas
+              {visibleRows.length} de {rows.length} órdenes visibles · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {rows.filter(r => r.possibleDup).length} posibles duplicados (sin marcar) · {selectedCount} seleccionadas
             </div>
             <div className="flex items-center gap-3">
               <button onClick={() => toggleAll(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Marcar visibles</button>
@@ -18359,7 +18776,7 @@ function HotsosImportView({ accounts, existingOrderIds, currentUserDisplayName, 
                 ) : visibleRows.map((r, i) => (
                   <tr key={r.orderId} style={{ background: i % 2 ? C.cardAlt : C.panel, opacity: r.alreadyImported ? 0.5 : 1 }}>
                     <td className="p-2"><input type="checkbox" disabled={r.alreadyImported} checked={!!selected[r.orderId]} onChange={e => setSelected(s => ({ ...s, [r.orderId]: e.target.checked }))} /></td>
-                    <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}</td>
+                    <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}{r.possibleDup && <div style={{ color: C.amber, fontWeight: 600 }}>⚠ Posible duplicado: {r.possibleDup}</div>}</td>
                     <td className="p-2" style={{ color: C.ink }}>{r.problema}</td>
                     <td className="p-2" style={{ color: C.inkSoft }}>{r.lugar}</td>
                     <td className="p-2"><Badge tone="blue">{r.categoria}</Badge></td>
@@ -21972,6 +22389,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => themeOverride === "dark" ? true : themeOverride === "light" ? false : isNightHour());
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [scannedEquipoId, setScannedEquipoId] = useState(null);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [undoToast, setUndoToast] = useState(null); // { label, trashId } | null
   const undoTimerRef = useRef(null);
@@ -24287,7 +24705,7 @@ export default function App() {
   }, [currentUser, pendingShelfId]);
 
   useEffect(() => {
-    if (currentUser && pendingEquipoId) setView("maintenance");
+    if (currentUser && pendingEquipoId) { if (isAdmin) setView("maintenance"); else { setScannedEquipoId(pendingEquipoId); setPendingEquipoId(null); } }
   }, [currentUser, pendingEquipoId]);
 
   useEffect(() => {
@@ -24384,6 +24802,8 @@ export default function App() {
         { id: "wiki", label: "Wiki interna", icon: BookOpen },
         { id: "rooms", label: "Habitaciones", icon: Building2 },
         { id: "procedures", label: "Procedimientos", icon: Sparkles },
+        ...(isAdmin ? [{ id: "room-history", label: "Historial por habitación", icon: History }] : []),
+        ...(isAdmin ? [{ id: "usage", label: "Uso y respaldo", icon: Download }] : []),
         ...(isAdmin ? [{ id: "hotsos-import", label: "Importar HotSOS", icon: Upload }] : []),
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
       ],
@@ -24428,7 +24848,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
       <ToastHost />
-      <OfflineBanner />
+      <SyncStatusBar online={isOnline} pending={pendingSync + pendingPhotoRecords} retrying={retrying} onRetry={async () => { setRetrying(true); await tryFlush(); tryFlushPhotos(); setRetrying(false); }} />
       {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin
           importar si la app está en modo claro u oscuro, para que combine con el theme-color
           del manifiesto y no se vea un bloque blanco cortado arriba en iOS. */}
@@ -24451,17 +24871,13 @@ export default function App() {
       {showQrScanner && (
         <QrScannerView
           onClose={() => setShowQrScanner(false)}
-          onFoundEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); setShowQrScanner(false); }}
+          onFoundEquipo={(id) => { setShowQrScanner(false); if (isAdmin) { setPendingEquipoId(id); setView("maintenance"); } else setScannedEquipoId(id); }}
           onFoundShelf={(id) => { setPendingShelfId(id); setView("inventory"); setShowQrScanner(false); }}
         />
       )}
-      {!isOnline && (
-        <div className="pm-slide-up-in fixed top-0 left-0 right-0 z-[110] flex items-center justify-center gap-2 px-4 py-2"
-          style={{ background: "#7a5405" }}>
-          <WifiOff size={14} color="#fff" />
-          <span className="text-xs font-medium text-white">Sin conexión — lo que guardes (incluidas fotos) se sube solo apenas vuelva la señal.</span>
-          {(pendingSync > 0 || pendingPhotoRecords > 0) && <span className="text-xs text-white opacity-90">({pendingSync + pendingPhotoRecords} sin subir)</span>}
-        </div>
+      {scannedEquipoId && (
+        <ScannedEquipoSheet equipo={mttoEquipos.find(e => e.id === scannedEquipoId)} tasks={tasks} accounts={profiles}
+          onClose={() => setScannedEquipoId(null)} onGoTasks={() => { setScannedEquipoId(null); setView("tasks"); }} />
       )}
       {roundSaveMsg && !roundSaveMsg.ok && (
         <div className="pm-slide-up-in fixed bottom-0 left-0 right-0 z-[110] flex items-center justify-between gap-3 px-4 py-3 flex-wrap"
@@ -24649,7 +25065,7 @@ export default function App() {
             <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} className="hidden sm:block p-1.5 rounded-md" style={{ background: C.bg }}>
               {darkMode ? <Sun size={16} color={C.amber} /> : <Moon size={16} color={C.ink} />}
             </button>
-            {isAdmin && <span className="hidden sm:inline-flex"><PushEnableButton onEnable={enablePushNotifications} /></span>}
+            <span className="hidden sm:inline-flex"><PushEnableButton onEnable={enablePushNotifications} /></span>
             {isAdmin && <span className="hidden sm:inline-flex"><NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={setView} /></span>}
             {isAdmin && (
               <div className="relative hidden sm:block">
@@ -24731,9 +25147,7 @@ export default function App() {
               <button onClick={toggleLargeText} className="w-full text-left px-1 py-2.5 text-sm flex items-center gap-2.5" style={{ color: C.ink }}>
                 <span className="font-bold" style={{ fontSize: largeText ? 18 : 12 }}>A</span> {largeText ? "Letra normal" : "Letra grande"}
               </button>
-              {isAdmin && (
-                <div className="px-1 py-2"><PushEnableButton onEnable={enablePushNotifications} /></div>
-              )}
+              <div className="px-1 py-2 flex items-center gap-2 text-sm" style={{ color: C.ink }}><PushEnableButton onEnable={enablePushNotifications} /> Activar notificaciones</div>
               {isAdmin && (
                 <div className="px-1 py-2"><NotificationBell alerts={shiftAlerts} maintenanceDue={maintenanceDue} staleIssues={staleIssues} fuelAlerts={criticalFuelTanks} onNavigate={(v) => { setView(v); setShowProfileMenu(false); }} /></div>
               )}
@@ -24798,6 +25212,7 @@ export default function App() {
               <ArrowLeft size={14} /> Volver a Inicio
             </button>
           )}
+          {view === "home" && <SetupGuideCard onEnablePush={enablePushNotifications} userKey={currentUser} />}
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
               hasSignature={!!account.signature} onGoToProfile={() => setView("profile")}
@@ -24867,7 +25282,7 @@ export default function App() {
               onSetComponentPosition={setComponentPosition} />
           )}
           {view === "hotsos-import" && isAdmin && (
-            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos}
+            <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos} openTasks={tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada")}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "hvac" && isAdmin && (
@@ -24932,6 +25347,10 @@ export default function App() {
               equipos={mttoEquipos} mttoLog={mttoLog} mttoCronograma={mttoCronograma} invItems={invItems} onLogMaintenance={logMaintenance}
               onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} onAddTaskComment={addTaskComment}
               mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} myWorkMode={!isAdmin} />
+          )}
+          {view === "usage" && isAdmin && <UsagePanelView tasks={tasks} accounts={profiles} />}
+          {view === "room-history" && isAdmin && (
+            <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />
           )}
           {view === "today" && isAdmin && (
             <TodayBoardView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} onAssign={(id, username) => updateTask(id, { asignadoA: username, assignedAt: nowIso() })} />

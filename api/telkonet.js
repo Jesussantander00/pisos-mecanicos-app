@@ -476,6 +476,16 @@ export default async function handler(req, res) {
     res.status(auth.status).json({ ok: false, message: auth.message });
     return;
   }
+  // TelkHab es, por ahora, una función exclusiva del administrador (se está reservando como un
+  // plus de la app). Se exige aquí, en el servidor, y no solo escondiendo el botón en pantalla:
+  // así nadie con otra cuenta puede llamar a este endpoint directamente.
+  {
+    const { data: adminProfile } = await supabaseAdmin.from("profiles").select("is_admin").eq("id", auth.userId).maybeSingle();
+    if (!adminProfile?.is_admin) {
+      res.status(403).json({ ok: false, message: "TelkHab solo está disponible para el administrador." });
+      return;
+    }
+  }
 
   try {
     if (req.method === "GET") {

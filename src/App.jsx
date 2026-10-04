@@ -171,7 +171,7 @@ try {
 
 const STATUS_OPTS = ["Automático", "Manual", "Apagado"];
 // Vistas a las que SÍ puede entrar una cuenta marcada como "Gerencia" pura (sin admin/almacenista) — todo lo demás queda bloqueado.
-const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics", "hvac"];
+const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics"];
 
 /* ============================================================
    DATOS: PISOS Y EQUIPOS (según formato original, verificado
@@ -15827,8 +15827,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "ronda", label: "Ronda de revisión", icon: ClipboardList, desc: "Revisión diaria de los pisos mecánicos", access: true, group: "Operación en Campo" },
     { id: "coldrooms", label: "Cuartos fríos", icon: Snowflake, desc: "Cuartos fríos y máquinas de hielo", access: true, badge: counts.coldOutOfRange, group: "Operación en Campo" },
     { id: "meters", label: "Lecturas de medidores", icon: Zap, desc: "Consumo de servicios públicos", access: true, badge: counts.meterAnomalies, group: "Operación en Campo" },
-    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías, alertas, movimientos y herramientas", access: true, badge: counts.lowStock, urgentBadge: false, group: "Gestión e Inventario" },
-    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: true, group: "Operación en Campo", badge: counts.preventiveOverdue, urgentBadge: false },
+    { id: "inventory", label: "Inventario", icon: Package, desc: "Bodegas, estanterías, alertas, movimientos y herramientas", access: isAdmin || isAlmacenista, badge: counts.lowStock, urgentBadge: false, group: "Gestión e Inventario" },
+    { id: "maintenance", label: "Mantenimiento", icon: Wrench, desc: "Registrar mantenimientos por QR", access: isAdmin, group: "Operación en Campo", badge: counts.preventiveOverdue, urgentBadge: false },
     { id: "maintenance-analytics", label: "Análisis de mantenimiento", icon: TrendingUp, desc: "Gráficas, fallas y reemplazos", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "executive", label: "Panel ejecutivo", icon: Gauge, desc: "KPIs para la gerencia", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "maintenance-log", label: "Historial de mantenimientos", icon: History, desc: "Auditoría de lo registrado", access: isAdmin, group: "Reportes y Análisis" },
@@ -15849,7 +15849,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "today", label: "Panel de hoy", icon: Gauge, desc: "Qué tiene cada técnico, hecho hoy y programado", access: isAdmin, group: "Operación en Campo" },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
-    { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin || isGerencia, group: "Operación en Campo" },
+    { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin, group: "Operación en Campo" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);
@@ -16098,7 +16098,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
             </div>
           </button>
 
-          <button onClick={() => onNavigate("inventory")} title="Artículos de inventario en o por debajo de su cantidad mínima definida" className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          {canManageInv && <button onClick={() => onNavigate("inventory")} title="Artículos de inventario en o por debajo de su cantidad mínima definida" className="text-left rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.inkSoft }}>Stock más crítico</div>
             {lowStockDetail.length === 0 ? (
               <div className="text-xs flex items-center gap-1" style={{ color: C.green }}><CheckCircle2 size={13} /> Todo por encima del mínimo</div>
@@ -16112,7 +16112,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
                 ))}
               </div>
             )}
-          </button>
+          </button>}
         </div>
       )}
 
@@ -16170,7 +16170,7 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
               { id: "issues", label: "Fuera de servicio", icon: Wrench, color: C.red },
               { id: "maintenance", label: "Mantenimiento", icon: PlusCircle, color: C.green },
               { id: "tasks", label: "Nueva tarea", icon: ClipboardCheck, color: C.blue },
-            ].map((qa, i, arr) => (
+            ].filter(qa => qa.id !== "maintenance" || isAdmin).map((qa, i, arr) => (
               <button key={qa.id} onClick={() => onNavigate(qa.id)}
                 className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06]"
                 style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none" }}>
@@ -24281,13 +24281,13 @@ export default function App() {
         { id: "coldrooms", label: "Cuartos fríos", icon: Snowflake, badge: coldOutOfRange.length },
         { id: "meters", label: "Lecturas de medidores", icon: Zap, badge: meterAnomalies.length },
         { id: "fichas-tecnicas", label: "Fichas técnicas", icon: ClipboardList },
-        { id: "maintenance", label: "Mantenimiento", icon: Wrench },
-        { id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false },
+        ...(isAdmin ? [{ id: "maintenance", label: "Mantenimiento", icon: Wrench }] : []),
+        ...((isAdmin || isAlmacenista) ? [{ id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false }] : []),
         { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && (isAdmin || t.asignadoA === currentUser)).length, urgentBadge: false },
         ...(isAdmin ? [{ id: "today", label: "Panel de hoy", icon: Gauge }] : []),
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
-        ...((isAdmin || isGerencia) ? [{ id: "hvac", label: "TelkHab", icon: Thermometer }] : []),
+        ...(isAdmin ? [{ id: "hvac", label: "TelkHab", icon: Thermometer }] : []),
       ],
     },
     {
@@ -24787,14 +24787,14 @@ export default function App() {
             <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
-          {view === "hvac" && (isAdmin || isGerencia) && (
+          {view === "hvac" && isAdmin && (
             <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}
               reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName} />
           )}
-          {view === "inventory" && (
+          {view === "inventory" && (isAdmin || isAlmacenista) && (
             <InventoryHubView bodegas={bodegas} shelves={shelves} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateBodega={createBodega} onCreateShelf={createShelf} onCreateItem={createInvItem}
               onRetiro={doInvRetiro} onEntrada={doInvEntrada} onEditItem={editInvItem} onImportInventory={importFullInventory}
@@ -24803,7 +24803,7 @@ export default function App() {
               invMovements={invMovements} reportEmail={reportEmail} onLogSent={logSentReport} currentUser={displayName}
               tools={tools} accounts={profiles} onCreateTool={createTool} onLendTool={lendTool} onReturnTool={returnTool} viewerLocked={viewerLocked} tasks={tasks} />
           )}
-          {view === "maintenance" && (
+          {view === "maintenance" && isAdmin && (
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
               onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
               onSetVideoUrl={setEquipoVideoUrl}
@@ -24852,6 +24852,11 @@ export default function App() {
           )}
           {view === "today" && isAdmin && (
             <TodayBoardView tasks={tasks} accounts={profiles} onNavigate={setView} />
+          )}
+          {((view === "inventory" && !(isAdmin || isAlmacenista)) || (view === "maintenance" && !isAdmin) || (view === "hvac" && !isAdmin)) && (
+            <div className="rounded-lg border p-6 text-center text-sm" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
+              🔒 No tienes acceso a esta sección. Si la necesitas, pídesela al administrador.
+            </div>
           )}
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}

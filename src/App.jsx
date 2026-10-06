@@ -10962,6 +10962,7 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const [generatingQr, setGeneratingQr] = useState(false);
+  const [qrSistema, setQrSistema] = useState("");
 
   const doCreate = async () => {
     if (!sistema.trim() || !nombre.trim()) return;
@@ -10983,8 +10984,8 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
   const doDownloadAllQr = async () => {
     setGeneratingQr(true);
     try {
-      const doc = await generateAllEquiposQrPdf(equipos.filter(e => e.active !== false));
-      doc.save("codigos-qr-equipos-mantenimiento.pdf");
+      const doc = await generateAllEquiposQrPdf(equipos.filter(e => e.active !== false && (!qrSistema || e.sistema === qrSistema)));
+      doc.save(qrSistema ? `codigos-qr-${qrSistema.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf` : "codigos-qr-equipos-mantenimiento.pdf");
     } catch { setImportMsg({ ok: false, text: "No se pudieron generar los códigos QR." }); }
     setGeneratingQr(false);
   };
@@ -11012,8 +11013,14 @@ function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSele
       )}
       {canManage && equipos.length > 0 && (
         <div className="rounded-md p-2 mb-3 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ background: C.blueSoft, color: C.blue }}>
-          <span>Descarga en un solo PDF todos los códigos QR de todos los equipos, listos para imprimir y pegar.</span>
-          <Button size="sm" variant="ghost" disabled={generatingQr} onClick={doDownloadAllQr}>{generatingQr ? "Generando…" : "Descargar todos los QR"}</Button>
+          <span>Descarga en un solo PDF los códigos QR, listos para imprimir y pegar. Puedes elegir un sistema para imprimir por tandas.</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select value={qrSistema} onChange={e => setQrSistema(e.target.value)} className="text-xs border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+              <option value="">Todos los sistemas</option>
+              {[...new Set(equipos.filter(e => e.active !== false).map(e => e.sistema).filter(Boolean))].sort().map(sx => <option key={sx} value={sx}>{sx}</option>)}
+            </select>
+            <Button size="sm" variant="ghost" disabled={generatingQr} onClick={doDownloadAllQr}>{generatingQr ? "Generando…" : qrSistema ? "Descargar QR del sistema" : "Descargar todos los QR"}</Button>
+          </div>
         </div>
       )}
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
@@ -11426,7 +11433,7 @@ function VideoEmbed({ url }) {
   );
 }
 
-function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, mttoRequiredFields, onUpdateRequiredFields, viewerLocked }) {
+function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaintenance, isAdmin, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, mttoRequiredFields, onUpdateRequiredFields, viewerLocked, editLog = [] }) {
   const [editingEquipo, setEditingEquipo] = useState(false);
   const [equipoDraft, setEquipoDraft] = useState({ nombre: equipo.nombre, sistema: equipo.sistema });
   const [savingEquipo, setSavingEquipo] = useState(false);
@@ -11455,6 +11462,8 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
   const [downloadingQr, setDownloadingQr] = useState(false);
   const [editingVidaUtil, setEditingVidaUtil] = useState(false);
   const [fechaInstalacionDraft, setFechaInstalacionDraft] = useState(equipo.fechaInstalacion || "");
+  const [garantiaDraft, setGarantiaDraft] = useState(equipo.garantiaHasta || "");
+  const [showTimeline, setShowTimeline] = useState(false);
   const [vidaUtilDraft, setVidaUtilDraft] = useState(equipo.vidaUtilAnios || "");
   const [savingVidaUtil, setSavingVidaUtil] = useState(false);
   const [editingManual, setEditingManual] = useState(false);
@@ -11627,6 +11636,16 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
           ) : (
             <p className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema} · {records.length} mantenimiento{records.length !== 1 ? "s" : ""} registrado{records.length !== 1 ? "s" : ""}</p>
           )}
+          {(() => {
+            const costoTotal = (records || []).reduce((a, r) => a + Number(r.costo || 0), 0);
+            const chips = [
+              equipo.fechaInstalacion ? `📅 Instalado ${new Date(equipo.fechaInstalacion + "T00:00:00").toLocaleDateString("es-CO", { month: "short", year: "numeric" })}` : null,
+              equipo.ubicacion ? `📍 ${equipo.ubicacion}` : null,
+              costoTotal > 0 ? `💲 Costo acumulado $${costoTotal.toLocaleString("es-CO")}` : null,
+              equipo.garantiaHasta ? `🛡️ Garantía hasta ${new Date(equipo.garantiaHasta + "T00:00:00").toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" })}` : null,
+            ].filter(Boolean);
+            return chips.length ? <div className="flex flex-wrap gap-1.5 mt-1.5">{chips.map(c => <span key={c} className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: C.bg, color: C.inkSoft }}>{c}</span>)}</div> : null;
+          })()}
           {isAdmin && (
             <label className="inline-flex items-center gap-1 text-xs font-semibold mt-1 cursor-pointer" style={{ color: C.amber }}>
               {uploadingFoto ? "Subiendo…" : equipo.fotoMaestra ? "Cambiar foto oficial" : "Agregar foto oficial del equipo"}
@@ -11739,6 +11758,35 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
         ))}
       </div>
 
+      <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+        <button onClick={() => setShowTimeline(v => !v)} className="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft, minHeight: 32 }}>
+          <span>Línea de tiempo y cambios</span><span>{showTimeline ? "▲" : "▼"}</span>
+        </button>
+        {showTimeline && (() => {
+          const ev = [];
+          if (equipo.fechaInstalacion) ev.push({ at: equipo.fechaInstalacion + "T00:00:00", icon: "📅", text: "Instalación del equipo" });
+          (records || []).forEach(r => ev.push({ at: r.fecha, icon: r.tipo === "preventivo" ? "🛠️" : "🔧", text: `${r.tipo === "preventivo" ? "Preventivo" : "Correctivo"}${r.descripcion ? ` — ${r.descripcion}` : ""}` }));
+          (tasks || []).filter(t => t.equipoId === equipo.id).forEach(t => {
+            ev.push({ at: t.createdAt, icon: "📋", text: `Tarea creada: ${t.titulo}` });
+            if (t.finishedAt) ev.push({ at: t.finishedAt, icon: "✅", text: `Tarea cerrada: ${t.titulo}` });
+          });
+          (editLog || []).filter(l => l.entityLabel === equipo.nombre && l.kind === "equipo").forEach(l => ev.push({ at: l.at, icon: "✏️", text: `${l.by || "Alguien"} cambió ${l.field || "datos"}${l.before != null ? ` (${l.before} → ${l.after})` : ""}` }));
+          ev.sort((a, b) => new Date(b.at) - new Date(a.at));
+          return ev.length === 0 ? <p className="text-xs mt-2" style={{ color: C.gray }}>Todavía no hay eventos.</p> : (
+            <div className="mt-2 space-y-1">
+              {ev.slice(0, 40).map((e, i) => (
+                <div key={i} className="flex gap-2 text-xs py-1 border-t" style={{ borderColor: C.line, color: C.ink }}>
+                  <span className="shrink-0">{e.icon}</span>
+                  <span className="flex-1">{e.text}</span>
+                  <span className="shrink-0" style={{ color: C.gray }}>{e.at ? new Date(e.at).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "2-digit" }) : ""}</span>
+                </div>
+              ))}
+              {ev.length > 40 && <div className="text-[11px]" style={{ color: C.gray }}>+{ev.length - 40} eventos más antiguos</div>}
+            </div>
+          );
+        })()}
+      </div>
+
       {repeatedFailures >= 3 && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
           <div className="text-xs font-semibold" style={{ color: C.red }}>⚠️ Falla repetida — {repeatedFailures} correctivos en los últimos 60 días</div>
@@ -11760,9 +11808,14 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
               <input type="number" min="1" value={vidaUtilDraft} onChange={e => setVidaUtilDraft(e.target.value)} placeholder="ej: 10"
                 className="text-sm border rounded-md px-2 py-1.5 outline-none w-24" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
             </div>
+            <div>
+              <label className="text-[10px] block mb-0.5" style={{ color: C.gray }}>Garantía hasta</label>
+              <input type="date" value={garantiaDraft} onChange={e => setGarantiaDraft(e.target.value)}
+                className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+            </div>
             <Button size="sm" disabled={savingVidaUtil} onClick={async () => {
               setSavingVidaUtil(true);
-              await onUpdateEquipoInfo?.(equipo.id, { fechaInstalacion: fechaInstalacionDraft || null, vidaUtilAnios: vidaUtilDraft ? Number(vidaUtilDraft) : null });
+              await onUpdateEquipoInfo?.(equipo.id, { fechaInstalacion: fechaInstalacionDraft || null, vidaUtilAnios: vidaUtilDraft ? Number(vidaUtilDraft) : null, garantiaHasta: garantiaDraft || null });
               setSavingVidaUtil(false); setEditingVidaUtil(false);
             }}>Guardar</Button>
             <button onClick={() => setEditingVidaUtil(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
@@ -11961,7 +12014,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds, viewerLocked }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds, viewerLocked, editLog = [] }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = (isAdmin || isAlmacenista) && !viewerLocked;
@@ -11978,7 +12031,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
   const equipo = selectedEquipoId ? equipos.find(e => e.id === selectedEquipoId) : null;
   if (equipo) {
     const records = mttoLog.filter(m => m.equipoId === equipo.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    return <EquipoDetailView equipo={equipo} records={records} tasks={tasks} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} onUpdateEquipoInfo={onUpdateEquipoInfo} mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={onUpdateRequiredFields} viewerLocked={viewerLocked} />;
+    return <EquipoDetailView equipo={equipo} records={records} tasks={tasks} invItems={invItems} onBack={() => setSelectedEquipoId(null)} onLogMaintenance={onLogMaintenance} isAdmin={canManage} onSetVideoUrl={onSetVideoUrl} onSetFrecuencia={onSetFrecuencia} onSetFotoMaestra={onSetFotoMaestra} onUpdateEquipoInfo={onUpdateEquipoInfo} mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={onUpdateRequiredFields} viewerLocked={viewerLocked} editLog={editLog} />;
   }
 
   if (selectedSistema) {
@@ -15117,13 +15170,24 @@ function SetupGuideCard({ onEnablePush, userKey }) {
  * descargas (respaldo completo y tareas en Excel). Solo administrador. */
 function UsagePanelView({ tasks, accounts }) {
   const [rows, setRows] = useState(null);
+  const [media, setMedia] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const calc = async () => {
     setBusy(true); setErr(null);
     try {
       const data = await exportFullBackup();
-      setRows(data.map(r => { const txt = JSON.stringify(r.value ?? null); return { key: r.key, bytes: txt.length, items: Array.isArray(r.value) ? r.value.length : null }; }).sort((a, b) => b.bytes - a.bytes));
+      let fotos = 0, videos = 0;
+      const mapped = data.map(r => {
+        const txt = JSON.stringify(r.value ?? null);
+        fotos += (txt.match(/maintenance-photos\//g) || []).length;
+        videos += (txt.match(/maintenance-videos\//g) || []).length;
+        return { key: r.key, bytes: txt.length, items: Array.isArray(r.value) ? r.value.length : null };
+      }).sort((a, b) => b.bytes - a.bytes);
+      setRows(mapped);
+      setMedia({ fotos, videos });
+      const totalB = mapped.reduce((a, r) => a + r.bytes, 0);
+      try { localStorage.setItem("pm-local:space-check", JSON.stringify({ at: nowIso(), pct: Math.round((totalB / (500 * 1048576)) * 100), fotos, videos })); } catch { /* noop */ }
     } catch (e) { setErr(e.message || "No se pudo leer el tamaño de los datos."); }
     setBusy(false);
   };
@@ -15173,7 +15237,13 @@ function UsagePanelView({ tasks, accounts }) {
                 <span className="shrink-0 ml-2" style={{ color: C.inkSoft }}>{fmt(r.bytes)}</span>
               </div>
             ))}
-            <div className="text-[11px] mt-2" style={{ color: C.gray }}>No incluye las fotos guardadas en el almacenamiento (1 GB aparte).</div>
+            {media && (
+              <div className="rounded-lg p-2.5 mt-3" style={{ background: C.bg }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: C.ink }}>Archivos guardados (almacenamiento, 1 GB gratis)</div>
+                <div className="text-xs" style={{ color: C.inkSoft }}>📷 {media.fotos} fotos · 🎬 {media.videos} videos subidos</div>
+                <div className="text-xs mt-1" style={{ color: C.inkSoft }}>Espacio estimado: ≈ {((media.fotos * 0.15 + media.videos * 20)).toFixed(0)} MB de 1024 MB (referencia aproximada: 150 KB por foto y 20 MB por video).</div>
+              </div>
+            )}
           </>
         ) : <div className="text-xs" style={{ color: C.inkSoft }}>Toca "Calcular" para medir los datos guardados.</div>}
       </div>
@@ -16288,7 +16358,31 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     <div className="pb-20">
       {/* pb-20: deja espacio para que el botón flotante "Asistente IA" nunca tape
           contenido real (como "Ver todos los módulos") cuando se hace scroll hasta el final. */}
-      <div className="rounded-2xl p-4 mb-4" style={{ background: C.steel }}>
+      <div className="relative rounded-2xl p-4 mb-4 overflow-hidden" style={{ background: `linear-gradient(135deg, ${C.steel} 0%, ${C.steelDark} 100%)`, isolation: "isolate" }}>
+        <style>{`
+          @keyframes pmNodePulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+          @keyframes pmTracePulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.75; } }
+        `}</style>
+        {/* Fondo decorativo tipo placa de circuito iluminada — solo estético, no interactivo */}
+        <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" aria-hidden="true" style={{ pointerEvents: "none", zIndex: -1 }}>
+          <defs>
+            <pattern id="pmCircuitPattern" width="130" height="100" patternUnits="userSpaceOnUse">
+              <path d="M0 22 H38 V54 H76 V12 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 5s ease-in-out infinite" }} />
+              <path d="M16 100 V70 H58 V90 H96 V48 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 6.5s ease-in-out infinite 1.2s" }} />
+              <path d="M0 85 H24 V60 H0" fill="none" stroke="#245a91" strokeWidth="1" style={{ animation: "pmTracePulse 7s ease-in-out infinite 0.6s" }} />
+              <circle cx="38" cy="22" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.2s ease-in-out infinite" }} />
+              <circle cx="76" cy="54" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4s ease-in-out infinite 0.8s" }} />
+              <circle cx="58" cy="70" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.6s ease-in-out infinite 1.6s" }} />
+              <circle cx="96" cy="48" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4.4s ease-in-out infinite 0.3s" }} />
+            </pattern>
+            <radialGradient id="pmCircuitGlow" cx="82%" cy="15%" r="90%">
+              <stop offset="0%" stopColor="#3fa9ff" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#3fa9ff" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#pmCircuitPattern)" opacity="0.65" />
+          <rect width="100%" height="100%" fill="url(#pmCircuitGlow)" />
+        </svg>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/icon-192.png" alt="" className="w-10 h-10 rounded-xl object-cover shrink-0" />
@@ -17427,7 +17521,40 @@ function RoomHistoryView({ tasks, mttoLog, equipos, accounts }) {
     <div className="pm-tab-in">
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Historial por habitación</h2>
       <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Todo lo que ha pasado en un cuarto, y qué se repite más.</p>
-      <div className="flex gap-1.5 mb-4">{tab1("room", "Por habitación")}{tab1("repeat", "Fallas repetidas")}</div>
+      <div className="flex gap-1.5 mb-4 flex-wrap">{tab1("room", "Por habitación")}{tab1("repeat", "Fallas repetidas")}{tab1("heat", "Mapa de calor")}</div>
+
+      {tab === "heat" && (() => {
+        const meses = [];
+        for (let i = 5; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); d.setMonth(d.getMonth() - i); meses.push(d); }
+        const keyM = (d) => `${d.getFullYear()}-${d.getMonth()}`;
+        const grid = {};
+        (tasks || []).forEach(t => {
+          const room = roomOfTask(t); if (!room) return;
+          const piso = Math.floor(Number(room) / 100); if (!piso) return;
+          const d = new Date(t.createdAt); if (isNaN(d)) return;
+          const k = keyM(d);
+          (grid[piso] = grid[piso] || {})[k] = (grid[piso]?.[k] || 0) + 1;
+        });
+        const pisos = Object.keys(grid).map(Number).sort((a, b) => b - a);
+        const max = Math.max(1, ...pisos.flatMap(pi => meses.map(m => grid[pi][keyM(m)] || 0)));
+        if (pisos.length === 0) return <div className="text-sm text-center py-8" style={{ color: C.gray }}>Todavía no hay órdenes con número de habitación para armar el mapa.</div>;
+        return (
+          <div className="overflow-x-auto">
+            <p className="text-xs mb-2" style={{ color: C.inkSoft }}>Órdenes creadas por piso y mes (últimos 6 meses). Más oscuro = más fallas.</p>
+            <table className="text-xs border-separate" style={{ borderSpacing: 3 }}>
+              <thead><tr><th></th>{meses.map(m => <th key={keyM(m)} className="font-semibold capitalize" style={{ color: C.inkSoft }}>{m.toLocaleDateString("es-CO", { month: "short" })}</th>)}</tr></thead>
+              <tbody>
+                {pisos.map(pi => (
+                  <tr key={pi}>
+                    <td className="font-semibold pr-1" style={{ color: C.ink }}>Piso {pi}</td>
+                    {meses.map(m => { const n = grid[pi][keyM(m)] || 0; const a = n === 0 ? 0 : 0.15 + 0.85 * (n / max); return <td key={keyM(m)} className="text-center rounded" style={{ minWidth: 44, height: 34, background: n === 0 ? C.bg : `rgba(194,58,27,${a})`, color: a > 0.55 ? "#fff" : C.ink }}>{n || ""}</td>; })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
       {tab === "room" && (
         <>
@@ -17575,6 +17702,23 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
       (pisos[n] = pisos[n] || []).push(t);
     });
     const porPiso = Object.entries(pisos).map(([piso, list]) => ({ piso: Number(piso), list })).sort((a, b) => b.list.length - a.list.length || a.piso - b.piso);
+    // Ráfagas: 4 o más cierres de la misma persona dentro de 10 minutos.
+    {
+      const yaFlag = new Set(porRevisar.map(x => x.t.id));
+      const porUsuario = {};
+      (tasks || []).forEach(t => {
+        if (normalizeTaskState(t.estado) !== "finalizada" || t.revisadaAt || !t.finishedAt || new Date(t.finishedAt).getTime() < weekAgo || !t.asignadoA) return;
+        (porUsuario[t.asignadoA] = porUsuario[t.asignadoA] || []).push(t);
+      });
+      Object.values(porUsuario).forEach(list => {
+        list.sort((a, b) => new Date(a.finishedAt) - new Date(b.finishedAt));
+        for (let i = 0; i + 3 < list.length; i++) {
+          if (new Date(list[i + 3].finishedAt) - new Date(list[i].finishedAt) <= 10 * 60000) {
+            list.slice(i, i + 4).forEach(t => { if (!yaFlag.has(t.id)) { yaFlag.add(t.id); porRevisar.push({ t, motivo: "Varios cierres en pocos minutos" }); } });
+          }
+        }
+      });
+    }
     const totals = users.reduce((a, u) => ({ p: a.p + u.pendientes.length, e: a.e + u.enProceso.length, h: a.h + u.hechasHoy.length }), { p: 0, e: 0, h: 0 });
     return { users, programadas, manana, alertas, lastImportAt, totals, porRevisar, esperando, porPiso };
   }, [tasks, onlyHotsos, staleHours]);
@@ -18625,6 +18769,91 @@ function TaskTemplatesView({ templates, accounts, onSave, onDelete, onCreate }) 
           <div className="mt-2"><Button size="sm" disabled={busyId === t.id} onClick={() => crear(t)}>{busyId === t.id ? "Creando…" : "Crear tarea ahora"}</Button></div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Alerta de espacio (item 3): usa el último cálculo hecho en "Uso y respaldo". */
+function StorageAlert({ onNavigate }) {
+  let info = null;
+  try { info = JSON.parse(localStorage.getItem("pm-local:space-check") || "null"); } catch { /* noop */ }
+  const dias = info?.at ? Math.floor((Date.now() - new Date(info.at).getTime()) / 86400000) : null;
+  const filesPct = info ? Math.round((((info.fotos || 0) * 0.15 + (info.videos || 0) * 20) / 1024) * 100) : 0;
+  const hot = info && (info.pct >= 70 || filesPct >= 70);
+  if (info && !hot && dias != null && dias <= 45) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4 flex items-center justify-between gap-2 flex-wrap" style={{ background: hot ? C.redSoft : C.blueSoft, border: `1px solid ${hot ? C.red : C.blue}` }}>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}>
+        {hot ? `⚠️ El espacio gratuito va por encima del 70% (${Math.max(info.pct, filesPct)}%)` : info ? `📦 Hace ${dias} días que no revisas el espacio` : "📦 Todavía no has medido cuánto espacio llevas usado"}
+      </div>
+      <Button size="sm" variant="ghost" onClick={() => onNavigate("usage")}>Revisar espacio</Button>
+    </div>
+  );
+}
+
+/** Garantías por vencer (item 9). */
+function WarrantyAlert({ equipos, onOpenEquipo }) {
+  const now = Date.now();
+  const list = (equipos || []).filter(e => e.active !== false && e.garantiaHasta)
+    .map(e => ({ e, dias: Math.ceil((new Date(e.garantiaHasta + "T23:59:59").getTime() - now) / 86400000) }))
+    .filter(x => x.dias <= 60 && x.dias >= -30).sort((a, b) => a.dias - b.dias);
+  if (list.length === 0) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+      <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>🛡️ Garantías por vencer ({list.length})</div>
+      {list.slice(0, 6).map(({ e, dias }) => (
+        <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+          <span className="truncate">{e.nombre}</span>
+          <span className="shrink-0 font-semibold" style={{ color: dias < 0 ? C.red : C.amber }}>{dias < 0 ? `venció hace ${-dias} d` : dias === 0 ? "vence hoy" : `vence en ${dias} d`}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Meta mensual de preventivos (item 12) y equipos sin ningún mantenimiento (item 13). */
+function PreventiveGoalCard({ mttoLog, equipos, onOpenEquipo }) {
+  const [meta, setMeta] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [showNone, setShowNone] = useState(false);
+  useEffect(() => { sGet("preventive-goal", true).then(v => setMeta(v && Number(v.meta) > 0 ? Number(v.meta) : 0)).catch(() => setMeta(0)); }, []);
+  const ini = new Date(); ini.setDate(1); ini.setHours(0, 0, 0, 0);
+  const hechos = (mttoLog || []).filter(r => r.tipo === "preventivo" && new Date(r.fecha).getTime() >= ini.getTime()).length;
+  const conRegistro = new Set((mttoLog || []).map(r => r.equipoId));
+  const sinMtto = (equipos || []).filter(e => e.active !== false && !conRegistro.has(e.id));
+  const pct = meta ? Math.min(100, Math.round((hechos / meta) * 100)) : 0;
+  const guardar = async () => { const n = Number(draft); if (!n || n < 1) return; setMeta(n); setEditing(false); try { await sSet("preventive-goal", { meta: n }, true); } catch { /* noop */ } };
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-bold" style={{ color: C.ink }}>🛠️ Preventivos del mes</div>
+        {!editing && <button onClick={() => { setDraft(meta ? String(meta) : ""); setEditing(true); }} className="text-xs font-semibold" style={{ color: C.amber, minHeight: 32 }}>{meta ? "Cambiar meta" : "Poner meta"}</button>}
+      </div>
+      {editing && (
+        <div className="flex items-center gap-2 mt-2">
+          <input type="number" min="1" inputMode="numeric" value={draft} onChange={e => setDraft(e.target.value)} placeholder="Meta del mes (ej: 40)" className="text-sm border rounded-md px-2 outline-none w-40" style={{ minHeight: 36, borderColor: C.line, background: C.bg, color: C.ink }} />
+          <Button size="sm" onClick={guardar}>Guardar</Button>
+          <button onClick={() => setEditing(false)} className="text-xs" style={{ color: C.gray }}>Cancelar</button>
+        </div>
+      )}
+      {meta ? (
+        <>
+          <div className="h-2.5 rounded-full overflow-hidden mt-2" style={{ background: C.bg }}><div className="h-full" style={{ width: `${pct}%`, background: pct >= 100 ? C.green : C.amber, transition: "width 600ms var(--ease-out)" }} /></div>
+          <div className="text-xs mt-1" style={{ color: C.inkSoft }}>{hechos} de {meta} ({pct}%)</div>
+        </>
+      ) : <div className="text-xs mt-1" style={{ color: C.inkSoft }}>{hechos} preventivos este mes. Pon una meta para ver el avance.</div>}
+      {sinMtto.length > 0 && (
+        <div className="mt-2">
+          <button onClick={() => setShowNone(v => !v)} className="text-xs font-semibold" style={{ color: C.red, minHeight: 32 }}>{sinMtto.length} equipos sin ningún mantenimiento registrado {showNone ? "▲" : "▼"}</button>
+          {showNone && sinMtto.slice(0, 15).map(e => (
+            <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full text-left text-xs py-1.5 border-t flex justify-between gap-2" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+              <span className="truncate">{e.nombre}</span><span className="shrink-0" style={{ color: C.gray }}>{e.sistema}</span>
+            </button>
+          ))}
+          {showNone && sinMtto.length > 15 && <div className="text-[11px]" style={{ color: C.gray }}>+{sinMtto.length - 15} más</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -22806,6 +23035,27 @@ function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, 
         <BackupButton />
       </div>
 
+      {(() => {
+        const limite = Date.now() - 30 * 86400000;
+        const inactivas = list.filter(([uid, a]) => a.approved !== false).map(([uid, a]) => {
+          const ult = (loginLog || []).find(l => l.userId === uid);
+          return { uid, a, ult: ult ? new Date(ult.at).getTime() : 0 };
+        }).filter(x => x.ult < limite);
+        if (inactivas.length === 0) return null;
+        return (
+          <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Cuentas sin entrar en 30 días o más ({inactivas.length})</div>
+            <p className="text-xs mb-2" style={{ color: C.gray }}>Si alguien ya no trabaja aquí, abre su tarjeta más abajo y elimina la cuenta (queda en la papelera por si te equivocas).</p>
+            {inactivas.map(({ uid, a, ult }) => (
+              <div key={uid} className="flex justify-between gap-2 text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+                <span className="truncate">{a.display_name || a.email}</span>
+                <span className="shrink-0" style={{ color: C.gray }}>{ult ? `Último ingreso: ${fmtDT(new Date(ult).toISOString())}` : "Nunca ha entrado"}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {posiblesFantasma.length > 0 && (
         <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.red, background: C.redSoft }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.red }}>⚠️ Posibles cuentas que no son una persona</div>
@@ -23967,7 +24217,16 @@ export default function App() {
       revisionEstado: "pendiente", // pendiente | aprobado | rechazado — lo cierra un supervisor
       taskId: form.taskId || null, // si vino desde el cajón de una tarea, queda la trazabilidad de cuál
     };
-    const next = [rec, ...mttoLog].slice(0, 5000);
+    const all = [rec, ...mttoLog];
+    const next = all.slice(0, 5000);
+    const overflow = all.slice(5000);
+    // Lo que pasa del tope no se borra: se guarda aparte en un archivo de historial.
+    if (overflow.length > 0) {
+      try {
+        const prev = await sGet("mtto-log-archive", true);
+        await sSet("mtto-log-archive", [...overflow, ...(Array.isArray(prev) ? prev : [])], true);
+      } catch { /* si falla el archivo, igual se guarda el registro nuevo */ }
+    }
     setMttoLog(next);
     await sSet("mtto-log", next, true);
 
@@ -25909,6 +26168,9 @@ export default function App() {
           )}
           {view === "home" && isAdmin && <WeekSemaphore tasks={tasks} criticalStock={criticalStockItems.length} />}
           {view === "home" && isAdmin && <BackupReminder />}
+          {view === "home" && isAdmin && <StorageAlert onNavigate={setView} />}
+          {view === "home" && isAdmin && <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
+          {view === "home" && isAdmin && <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
           {view === "home" && <SetupGuideCard onEnablePush={enablePushNotifications} userKey={currentUser} />}
           {view === "home" && (
@@ -26008,7 +26270,7 @@ export default function App() {
               onUpdateEquipoInfo={updateMttoEquipoInfo} tasks={tasks}
               mttoRequiredFields={mttoRequiredFields} onUpdateRequiredFields={updateMttoRequiredFields}
               pendingMaintenanceEquipoIds={pendingMaintenanceEquipoIds}
-              initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} viewerLocked={viewerLocked} />
+              initialEquipoId={pendingEquipoId} onConsumedInitialEquipo={() => setPendingEquipoId(null)} viewerLocked={viewerLocked} editLog={generalEditLog} />
           )}
           {view === "maintenance-analytics" && (isAdmin || isGerencia) && (
             <MaintenanceAnalyticsView equipos={mttoEquipos} mttoLog={mttoLog} issueHistory={issueHistory} activeIssues={activeIssues}

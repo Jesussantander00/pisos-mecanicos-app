@@ -21,6 +21,11 @@ export default defineConfig({
         display: "standalone",
         background_color: "#0f1b2b",
         theme_color: "#d97706",
+        // Atajos al mantener presionado el ícono de la app en el celular (Android)
+        shortcuts: [
+          { name: "Mi trabajo", short_name: "Mi trabajo", url: "/?go=tasks", icons: [{ src: "icon-192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "Escanear QR", short_name: "Escanear", url: "/?go=scan", icons: [{ src: "icon-192.png", sizes: "192x192", type: "image/png" }] },
+        ],
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png" },

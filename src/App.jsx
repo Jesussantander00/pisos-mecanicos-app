@@ -9181,6 +9181,67 @@ function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onOpenDraw
   );
 }
 
+/** Modo "una mano" (item 6): muestra UNA orden a la vez, con botones grandes. Solo técnico. */
+function FocusTaskCard({ tasks, onOpen, onStart }) {
+  const [on, setOn] = useState(() => { try { return localStorage.getItem("pm-local:focus-mode") === "1"; } catch { return false; } });
+  const [idx, setIdx] = useState(0);
+  const toggle = () => setOn(v => { const n = !v; try { localStorage.setItem("pm-local:focus-mode", n ? "1" : "0"); } catch { /* noop */ } return n; });
+  const prio = { alta: 0, media: 1, baja: 2 };
+  const queue = useMemo(() => (tasks || [])
+    .filter(t => normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t))
+    .sort((a, b) => ((normalizeTaskState(b.estado) === "en-proceso") - (normalizeTaskState(a.estado) === "en-proceso")) || (prio[a.prioridad] - prio[b.prioridad]) || (new Date(a.createdAt) - new Date(b.createdAt))), [tasks]);
+  if (!on) {
+    return <button onClick={toggle} className="text-xs font-semibold rounded-lg px-3 mb-3" style={{ minHeight: 40, background: C.panel, border: `1px solid ${C.line}`, color: C.inkSoft }}>🖐️ Modo una mano</button>;
+  }
+  const t = queue[Math.min(idx, Math.max(0, queue.length - 1))];
+  const est = t ? normalizeTaskState(t.estado) : null;
+  return (
+    <div className="rounded-2xl p-4 mb-4" style={{ background: C.panel, border: `2px solid ${C.amber}` }}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.amber }}>Modo una mano {queue.length > 0 ? `· ${Math.min(idx, queue.length - 1) + 1} de ${queue.length}` : ""}</span>
+        <button onClick={toggle} className="text-xs font-semibold" style={{ color: C.gray, minHeight: 36 }}>Salir</button>
+      </div>
+      {!t ? <p className="text-base font-semibold py-6 text-center" style={{ color: C.green }}>No tienes órdenes pendientes 🎉</p> : (
+        <>
+          <div className="text-xs font-semibold" style={{ color: t.prioridad === "alta" ? C.red : C.inkSoft }}>Prioridad {TASK_PRIORITIES.find(x => x.code === t.prioridad)?.label || t.prioridad}{est === "en-proceso" ? " · En proceso" : ""}</div>
+          <div className="text-xl font-bold my-1" style={{ color: C.ink }}>{t.titulo}</div>
+          <div className="text-sm mb-4" style={{ color: C.inkSoft }}>{String(t.descripcion || "").split(" — ")[0]}</div>
+          <div className="grid grid-cols-2 gap-2">
+            {est === "asignada" || est === "pausada"
+              ? <button onClick={() => onStart(t)} className="rounded-xl font-bold text-base" style={{ minHeight: 60, background: C.steelDark, color: "#fff" }}>▶ Iniciar</button>
+              : <button onClick={() => onOpen(t.id)} className="rounded-xl font-bold text-base" style={{ minHeight: 60, background: C.green, color: "#fff" }}>✓ Finalizar</button>}
+            <button onClick={() => setIdx(i => (i + 1) % Math.max(1, queue.length))} className="rounded-xl font-semibold text-base" style={{ minHeight: 60, background: C.bg, color: C.ink }}>Siguiente →</button>
+          </div>
+          <button onClick={() => onOpen(t.id)} className="w-full text-xs font-semibold mt-2" style={{ color: C.inkSoft, minHeight: 40 }}>Ver detalle</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Mi semana (item 8): resumen personal de los últimos 7 días, para el técnico. */
+function MyWeekCard({ tasks, currentUser }) {
+  const week = Date.now() - 7 * 86400000;
+  const mine = (tasks || []).filter(t => t.asignadoA === currentUser);
+  const cerradas = mine.filter(t => normalizeTaskState(t.estado) === "finalizada" && t.finishedAt && new Date(t.finishedAt).getTime() >= week);
+  const abiertas = mine.filter(t => normalizeTaskState(t.estado) !== "finalizada").length;
+  const conTiempo = cerradas.filter(t => t.assignedAt);
+  const prom = conTiempo.length ? conTiempo.reduce((a, t) => a + hoursBetween(t.assignedAt, t.finishedAt), 0) / conTiempo.length : null;
+  const rei = cerradas.filter(t => t.reincidencia).length;
+  if (mine.length === 0) return null;
+  return (
+    <div className="rounded-2xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Mi semana</div>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div><div className="text-2xl font-extrabold tabular-nums" style={{ color: C.green }}>{cerradas.length}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>cerradas</div></div>
+        <div><div className="text-2xl font-extrabold tabular-nums" style={{ color: C.ink }}>{prom == null ? "—" : prom < 24 ? `${prom.toFixed(1)} h` : `${(prom / 24).toFixed(1)} d`}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>tiempo promedio</div></div>
+        <div><div className="text-2xl font-extrabold tabular-nums" style={{ color: abiertas > 0 ? C.amber : C.green }}>{abiertas}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>abiertas</div></div>
+      </div>
+      {rei > 0 && <div className="text-xs mt-2" style={{ color: C.red }}>↻ {rei} de tus cierres fueron reincidencias (el problema había vuelto a aparecer).</div>}
+    </div>
+  );
+}
+
 /** Pasos sugeridos según el tipo de orden (item 1): se detecta por palabras del título/descripción. */
 const CHECKLIST_TEMPLATES = [
   { label: "Aire acondicionado", re: /aire|fan ?coil|clima|enfri|termostato|a\/c/, steps: ["Revisar y limpiar el filtro", "Revisar drenaje (sin goteo ni obstrucción)", "Probar enfriamiento y termostato", "Revisar ruido o vibración", "Confirmar con el huésped/recepción que quedó bien"] },
@@ -9204,6 +9265,9 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
   const [closeParts, setCloseParts] = useState([]);
+  const [showWaitForm, setShowWaitForm] = useState(false);
+  const [waitText, setWaitText] = useState("");
+  const [commentPhotos, setCommentPhotos] = useState([]);
   const [closeWarned, setCloseWarned] = useState(false);
   const [showMttoForm, setShowMttoForm] = useState(false);
   const [mttoForm, setMttoForm] = useState({ tipo: "preventivo", descripcion: "", costo: "", fotos: [], repuestos: [] });
@@ -9271,10 +9335,15 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
   };
 
   const postComment = async () => {
-    if (!commentDraft.trim()) return;
+    if (!commentDraft.trim() && commentPhotos.length === 0) return;
     setPostingComment(true);
-    try { await onAddComment(task.id, commentDraft.trim()); setCommentDraft(""); }
-    catch { showToast("No se pudo enviar el comentario — intenta de nuevo.", false); }
+    try {
+      const urls = [];
+      for (const f of commentPhotos) urls.push(await uploadPhoto(f, "task-comment"));
+      await onAddComment(task.id, commentDraft.trim(), urls);
+      setCommentDraft(""); setCommentPhotos([]);
+    }
+    catch { showToast("No se pudo enviar el comentario — revisa la señal (las fotos necesitan conexión) e intenta de nuevo.", false); }
     setPostingComment(false);
   };
 
@@ -9393,6 +9462,12 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
               <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.blue }}>🔗 Equipo vinculado</div>
               <div className="text-sm font-semibold" style={{ color: C.ink }}>{linkedEquipo.nombre}</div>
               <div className="text-xs mb-2" style={{ color: C.gray }}>{linkedEquipo.sistema}</div>
+              {(linkedEquipo.manualUrl || linkedEquipo.videoUrl) && (
+                <div className="flex gap-2 flex-wrap mb-2">
+                  {linkedEquipo.manualUrl && <a href={linkedEquipo.manualUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold rounded-lg px-3 flex items-center" style={{ minHeight: 36, background: C.panel, color: C.blue }}>📖 Manual</a>}
+                  {linkedEquipo.videoUrl && <a href={linkedEquipo.videoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold rounded-lg px-3 flex items-center" style={{ minHeight: 36, background: C.panel, color: C.blue }}>🎬 Video de guía</a>}
+                </div>
+              )}
 
               {equipoHistory.length > 0 && (
                 <div className="mb-2">
@@ -9483,7 +9558,12 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                     <span className="text-xs font-semibold" style={{ color: C.ink }}>{c.by}</span>
                     <span className="text-[10px]" style={{ color: C.gray }}>{fmtDT(c.at)}</span>
                   </div>
-                  <div className="text-sm" style={{ color: C.ink }}>{c.text}</div>
+                  {c.text && <div className="text-sm" style={{ color: C.ink }}>{c.text}</div>}
+                  {(c.fotos || []).length > 0 && (
+                    <div className="flex gap-1.5 flex-wrap mt-1.5">
+                      {c.fotos.map(u => <img key={u} loading="lazy" src={u} alt="Foto del comentario" onClick={() => onZoom && onZoom(u)} className="rounded border cursor-pointer" style={{ width: 72, height: 72, objectFit: "cover", borderColor: C.line }} />)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -9493,7 +9573,8 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                 className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
               <VoiceInputButton onResult={text => setCommentDraft(d => (d ? d + " " : "") + text)} />
             </div>
-            <Button size="sm" variant="ghost" disabled={postingComment || !commentDraft.trim()} onClick={postComment} className="mt-1.5">
+            <div className="mt-1.5"><PhotoPicker photos={commentPhotos} onChange={setCommentPhotos} max={2} /></div>
+            <Button size="sm" variant="ghost" disabled={postingComment || (!commentDraft.trim() && commentPhotos.length === 0)} onClick={postComment} className="mt-1.5">
               {postingComment ? "Enviando…" : "Comentar"}
             </Button>
           </div>
@@ -9542,7 +9623,17 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                 {estado === "asignada" && <Button size="sm" onClick={() => onTransition(task, "en-proceso")}>▶ Iniciar</Button>}
                 {estado === "en-proceso" && <Button size="sm" variant="ghost" onClick={() => onTransition(task, "pausada")}>⏸ Pausar</Button>}
                 {estado === "pausada" && <Button size="sm" onClick={() => onTransition(task, "en-proceso")}>▶ Reanudar</Button>}
+                {!task.esperaRepuesto && <Button size="sm" variant="ghost" onClick={() => setShowWaitForm(v => !v)}>📦 Esperando repuesto</Button>}
               </div>
+              {task.esperaRepuesto && (
+                <div className="rounded-md p-2 text-xs" style={{ background: C.amberSoft, color: C.amber }}>📦 Esperando repuesto: <b>{task.esperaRepuesto.texto}</b> (desde {fmtDT(task.esperaRepuesto.at)}). Al reanudar se quita solo.</div>
+              )}
+              {showWaitForm && !task.esperaRepuesto && (
+                <div className="flex items-center gap-1.5">
+                  <input value={waitText} onChange={e => setWaitText(e.target.value)} placeholder="¿Qué repuesto falta?" className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                  <Button size="sm" disabled={!waitText.trim()} onClick={() => { const at = nowIso(); onUpdateTask(task.id, { estado: "pausada", esperaRepuesto: { texto: waitText.trim(), at }, timeLog: [...(task.timeLog || []), { estado: "pausada", at, nota: `Esperando repuesto: ${waitText.trim()}` }] }); setShowWaitForm(false); setWaitText(""); }}>Guardar</Button>
+                </div>
+              )}
               <div className="rounded-md p-2.5" style={{ background: C.bg }}>
                 <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>Cerrar tarea — sube al menos una foto de cómo quedó</div>
                 {mySignature ? (
@@ -9959,6 +10050,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const transitionTask = (t, newEstado) => {
     const patch = { estado: newEstado, timeLog: [...(t.timeLog || []), { estado: newEstado, at: nowIso() }] };
     if (newEstado === "en-proceso" && !t.startedAt) patch.startedAt = nowIso();
+    if (newEstado === "en-proceso" && t.esperaRepuesto) patch.esperaRepuesto = null;
     onUpdateTask(t.id, patch);
   };
 
@@ -9981,7 +10073,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         photos,
         async (payload, urls) => {
           await onUpdateTask(payload.taskId, {
-            estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
+            estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre, esperaRepuesto: null,
             testigoCierre: payload.testigoCierre, testigoFirma: witnessSignature || null,
             timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
           });
@@ -10178,6 +10270,8 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
           <span><b>{accounts[workloadImbalance.username]?.display_name || workloadImbalance.username}</b> tiene {workloadImbalance.count} tareas abiertas esta semana — bien por encima del promedio del equipo ({workloadImbalance.avg}). Puede valer la pena repartir algo.</span>
         </div>
       )}
+
+      {myWorkMode && <FocusTaskCard tasks={filtered} onOpen={setDrawerTaskId} onStart={(t) => transitionTask(t, "en-proceso")} />}
 
       {showNew && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
@@ -10545,6 +10639,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
                     <Badge tone={badgeToneFor("prioridad", t.prioridad)}>{TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</Badge>
                     <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.titulo}</div>
                     <Badge tone={badgeToneFor("taskEstado", t.estado)}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</Badge>
+                    {t.esperaRepuesto && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }} title={`Falta: ${t.esperaRepuesto.texto}`}>📦 Esperando repuesto</span>}
                     {t.reincidencia && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.redSoft, color: C.red }} title={`Mismo problema cerrado hace ${t.reincidencia.dias} día(s): ${t.reincidencia.titulo}`}>↻ Reincidencia</span>}
                     {estado === "pausada" && (
                       <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>
@@ -14997,9 +15092,7 @@ function SetupGuideCard({ onEnablePush, userKey }) {
             <div className="font-semibold">Instalar en el celular</div>
             {standalone ? <div className="text-xs" style={{ color: C.inkSoft }}>Ya está instalada.</div>
               : installEvt ? <Button size="sm" onClick={install}>Instalar ahora</Button>
-              : <div className="text-xs" style={{ color: C.inkSoft }}>{isIos
-                  ? "En Safari toca el botón Compartir y luego \"Añadir a pantalla de inicio\". En iPhone es necesario para recibir avisos."
-                  : "En el menú ⋮ del navegador elige \"Instalar aplicación\" o \"Añadir a pantalla de inicio\"."}</div>}
+              : <div><div className="text-xs" style={{ color: C.inkSoft }}>{isIos ? "En iPhone es necesario instalarla para recibir avisos." : "Así se instala en el celular:"}</div><InstallSteps isIos={isIos} /></div>}
           </div>
         </div>
         {pushOk && (
@@ -15296,7 +15389,7 @@ const ONBOARDING_STEPS = [
 /* ============================================================
    ESCÁNER DE QR (con la cámara, para saltar directo a un equipo/estantería)
    ============================================================ */
-function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
+function QrScannerView({ onClose, onFoundEquipo, onFoundShelf, onFoundTool }) {
   useBackCloseModal(true, onClose); // sin esto, el atrás del celular podía dejar la cámara encendida
   const videoRef = useRef(null);
   const rafRef = useRef(null);
@@ -15337,9 +15430,10 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
           const url = new URL(code.data);
           const equipoId = url.searchParams.get("equipo");
           const shelfId = url.searchParams.get("shelf");
-          if (equipoId || shelfId) {
+          const toolId = url.searchParams.get("tool");
+          if (equipoId || shelfId || toolId) {
             setFound(true);
-            setTimeout(() => { equipoId ? onFoundEquipo(equipoId) : onFoundShelf(shelfId); }, 300);
+            setTimeout(() => { equipoId ? onFoundEquipo(equipoId) : shelfId ? onFoundShelf(shelfId) : (onFoundTool && onFoundTool(toolId)); }, 300);
             return; // deja de escanear, ya encontró algo
           }
         } catch { /* el QR no era una URL válida de esta app — sigue escaneando */ }
@@ -15378,7 +15472,7 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf }) {
             }} />
           </div>
           <div className="absolute bottom-8 left-0 right-0 text-center px-6">
-            <p className="text-sm text-white font-medium">{found ? "✓ Código encontrado" : "Apunta la cámara al código QR del equipo o estantería"}</p>
+            <p className="text-sm text-white font-medium">{found ? "✓ Código encontrado" : "Apunta la cámara al código QR del equipo, estantería o herramienta"}</p>
           </div>
         </>
       )}
@@ -16129,6 +16223,8 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     { id: "rooms", label: "Habitaciones", icon: Building2, desc: "Bloqueos y tipos de habitación", access: true, group: "Gestión e Inventario" },
     { id: "procedures", label: "Procedimientos", icon: Sparkles, desc: "Copiloto de IA y diagramas interactivos", access: true, group: "Operación en Campo", highlight: true },
     { id: "today", label: "Panel de hoy", icon: Gauge, desc: "Qué tiene cada técnico, hecho hoy y programado", access: isAdmin, group: "Operación en Campo" },
+    { id: "calendar", label: "Calendario de tareas", icon: CalendarDays, desc: "El mes completo: creadas, cerradas y programadas", access: isAdmin, group: "Operación en Campo" },
+    { id: "templates", label: "Plantillas de tareas", icon: ClipboardList, desc: "Tareas que repites, listas con un toque", access: isAdmin, group: "Operación en Campo" },
     { id: "usage", label: "Uso y respaldo", icon: Download, desc: "Espacio de datos, actividad del equipo y descargas", access: isAdmin, group: "Reportes y Análisis" },
     { id: "room-history", label: "Historial por habitación", icon: History, desc: "Órdenes y mantenimientos de un cuarto, y fallas repetidas", access: isAdmin, group: "Reportes y Análisis" },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
@@ -17425,6 +17521,8 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
   const [onlyHotsos, setOnlyHotsos] = useState(false);
   const [staleHours, setStaleHours] = useState(24);
   const [showTomorrow, setShowTomorrow] = useState(true);
+  const [showFloors, setShowFloors] = useState(false);
+  const [openFloor, setOpenFloor] = useState(null);
 
   const data = useMemo(() => {
     const today0 = new Date(); today0.setHours(0, 0, 0, 0);
@@ -17446,7 +17544,7 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
       if (est === "en-proceso") bucket(u).enProceso.push(t); else bucket(u).pendientes.push(t);
       const horas = hoursBetween(t.createdAt || t.assignedAt || nowIso(), nowIso());
       if (!u) alertas.push({ t, motivo: "Sin asignar", horas });
-      else if (horas > staleHours) alertas.push({ t, motivo: `Abierta hace ${horas >= 48 ? Math.floor(horas / 24) + " días" : Math.floor(horas) + " h"}`, horas });
+      else if (!t.esperaRepuesto && horas > staleHours) alertas.push({ t, motivo: `Abierta hace ${horas >= 48 ? Math.floor(horas / 24) + " días" : Math.floor(horas) + " h"}`, horas });
     });
     alertas.sort((a, b) => b.horas - a.horas);
     const users = Object.values(byUser).sort((a, b) => (a.username === "") - (b.username === "") || (b.pendientes.length + b.enProceso.length) - (a.pendientes.length + a.enProceso.length));
@@ -17466,8 +17564,19 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
       else if (t.startedAt && (new Date(t.finishedAt) - new Date(t.startedAt)) < 3 * 60000) motivo = "Cerrada en menos de 3 min";
       if (motivo) porRevisar.push({ t, motivo });
     });
+    const esperando = base.filter(t => normalizeTaskState(t.estado) !== "finalizada" && t.esperaRepuesto);
+    const pisos = {};
+    base.forEach(t => {
+      if (normalizeTaskState(t.estado) === "finalizada") return;
+      const room = roomOfTask(t);
+      if (!room) return;
+      const n = Math.floor(Number(room) / 100);
+      if (!n) return;
+      (pisos[n] = pisos[n] || []).push(t);
+    });
+    const porPiso = Object.entries(pisos).map(([piso, list]) => ({ piso: Number(piso), list })).sort((a, b) => b.list.length - a.list.length || a.piso - b.piso);
     const totals = users.reduce((a, u) => ({ p: a.p + u.pendientes.length, e: a.e + u.enProceso.length, h: a.h + u.hechasHoy.length }), { p: 0, e: 0, h: 0 });
-    return { users, programadas, manana, alertas, lastImportAt, totals, porRevisar };
+    return { users, programadas, manana, alertas, lastImportAt, totals, porRevisar, esperando, porPiso };
   }, [tasks, onlyHotsos, staleHours]);
 
   // Candidatos para asignar: primero quienes están trabajando ahora mismo (según el Horario Mensual),
@@ -17578,6 +17687,45 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
             ))}
             {data.alertas.length > 8 && <div className="text-xs" style={{ color: C.gray }}>+{data.alertas.length - 8} más</div>}
           </div>
+        </div>
+      )}
+
+      {data.esperando.length > 0 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>📦 Esperando repuesto ({data.esperando.length}) <span className="text-xs font-normal" style={{ color: C.gray }}>— no cuentan como atrasadas</span></div>
+          <div className="space-y-1">
+            {data.esperando.slice(0, 10).map(t => (
+              <div key={t.id} className="flex justify-between gap-2 text-xs">
+                <span className="truncate" style={{ color: C.ink }}>{t.titulo}{lugarOf(t) ? ` — ${lugarOf(t)}` : ""}</span>
+                <span className="shrink-0 font-semibold" style={{ color: C.amber }}>Falta: {t.esperaRepuesto.texto}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.porPiso.length > 0 && (
+        <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+          <button onClick={() => setShowFloors(v => !v)} className="w-full flex items-center justify-between text-sm font-semibold" style={{ color: C.ink }}>
+            <span>🏢 Por piso ({data.porPiso.length} pisos con órdenes)</span><span className="text-xs" style={{ color: C.gray }}>{showFloors ? "Ocultar" : "Ver"}</span>
+          </button>
+          {showFloors && (
+            <div className="mt-2">
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                {data.porPiso.map(({ piso, list }) => (
+                  <button key={piso} onClick={() => setOpenFloor(openFloor === piso ? null : piso)} className="rounded-lg p-2 text-center" style={{ background: openFloor === piso ? C.steelDark : C.bg, color: openFloor === piso ? "#fff" : C.ink, minHeight: 52 }}>
+                    <div className="text-[10px]" style={{ opacity: 0.8 }}>Piso {piso}</div>
+                    <div className="text-lg font-bold tabular-nums" style={{ color: openFloor === piso ? "#fff" : (list.length >= 5 ? C.red : list.length >= 3 ? C.amber : C.green) }}>{list.length}</div>
+                  </button>
+                ))}
+              </div>
+              {openFloor != null && (
+                <div className="mt-2 space-y-1">
+                  {(data.porPiso.find(x => x.piso === openFloor)?.list || []).slice(0, 15).map(t => <Row key={t.id} t={t} />)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -18256,6 +18404,231 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
  * prestan y se devuelven. Quién tiene qué prestado en este momento, para no perder herramientas
  * caras (multímetro, taladro, etc.).
  */
+/** URL única de una herramienta (lo que va codificado en su QR). */
+function toolUrl(toolId) {
+  return `${window.location.origin}${window.location.pathname}?tool=${toolId}`;
+}
+
+/** Semáforo de la semana (item 11) — para el administrador en Inicio. */
+function WeekSemaphore({ tasks, criticalStock = 0 }) {
+  const abiertas = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada");
+  const vencidas = abiertas.filter(t => !t.esperaRepuesto && !isTaskSnoozed(t) && hoursBetween(t.createdAt || t.assignedAt || nowIso(), nowIso()) > 48).length;
+  const reinc = abiertas.filter(t => t.reincidencia).length;
+  const sinAsignar = abiertas.filter(t => !t.asignadoA).length;
+  const rojo = vencidas >= 5 || reinc >= 3 || criticalStock >= 5;
+  const amarillo = vencidas > 0 || reinc > 0 || criticalStock > 0 || sinAsignar > 0;
+  const color = rojo ? C.red : amarillo ? C.amber : C.green;
+  const titulo = rojo ? "Semana complicada" : amarillo ? "Semana con pendientes" : "Semana en orden";
+  return (
+    <div className="rounded-2xl p-3 mb-4 flex items-center gap-3" style={{ background: C.panel, border: `1.5px solid ${color}` }}>
+      <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-bold" style={{ color: C.ink }}>{titulo}</div>
+        <div className="text-xs" style={{ color: C.inkSoft }}>{vencidas} vencidas (+48 h) · {reinc} reincidencias · {sinAsignar} sin asignar · {criticalStock} repuestos críticos</div>
+      </div>
+    </div>
+  );
+}
+
+/** Recordatorio de respaldo (item 17): si hace más de 30 días que nadie descarga un respaldo. */
+function BackupReminder() {
+  const [hidden, setHidden] = useState(false);
+  let last = 0;
+  try {
+    ["pm-local:last-manual-backup", "pm-local:last-auto-backup"].forEach(k => { const v = localStorage.getItem(k); if (v) last = Math.max(last, new Date(v).getTime() || 0); });
+  } catch { /* noop */ }
+  const dias = last ? Math.floor((Date.now() - last) / 86400000) : null;
+  if (hidden || (dias != null && dias <= 30)) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-semibold" style={{ color: C.ink }}>💾 {dias == null ? "Todavía no has descargado un respaldo en este dispositivo" : `Hace ${dias} días que no se descarga un respaldo`}</div>
+        <button onClick={() => setHidden(true)} aria-label="Cerrar" style={{ minWidth: 28, minHeight: 28 }}><X size={16} color={C.gray} /></button>
+      </div>
+      <div className="mt-2"><BackupButton /></div>
+    </div>
+  );
+}
+
+/** Ficha al escanear el QR de una herramienta (item 10). */
+function ScannedToolSheet({ tool, accounts, currentUser, onClose, onLend, onReturn }) {
+  useBackCloseModal(true, onClose);
+  const quien = tool?.prestadaA ? (accounts?.[tool.prestadaA]?.display_name || tool.prestadaA) : null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+      <div className="pm-animate-in rounded-2xl max-w-sm w-full p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+        {!tool ? <p className="text-sm" style={{ color: C.inkSoft }}>Esa herramienta ya no está registrada.</p> : (
+          <>
+            <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.gray }}>Herramienta</div>
+            <h3 className="text-lg font-bold" style={{ color: C.ink }}>{tool.nombre}</h3>
+            <div className="text-sm mb-3" style={{ color: tool.estado === "prestada" ? C.amber : C.green }}>{tool.estado === "prestada" ? `Prestada a ${quien} desde ${fmtDT(tool.prestadaDesde)}` : "Disponible"}</div>
+            <div className="flex gap-2">
+              {tool.estado === "prestada"
+                ? <Button size="sm" onClick={async () => { await onReturn(tool.id); onClose(); showToast("✓ Herramienta devuelta.", true); }}>Marcar devuelta</Button>
+                : <Button size="sm" onClick={async () => { await onLend(tool.id, currentUser); onClose(); showToast("✓ Herramienta prestada a ti.", true); }}>Prestármela a mí</Button>}
+              <Button size="sm" variant="ghost" onClick={onClose}>Cerrar</Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Pasos ilustrados para instalar la app (item 19). */
+function InstallSteps({ isIos }) {
+  const Step = ({ n, icon, text }) => (
+    <div className="flex items-center gap-3 rounded-lg p-2" style={{ background: C.bg }}>
+      <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: C.amber, color: "#fff" }}>{n}</span>
+      <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: C.panel, border: `1px solid ${C.line}` }}>{icon}</span>
+      <span className="text-xs" style={{ color: C.ink }}>{text}</span>
+    </div>
+  );
+  const shareIcon = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>;
+  const plusIcon = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.ink} strokeWidth="2" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>;
+  const dotsIcon = <svg width="20" height="20" viewBox="0 0 24 24" fill={C.ink}><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>;
+  const phoneIcon = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>;
+  return (
+    <div className="space-y-1.5 mt-2">
+      {isIos ? (
+        <>
+          <Step n={1} icon={shareIcon} text="En Safari, toca el botón Compartir (el cuadro con la flecha hacia arriba)." />
+          <Step n={2} icon={plusIcon} text={"Baja y toca «Añadir a pantalla de inicio»."} />
+          <Step n={3} icon={phoneIcon} text="Toca Añadir y abre QuinTech desde el nuevo ícono." />
+        </>
+      ) : (
+        <>
+          <Step n={1} icon={dotsIcon} text="En Chrome, toca el menú de los tres puntos arriba a la derecha." />
+          <Step n={2} icon={plusIcon} text={"Toca «Instalar aplicación» o «Añadir a pantalla de inicio»."} />
+          <Step n={3} icon={phoneIcon} text="Confirma y abre QuinTech desde el nuevo ícono." />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Calendario de tareas (item 13): el mes completo, con lo creado, lo cerrado y lo programado. */
+function CalendarView({ tasks, accounts }) {
+  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
+  const [selected, setSelected] = useState(null);
+  const key = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+  const byDay = useMemo(() => {
+    const m = {};
+    const add = (iso, kind, t) => { if (!iso) return; const k = key(iso); (m[k] = m[k] || { creadas: [], cerradas: [], programadas: [] })[kind].push(t); };
+    (tasks || []).forEach(t => {
+      add(t.createdAt, "creadas", t);
+      if (normalizeTaskState(t.estado) === "finalizada") add(t.finishedAt, "cerradas", t);
+      else if (t.snoozedUntil) add(t.snoozedUntil, "programadas", t);
+    });
+    return m;
+  }, [tasks]);
+  const year = cursor.getFullYear(), month = cursor.getMonth();
+  const first = new Date(year, month, 1);
+  const offset = (first.getDay() + 6) % 7; // semana empieza el lunes
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  const todayKey = key(new Date());
+  const sel = selected ? byDay[selected] : null;
+  const nameOf = (u) => (u ? (accounts?.[u]?.display_name || u) : "Sin asignar");
+  const List = ({ title, color, items }) => items.length === 0 ? null : (
+    <div className="mb-2">
+      <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color }}>{title} · {items.length}</div>
+      {items.slice(0, 12).map(t => <div key={t.id} className="flex justify-between gap-2 text-xs py-1 border-t" style={{ borderColor: C.line, color: C.ink }}><span className="truncate">{t.titulo}</span><span className="shrink-0" style={{ color: C.gray }}>{nameOf(t.asignadoA)}</span></div>)}
+    </div>
+  );
+  return (
+    <div className="max-w-2xl">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="px-3 rounded-lg" style={{ minHeight: 40, background: C.panel, border: `1px solid ${C.line}` }} aria-label="Mes anterior"><ChevronLeft size={18} color={C.ink} /></button>
+        <h2 className="text-lg font-semibold capitalize" style={{ color: C.ink }}>{cursor.toLocaleDateString("es-CO", { month: "long", year: "numeric" })}</h2>
+        <button onClick={() => setCursor(new Date(year, month + 1, 1))} className="px-3 rounded-lg" style={{ minHeight: 40, background: C.panel, border: `1px solid ${C.line}` }} aria-label="Mes siguiente"><ChevronRight size={18} color={C.ink} /></button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold mb-1" style={{ color: C.gray }}>{["L", "M", "X", "J", "V", "S", "D"].map(d => <div key={d}>{d}</div>)}</div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (!d) return <div key={`e${i}`} />;
+          const k = key(d), info = byDay[k];
+          return (
+            <button key={k} onClick={() => setSelected(selected === k ? null : k)} className="rounded-lg p-1 flex flex-col items-center" style={{ minHeight: 52, background: selected === k ? C.steelDark : C.panel, color: selected === k ? "#fff" : C.ink, border: `1px solid ${k === todayKey ? C.amber : C.line}` }}>
+              <span className="text-xs font-semibold">{d.getDate()}</span>
+              <span className="flex gap-0.5 mt-1">
+                {info?.creadas.length > 0 && <span className="text-[9px] font-bold px-1 rounded" style={{ background: C.blueSoft, color: C.blue }}>{info.creadas.length}</span>}
+                {info?.cerradas.length > 0 && <span className="text-[9px] font-bold px-1 rounded" style={{ background: C.greenSoft, color: C.green }}>{info.cerradas.length}</span>}
+                {info?.programadas.length > 0 && <span className="text-[9px] font-bold px-1 rounded" style={{ background: C.amberSoft, color: C.amber }}>{info.programadas.length}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-3 text-[11px] mt-2" style={{ color: C.inkSoft }}>
+        <span><b style={{ color: C.blue }}>azul</b> creadas</span><span><b style={{ color: C.green }}>verde</b> cerradas</span><span><b style={{ color: C.amber }}>ámbar</b> programadas</span>
+      </div>
+      {sel && (
+        <div className="rounded-xl p-3 mt-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+          <List title="Programadas" color={C.amber} items={sel.programadas} />
+          <List title="Creadas" color={C.blue} items={sel.creadas} />
+          <List title="Cerradas" color={C.green} items={sel.cerradas} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Plantillas de tareas (item 12): las tareas que repites a mano, listas para crear con un toque. */
+function TaskTemplatesView({ templates, accounts, onSave, onDelete, onCreate }) {
+  const empty = { nombre: "", descripcion: "", prioridad: "media", asignadoA: "", pasos: "" };
+  const [form, setForm] = useState(empty);
+  const [busyId, setBusyId] = useState(null);
+  const inputCls = "text-sm border rounded-md px-2 py-1.5 outline-none w-full";
+  const inputStyle = { borderColor: C.line, background: C.panel, color: C.ink };
+  const save = async () => {
+    if (!form.nombre.trim()) return;
+    await onSave({ id: uid("tpl"), nombre: form.nombre.trim(), descripcion: form.descripcion.trim(), prioridad: form.prioridad, asignadoA: form.asignadoA, pasos: form.pasos.split("\n").map(x => x.trim()).filter(Boolean) });
+    setForm(empty);
+  };
+  const crear = async (t) => {
+    setBusyId(t.id);
+    try { await onCreate([{ titulo: t.nombre, descripcion: t.descripcion, prioridad: t.prioridad, asignadoA: t.asignadoA, checklist: t.pasos, origen: "plantilla" }]); showToast(`✓ Tarea creada: ${t.nombre}`, true); }
+    catch { showToast("No se pudo crear la tarea.", false); }
+    setBusyId(null);
+  };
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Plantillas de tareas</h2>
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>Guarda una vez las tareas que repites (revisión de bomba, limpieza de filtros) y créalas con un toque.</p>
+      <div className="rounded-xl p-3 mb-4 space-y-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre de la tarea (ej: Revisión de bomba de agua helada)" className={inputCls} style={inputStyle} />
+        <textarea value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Descripción (opcional)" className={`${inputCls} resize-y`} style={inputStyle} />
+        <textarea value={form.pasos} onChange={e => setForm(f => ({ ...f, pasos: e.target.value }))} rows={3} placeholder={"Pasos, uno por línea (opcional)\nRevisar presión\nRevisar fugas"} className={`${inputCls} resize-y`} style={inputStyle} />
+        <div className="flex gap-2 flex-wrap">
+          <select value={form.prioridad} onChange={e => setForm(f => ({ ...f, prioridad: e.target.value }))} className="text-sm border rounded-md px-2 outline-none" style={{ minHeight: 36, ...inputStyle }}>
+            {TASK_PRIORITIES.map(pr => <option key={pr.code} value={pr.code}>Prioridad {pr.label}</option>)}
+          </select>
+          <select value={form.asignadoA} onChange={e => setForm(f => ({ ...f, asignadoA: e.target.value }))} className="text-sm border rounded-md px-2 outline-none" style={{ minHeight: 36, ...inputStyle }}>
+            <option value="">Sin asignar</option>
+            {Object.keys(accounts || {}).filter(u => accounts[u]?.approved !== false && !accounts[u]?.is_viewer && !accounts[u]?.is_gerencia).map(u => <option key={u} value={u}>{accounts[u]?.display_name || u}</option>)}
+          </select>
+          <Button size="sm" disabled={!form.nombre.trim()} onClick={save}>Guardar plantilla</Button>
+        </div>
+      </div>
+      {(templates || []).length === 0 ? <p className="text-sm text-center py-6" style={{ color: C.gray }}>Todavía no hay plantillas.</p> : (templates || []).map(t => (
+        <div key={t.id} className="rounded-xl p-3 mb-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.nombre}</div>
+              <div className="text-xs" style={{ color: C.inkSoft }}>Prioridad {TASK_PRIORITIES.find(x => x.code === t.prioridad)?.label} · {t.asignadoA ? (accounts?.[t.asignadoA]?.display_name || t.asignadoA) : "Sin asignar"} · {(t.pasos || []).length} pasos</div>
+            </div>
+            <button onClick={() => onDelete(t.id)} aria-label="Borrar plantilla" style={{ minWidth: 32, minHeight: 32 }}><Trash2 size={15} color={C.gray} /></button>
+          </div>
+          <div className="mt-2"><Button size="sm" disabled={busyId === t.id} onClick={() => crear(t)}>{busyId === t.id ? "Creando…" : "Crear tarea ahora"}</Button></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onReturnTool }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ nombre: "", categoria: "", nota: "" });
@@ -18263,6 +18636,7 @@ function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onRetur
   const [lendingId, setLendingId] = useState(null);
   const [lendTo, setLendTo] = useState("");
   const [search, setSearch] = useState("");
+  const [qrToolId, setQrToolId] = useState(null);
 
   const doCreate = async () => {
     if (!form.nombre.trim()) return;
@@ -18314,6 +18688,8 @@ function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onRetur
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate" style={{ color: C.ink }}>{t.nombre}</div>
                     <div className="text-xs" style={{ color: C.amber }}>Con {accounts?.[t.prestadaA]?.display_name || t.prestadaA} · desde {fmtDT(t.prestadaDesde)}</div>
+                    {isAdmin && <button onClick={() => setQrToolId(qrToolId === t.id ? null : t.id)} className="text-xs font-semibold underline" style={{ color: C.inkSoft, minHeight: 28 }}>{qrToolId === t.id ? "Ocultar QR" : "Ver QR"}</button>}
+                    {qrToolId === t.id && <QrCodeBox url={toolUrl(t.id)} label={t.nombre} filename={`qr-herramienta-${t.nombre.replace(/[^a-z0-9]+/gi, "-")}.png`} />}
                   </div>
                 </div>
                 <Button size="sm" onClick={() => onReturnTool(t.id)}>Marcar devuelta</Button>
@@ -18331,6 +18707,8 @@ function ToolsView({ tools, accounts, isAdmin, onCreateTool, onLendTool, onRetur
           <div className="min-w-0">
             <div className="text-sm font-medium" style={{ color: C.ink }}>{t.nombre}</div>
             <div className="text-xs" style={{ color: C.gray }}>{t.categoria || "Sin categoría"}{t.nota ? ` · ${t.nota}` : ""}</div>
+            {isAdmin && <button onClick={() => setQrToolId(qrToolId === t.id ? null : t.id)} className="text-xs font-semibold underline" style={{ color: C.inkSoft, minHeight: 28 }}>{qrToolId === t.id ? "Ocultar QR" : "Ver QR"}</button>}
+            {qrToolId === t.id && <QrCodeBox url={toolUrl(t.id)} label={t.nombre} filename={`qr-herramienta-${t.nombre.replace(/[^a-z0-9]+/gi, "-")}.png`} />}
           </div>
           {lendingId === t.id ? (
             <div className="flex items-center gap-2 flex-wrap">
@@ -18365,6 +18743,8 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
   const [checkingOutId, setCheckingOutId] = useState(null);
   useBackCloseModal(!!checkingOutId, () => setCheckingOutId(null));
   const [firmaSalida, setFirmaSalida] = useState(null);
+  const [costoSalida, setCostoSalida] = useState("");
+  const [showResumen, setShowResumen] = useState(false);
   const [search, setSearch] = useState("");
   const [confirmDeleteVisitId, setConfirmDeleteVisitId] = useState(null);
 
@@ -18383,15 +18763,34 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
 
   const doCheckOut = async () => {
     if (!firmaSalida) return;
-    await onCheckOut(checkingOutId, firmaSalida);
+    await onCheckOut(checkingOutId, firmaSalida, costoSalida ? Number(costoSalida) : null);
     setCheckingOutId(null);
     setFirmaSalida(null);
+    setCostoSalida("");
   };
 
   const searchNorm = normalizeSearchText(search.trim());
   const filtered = visits.filter(v => !searchNorm || normalizeSearchText(`${v.empresa} ${v.contacto}`).includes(searchNorm));
   const activas = filtered.filter(v => !v.horaSalida);
   const historial = filtered.filter(v => v.horaSalida).slice(0, 40);
+  const resumen = useMemo(() => {
+    const m = {};
+    (visits || []).forEach(v => {
+      const k = (v.empresa || "—").trim();
+      const r = (m[k] = m[k] || { empresa: k, visitas: 0, horas: 0, costo: 0, ultima: null });
+      r.visitas++;
+      if (v.horaSalida) r.horas += hoursBetween(v.horaEntrada, v.horaSalida);
+      r.costo += Number(v.costo || 0);
+      if (!r.ultima || new Date(v.horaEntrada) > new Date(r.ultima)) r.ultima = v.horaEntrada;
+    });
+    return Object.values(m).sort((a, b) => b.visitas - a.visitas);
+  }, [visits]);
+  const exportResumen = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen.map(r => ({ Empresa: r.empresa, Visitas: r.visitas, "Horas en el hotel": Number(r.horas.toFixed(1)), "Costo total": r.costo, "Última visita": r.ultima ? fmtDT(r.ultima) : "" }))), "Contratistas");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((visits || []).map(v => ({ Empresa: v.empresa, Contacto: v.contacto, Motivo: v.motivo, "Equipo o área": v.equipoNota || "", Entrada: fmtDT(v.horaEntrada), Salida: v.horaSalida ? fmtDT(v.horaSalida) : "", Costo: v.costo || "" }))), "Visitas");
+    XLSX.writeFile(wb, `contratistas-${todayStr().replace(/\//g, "-")}.xlsx`);
+  };
 
   if (showNew) {
     // Pantalla tipo "bitácora de portería" — grande y simple, pensada para que la llene el contratista mismo.
@@ -18494,7 +18893,7 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
             <div className="text-sm font-semibold" style={{ color: C.ink }}>{v.empresa} — {v.contacto}</div>
             <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{v.motivo}{v.equipoNota ? ` · ${v.equipoNota}` : ""}</div>
             <div className="text-xs mt-0.5" style={{ color: C.gray }}>
-              {fmtDT(v.horaEntrada)} → {fmtDT(v.horaSalida)}
+              {fmtDT(v.horaEntrada)} → {fmtDT(v.horaSalida)}{v.costo ? ` · Costo $${Number(v.costo).toLocaleString("es-CO")}` : ""}
             </div>
           </div>
           {isAdmin && (
@@ -18505,12 +18904,28 @@ function ContractorVisitsView({ visits, employees, isAdmin, onCreateVisit, onChe
         </div>
       ))}
 
+      {isAdmin && resumen.length > 0 && (
+        <div className="rounded-lg border p-3 mt-5" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="flex items-center justify-between gap-2">
+            <button onClick={() => setShowResumen(v => !v)} className="text-sm font-semibold" style={{ color: C.ink }}>📊 Resumen por empresa ({resumen.length}) {showResumen ? "▲" : "▼"}</button>
+            <Button size="sm" variant="ghost" icon={Download} onClick={exportResumen}>Excel</Button>
+          </div>
+          {showResumen && resumen.map(r => (
+            <div key={r.empresa} className="flex justify-between gap-2 text-xs py-1.5 border-t mt-1" style={{ borderColor: C.line, color: C.ink }}>
+              <span className="truncate font-medium">{r.empresa}</span>
+              <span className="shrink-0" style={{ color: C.inkSoft }}>{r.visitas} visitas · {r.horas.toFixed(1)} h · ${r.costo.toLocaleString("es-CO")}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {checkingOutId && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setCheckingOutId(null)}>
           <div className="w-full sm:w-96 rounded-t-2xl sm:rounded-2xl p-4" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
             <div className="text-base font-bold mb-1" style={{ color: C.ink }}>Firma de salida</div>
             <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Por favor firma para confirmar tu salida.</p>
             <SignaturePad onChange={setFirmaSalida} />
+            <input type="number" inputMode="numeric" value={costoSalida} onChange={e => setCostoSalida(e.target.value)} placeholder="Costo del servicio (opcional)" className={`${inputCls} mt-3`} style={inputStyle} />
             <div className="flex items-center gap-2 mt-3">
               <div className="flex-1 [&>button]:w-full [&>button]:justify-center">
                 <Button disabled={!firmaSalida} onClick={doCheckOut}>Confirmar salida</Button>
@@ -22195,6 +22610,7 @@ function BackupButton() {
       a.download = `respaldo-pisos-mecanicos-${todayStr().replace(/\//g, "-")}.json`;
       a.click();
       URL.revokeObjectURL(url);
+      try { localStorage.setItem("pm-local:last-manual-backup", nowIso()); } catch { /* noop */ }
       setMsg({ ok: true, text: `✓ Respaldo descargado (${rows.length} secciones de datos).` });
     } catch (e) {
       setMsg({ ok: false, text: e.message || "No se pudo generar el respaldo." });
@@ -22576,6 +22992,8 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => { try { return !localStorage.getItem("pm-local:onboarded"); } catch { return false; } });
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [scannedEquipoId, setScannedEquipoId] = useState(null);
+  const [scannedToolId, setScannedToolId] = useState(() => new URLSearchParams(window.location.search).get("tool"));
+  const [taskTemplates, setTaskTemplates] = useState([]);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [undoToast, setUndoToast] = useState(null); // { label, trashId } | null
   const undoTimerRef = useRef(null);
@@ -24089,6 +24507,9 @@ export default function App() {
 
   const updateTask = async (id, patch) => {
     const before = tasks.find(t => t.id === id);
+    // Una orden que el administrador devolvió y vuelve a cerrarse: se marca y se le avisa (una sola vez).
+    const reCierre = !!(before && before.devueltaAt && !before.reCerradaAt && patch.estado && normalizeTaskState(patch.estado) === "finalizada" && normalizeTaskState(before.estado) !== "finalizada");
+    if (reCierre) patch = { ...patch, reCerradaAt: nowIso() };
     const next = tasks.map(t => t.id === id ? { ...t, ...patch, updatedAt: nowIso() } : t);
     setTasks(next);
     await sSet("tasks", next, true);
@@ -24113,6 +24534,10 @@ export default function App() {
     if (before && patch.asignadoA && patch.asignadoA !== before.asignadoA && pushSubscriptions.length > 0) {
       const suyas = pushSubscriptions.filter(s => s.ownerUsername === patch.asignadoA);
       if (suyas.length > 0) sendPushToSubscriptions(suyas, "📋 Te asignaron una tarea", before.titulo, "/");
+    }
+    if (reCierre && pushSubscriptions.length > 0) {
+      const admins = pushSubscriptions.filter(s => profiles?.[s.ownerUsername]?.is_admin && s.ownerUsername !== currentUser);
+      if (admins.length > 0) sendPushToSubscriptions(admins, "✅ Orden devuelta, cerrada de nuevo", before.titulo, "/");
     }
   };
 
@@ -24152,9 +24577,9 @@ export default function App() {
   /** Agrega un comentario al hilo de una tarea — para dejar contexto sin tener que cambiar de
    *  estado ("le falta el repuesto", "ya lo vio mantenimiento", etc.). Si el texto trae @alguien
    *  y ese "alguien" coincide con una cuenta real, le llega una notificación directa. */
-  const addTaskComment = async (taskId, text) => {
+  const addTaskComment = async (taskId, text, fotos = []) => {
     const clean = (text || "").trim();
-    if (!clean) return;
+    if (!clean && (!fotos || fotos.length === 0)) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const mentioned = [];
@@ -24162,13 +24587,13 @@ export default function App() {
       const first = (acc.display_name || "").split(" ")[0];
       if (first && first.length > 2 && clean.toLowerCase().includes(`@${first.toLowerCase()}`)) mentioned.push(uname);
     });
-    const comment = { id: uid("cmt"), text: clean, by: displayName, byUsername: currentUser, at: nowIso(), mentions: mentioned };
+    const comment = { id: uid("cmt"), text: clean, by: displayName, byUsername: currentUser, at: nowIso(), mentions: mentioned, fotos: fotos || [] };
     const next = tasks.map(t => t.id === taskId ? { ...t, comments: [...(t.comments || []), comment] } : t);
     setTasks(next);
     await sSet("tasks", next, true);
     if (mentioned.length > 0 && pushSubscriptions.length > 0) {
       const suyas = pushSubscriptions.filter(s => mentioned.includes(s.ownerUsername) && s.ownerUsername !== currentUser);
-      if (suyas.length > 0) sendPushToSubscriptions(suyas, `💬 ${displayName} te mencionó`, `En "${task.titulo}": ${clean}`, "/");
+      if (suyas.length > 0) sendPushToSubscriptions(suyas, `💬 ${displayName} te mencionó`, `En "${task.titulo}": ${clean || "📷 foto"}`, "/");
     }
   };
 
@@ -24228,8 +24653,8 @@ export default function App() {
     return rec;
   };
 
-  const checkOutContractorVisit = async (visitId, firmaSalida) => {
-    const next = contractorVisits.map(v => v.id === visitId ? { ...v, horaSalida: nowIso(), firmaSalida } : v);
+  const checkOutContractorVisit = async (visitId, firmaSalida, costo = null) => {
+    const next = contractorVisits.map(v => v.id === visitId ? { ...v, horaSalida: nowIso(), firmaSalida, costo: costo || null } : v);
     setContractorVisits(next);
     await sSet("contractor-visits", next, true);
   };
@@ -24778,7 +25203,7 @@ export default function App() {
   // (Críticas >24h), pero sin exigir prioridad Alta, porque aquí es "lo mío que se está
   // demorando", no una métrica gerencial de criticidad.
   const misTareasVencidas = useMemo(
-    () => tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && t.asignadoA === currentUser && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24).length,
+    () => tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && t.asignadoA === currentUser && !t.esperaRepuesto && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24).length,
     [tasks, currentUser]
   );
   const shiftAlerts = useMemo(
@@ -24933,6 +25358,40 @@ export default function App() {
     if (currentUser && pendingShelfId) setView("inventory");
   }, [currentUser, pendingShelfId]);
 
+  // Atajos del ícono del celular (?go=tasks / ?go=scan) y QR de herramientas que abren la app (?tool=)
+  useEffect(() => {
+    if (!currentUser) return;
+    const go = new URLSearchParams(window.location.search).get("go");
+    if (go === "scan") setShowQrScanner(true);
+    else if (go === "tasks") setView("tasks");
+    if (go || scannedToolId) { try { window.history.replaceState({}, "", window.location.pathname); } catch { /* noop */ } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  // Plantillas de tareas (solo las usa el administrador)
+  useEffect(() => {
+    if (!isAdmin) return;
+    sGet("task-templates", true).then(v => setTaskTemplates(Array.isArray(v) ? v : [])).catch(() => {});
+  }, [isAdmin]);
+  const saveTaskTemplate = async (tpl) => { const next = [tpl, ...taskTemplates]; setTaskTemplates(next); await sSet("task-templates", next, true); };
+  const deleteTaskTemplate = async (id) => { const next = taskTemplates.filter(t => t.id !== id); setTaskTemplates(next); await sSet("task-templates", next, true); };
+
+  // Recordatorio suave (técnico): si hay 3 o más órdenes sin iniciar, avisa como máximo cada 4 horas.
+  useEffect(() => {
+    if (isAdmin || isGerencia || viewerLocked || !currentUser) return;
+    const sinIniciar = tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) === "asignada" && !isTaskSnoozed(t)).length;
+    if (sinIniciar < 3) return;
+    const KEY = `pm-local:last-reminder:${currentUser}`;
+    let last = 0;
+    try { last = Number(localStorage.getItem(KEY) || 0); } catch { /* noop */ }
+    if (Date.now() - last < 4 * 3600000) return;
+    try { localStorage.setItem(KEY, String(Date.now())); } catch { /* noop */ }
+    showToast(`Tienes ${sinIniciar} órdenes sin iniciar. Revisa Mi trabajo.`, true);
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.visibilityState !== "visible") new Notification("QuinTech", { body: `Tienes ${sinIniciar} órdenes sin iniciar.` });
+    } catch { /* noop */ }
+  }, [tasks, nowClock]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (currentUser && pendingEquipoId) { if (isAdmin) setView("maintenance"); else { setScannedEquipoId(pendingEquipoId); setPendingEquipoId(null); } }
   }, [currentUser, pendingEquipoId]);
@@ -25032,6 +25491,8 @@ export default function App() {
         { id: "rooms", label: "Habitaciones", icon: Building2 },
         { id: "procedures", label: "Procedimientos", icon: Sparkles },
         ...(isAdmin ? [{ id: "room-history", label: "Historial por habitación", icon: History }] : []),
+        ...(isAdmin ? [{ id: "calendar", label: "Calendario de tareas", icon: CalendarDays }] : []),
+        ...(isAdmin ? [{ id: "templates", label: "Plantillas de tareas", icon: ClipboardList }] : []),
         ...(isAdmin ? [{ id: "usage", label: "Uso y respaldo", icon: Download }] : []),
         ...(isAdmin ? [{ id: "hotsos-import", label: "Importar HotSOS", icon: Upload }] : []),
         ...(isAdmin ? [{ id: "round-completion", label: "Recorridos completados", icon: ClipboardCheck }] : []),
@@ -25102,7 +25563,12 @@ export default function App() {
           onClose={() => setShowQrScanner(false)}
           onFoundEquipo={(id) => { setShowQrScanner(false); if (isAdmin) { setPendingEquipoId(id); setView("maintenance"); } else setScannedEquipoId(id); }}
           onFoundShelf={(id) => { setPendingShelfId(id); setView("inventory"); setShowQrScanner(false); }}
+          onFoundTool={(id) => { setShowQrScanner(false); setScannedToolId(id); }}
         />
+      )}
+      {scannedToolId && (
+        <ScannedToolSheet tool={tools.find(t => t.id === scannedToolId)} accounts={profiles} currentUser={currentUser}
+          onClose={() => setScannedToolId(null)} onLend={lendTool} onReturn={returnTool} />
       )}
       {scannedEquipoId && (
         <ScannedEquipoSheet equipo={mttoEquipos.find(e => e.id === scannedEquipoId)} tasks={tasks} accounts={profiles}
@@ -25441,6 +25907,9 @@ export default function App() {
               <ArrowLeft size={14} /> Volver a Inicio
             </button>
           )}
+          {view === "home" && isAdmin && <WeekSemaphore tasks={tasks} criticalStock={criticalStockItems.length} />}
+          {view === "home" && isAdmin && <BackupReminder />}
+          {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
           {view === "home" && <SetupGuideCard onEnablePush={enablePushNotifications} userKey={currentUser} />}
           {view === "home" && (
             <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
@@ -25577,6 +26046,8 @@ export default function App() {
               onCreateTask={createTask} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={deleteTask} onAddTaskComment={addTaskComment}
               mySignature={account.signature} signerCargo={mySignerCargo} pendingTaskCloseIds={pendingTaskCloseIds} viewerLocked={viewerLocked} onGoToProfile={() => setView("profile")} myWorkMode={!isAdmin} />
           )}
+          {view === "calendar" && isAdmin && <CalendarView tasks={tasks} accounts={profiles} />}
+          {view === "templates" && isAdmin && <TaskTemplatesView templates={taskTemplates} accounts={profiles} onSave={saveTaskTemplate} onDelete={deleteTaskTemplate} onCreate={createTasksBatch} />}
           {view === "usage" && isAdmin && <UsagePanelView tasks={tasks} accounts={profiles} />}
           {view === "room-history" && isAdmin && (
             <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />

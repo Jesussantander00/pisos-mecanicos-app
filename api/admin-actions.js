@@ -55,6 +55,50 @@ export default async function handler(req, res) {
       return;
     }
 
+    // ---- Archivo en Google Drive (solo administradores; ya se comprobó arriba) ----
+    if (action === "drive-token") {
+      // Cambia el "refresh token" guardado en Vercel por un permiso corto (1 hora) para que el
+      // navegador del administrador suba los archivos directo a Drive. Las claves nunca salen
+      // del servidor; al navegador solo llega ese permiso temporal.
+      const cid = process.env.GOOGLE_CLIENT_ID, csec = process.env.GOOGLE_CLIENT_SECRET, rtok = process.env.GOOGLE_REFRESH_TOKEN;
+      if (!cid || !csec || !rtok) {
+        res.status(200).json({ ok: false, message: "Falta configurar GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN en Vercel." });
+        return;
+      }
+      const tr = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: cid, client_secret: csec, refresh_token: rtok, grant_type: "refresh_token" }),
+      });
+      const tj = await tr.json().catch(() => ({}));
+      if (!tr.ok || !tj.access_token) {
+        res.status(200).json({ ok: false, message: `Google no aceptó las claves (${tj.error_description || tj.error || tr.status}).` });
+        return;
+      }
+      res.status(200).json({ ok: true, driveToken: tj.access_token, expiresIn: tj.expires_in || 3600 });
+      return;
+    }
+    if (action === "drive-delete") {
+      // Borra de Supabase Storage los archivos que YA quedaron guardados en Drive. Nunca toca
+      // fotos de equipos ni videos de referencia (rutas que empiezan por "equipo").
+      const files = Array.isArray(req.body.files) ? req.body.files.slice(0, 200) : [];
+      const grouped = { "maintenance-photos": [], "maintenance-videos": [] };
+      for (const f of files) {
+        if (!f || !grouped[f.bucket] || typeof f.path !== "string") continue;
+        if (f.path.includes("..") || f.path.startsWith("/") || f.path.startsWith("equipo")) continue;
+        grouped[f.bucket].push(f.path);
+      }
+      let removed = 0;
+      for (const [bucket, paths] of Object.entries(grouped)) {
+        if (!paths.length) continue;
+        const { data, error } = await supabaseAdmin.storage.from(bucket).remove(paths);
+        if (error) { res.status(500).json({ ok: false, message: `No se pudieron borrar archivos (${error.message}).` }); return; }
+        removed += (data || []).length;
+      }
+      res.status(200).json({ ok: true, removed });
+      return;
+    }
+
     if (action === "approve") {
       await supabaseAdmin.from("profiles").update({ approved: true }).eq("id", targetUserId);
     } else if (action === "reject" || action === "delete") {

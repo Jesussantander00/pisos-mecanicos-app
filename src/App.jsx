@@ -34,6 +34,10 @@ const LIGHT_COLORS = {
   gray: "#707d8a",
   cardAlt: "#fafbfc",
   white: "#ffffff",
+  purple: "#7c3aed",
+  purpleSoft: "#ede9fe",
+  graySoft: "#f1f5f9",
+  panelSoft: "#f8fafc",
 };
 const DARK_COLORS = {
   bg: "#0f1720",
@@ -54,6 +58,10 @@ const DARK_COLORS = {
   gray: "#9fb0bf",
   cardAlt: "#1f2b38",
   white: "#1a2531",
+  purple: "#c4a1f5",
+  purpleSoft: "#2b2142",
+  graySoft: "#243241",
+  panelSoft: "#1f2b38",
 };
 // C es un objeto MUTABLE compartido por toda la app (todos los componentes leen C.xxx al dibujarse).
 // Cambiar de tema es simplemente sobrescribir sus valores y forzar un redibujado — así no hay que
@@ -6981,7 +6989,7 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
             )}
             {error && <div className="text-xs" style={{ color: "#dc2626" }}>{error}</div>}
             {mode === "register" && (
-              <div className="text-xs rounded-md p-2" style={{ background: "#fef3c7", color: "#92400e" }}>
+              <div className="text-xs rounded-md p-2" style={{ background: C.amberSoft, color: C.ink }}>
                 Tu cuenta queda pendiente de aprobación por un administrador (salvo que seas la primera persona en registrarse en todo el sistema).
               </div>
             )}
@@ -15168,6 +15176,257 @@ function SetupGuideCard({ onEnablePush, userKey }) {
 
 /** Panel de uso y respaldo (item 20): cuánto espacio ocupan los datos, actividad del equipo y
  * descargas (respaldo completo y tareas en Excel). Solo administrador. */
+/* ===== Archivo en Google Drive ("memoria" por mes) =====
+ * Las fotos y videos con más de 60 días se copian a una carpeta de Drive por mes
+ * (QuinTech / AAAA-MM / Fotos | Videos) junto con un informe en Excel de ese mes, y se borran de
+ * Supabase para liberar espacio. Lo ESCRITO (tareas, seguimientos, registros) nunca se borra: en
+ * lugar de la foto vieja queda una tarjeta "Archivada en Drive · mes". Si una corrida se corta a la
+ * mitad, volver a correrla continúa donde quedó (no duplica archivos en Drive). */
+const DRIVE_KEEP_DAYS = 60;
+const DRIVE_MEDIA_RE = /https?:\/\/[^"'\s\\]*\/storage\/v1\/object\/sign\/(maintenance-photos|maintenance-videos)\/([^"'\s\\?]+)\?[^"'\s\\]*/g;
+const monthKeyOf = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const archivedPlaceholder = (ym) => "data:image/svg+xml;utf8," + encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'><rect width='100%' height='100%' fill='#243241'/><text x='50%' y='46%' fill='#e7edf3' font-family='sans-serif' font-size='17' text-anchor='middle'>Archivada en Drive</text><text x='50%' y='62%' fill='#9fb0bf' font-family='sans-serif' font-size='15' text-anchor='middle'>${ym}</text></svg>`);
+
+/** Busca en TODAS las filas de la base las fotos/videos y los agrupa por mes de subida (la fecha
+ * viene en el nombre del archivo). No toca fotos de equipos ni videos de referencia. */
+function scanArchivableMedia(rows) {
+  const cutoff = Date.now() - DRIVE_KEEP_DAYS * 86400000;
+  const byUrl = new Map();
+  let total = 0, recent = 0;
+  for (const r of rows) {
+    const txt = JSON.stringify(r.value ?? null);
+    for (const m of txt.matchAll(DRIVE_MEDIA_RE)) {
+      const url = m[0], bucket = m[1], path = decodeURIComponent(m[2]);
+      if (path.startsWith("equipo")) continue;
+      const tm = path.match(/(\d{13})-[a-z0-9]+\.[a-z0-9]+$/i);
+      if (!tm) continue;
+      total++;
+      const ts = Number(tm[1]);
+      if (ts >= cutoff) { recent++; continue; }
+      if (!byUrl.has(url)) byUrl.set(url, { url, bucket, path, ts, ym: monthKeyOf(ts), keys: new Set() });
+      byUrl.get(url).keys.add(r.key);
+    }
+  }
+  const months = {};
+  for (const it of byUrl.values()) {
+    months[it.ym] = months[it.ym] || { ym: it.ym, items: [], fotos: 0, videos: 0 };
+    months[it.ym].items.push(it);
+    if (it.bucket === "maintenance-videos") months[it.ym].videos++; else months[it.ym].fotos++;
+  }
+  return { months: Object.values(months).sort((a, b) => a.ym.localeCompare(b.ym)), total, recent };
+}
+
+async function driveApi(token, url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) } });
+  if (!r.ok) throw new Error(`Drive respondió ${r.status}`);
+  return r;
+}
+async function driveFolder(token, name, parentId) {
+  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId || "root"}' in parents`;
+  const r = await driveApi(token, `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`);
+  const j = await r.json();
+  if (j.files?.[0]) return j.files[0].id;
+  const c = await driveApi(token, "https://www.googleapis.com/drive/v3/files?fields=id", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", ...(parentId ? { parents: [parentId] } : {}) }),
+  });
+  return (await c.json()).id;
+}
+async function driveHasFile(token, name, parentId) {
+  const q = `name='${name.replace(/'/g, "\\'")}' and trashed=false and '${parentId}' in parents`;
+  const r = await driveApi(token, `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`);
+  return ((await r.json()).files || []).length > 0;
+}
+async function driveUpload(token, blob, name, parentId, mime) {
+  const boundary = "pmarch" + Math.random().toString(36).slice(2);
+  const meta = JSON.stringify({ name, parents: [parentId] });
+  const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`, blob, `\r\n--${boundary}--`]);
+  await driveApi(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+    method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body,
+  });
+}
+
+/** Informe en Excel de un rango de meses (AAAA-MM a AAAA-MM): resumen, tareas y mantenimientos. */
+async function buildActivityReport(fromYm, toYm, tasks, accounts) {
+  const inRange = (iso) => { if (!iso) return false; const ym = monthKeyOf(new Date(iso).getTime()); return ym >= fromYm && ym <= toYm; };
+  const nm = (u) => accounts?.[u]?.display_name || u || "Sin asignar";
+  const mine = (tasks || []).filter(t => inRange(t.createdAt) || inRange(t.finishedAt));
+  let mtto = [], equipos = [];
+  try { const a = await sGet("mtto-log", true); const b = await sGet("mtto-log-archive", true); mtto = [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])].filter(r => inRange(r.fecha || r.createdAt)); } catch { /* sin mantenimientos */ }
+  try { const e = await sGet("mtto-equipos", true); equipos = Array.isArray(e) ? e : []; } catch { /* sin equipos */ }
+  const eqName = (id) => { const e = equipos.find(x => x.id === id); return e ? (e.nombre || e.name || id) : id; };
+  const cerradas = mine.filter(t => normalizeTaskState(t.estado) === "finalizada" && inRange(t.finishedAt));
+  const porTec = {};
+  cerradas.forEach(t => { const k = nm(t.asignadoA); porTec[k] = (porTec[k] || 0) + 1; });
+  const costoTotal = mtto.reduce((a, r) => a + (Number(r.costo) || 0), 0);
+  const wb = XLSX.utils.book_new();
+  const resumen = [
+    ["Informe de actividades", `${fromYm} a ${toYm}`],
+    ["Tareas creadas en el período", mine.filter(t => inRange(t.createdAt)).length],
+    ["Tareas cerradas en el período", cerradas.length],
+    ["Mantenimientos registrados", mtto.length],
+    ["Costo registrado en mantenimientos", costoTotal],
+    [],
+    ["Tareas cerradas por técnico", ""],
+    ...Object.entries(porTec).sort((a, b) => b[1] - a[1]),
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumen), "Resumen");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mine.map(t => ({
+    Titulo: t.titulo, Descripcion: t.descripcion || "", Estado: normalizeTaskState(t.estado), Prioridad: t.prioridad, Asignado: nm(t.asignadoA),
+    Creada: t.createdAt ? fmtDT(t.createdAt) : "", Finalizada: t.finishedAt ? fmtDT(t.finishedAt) : "", NotaCierre: t.notaCierre || "",
+    ReabiertaODevuelta: t.devueltaAt ? "Sí" : "",
+  }))), "Tareas");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mtto.map(r => ({
+    Fecha: fmtDT(r.fecha || r.createdAt), Equipo: eqName(r.equipoId), Tipo: r.tipo, Tecnico: r.tecnico || r.createdBy || "", Estado: r.estado || "",
+    Descripcion: r.descripcion || "", Costo: Number(r.costo) || 0,
+    Repuestos: (r.repuestos || []).map(x => `${x.nombre} x${x.cantidad}`).join(", "),
+  }))), "Mantenimientos");
+  return wb;
+}
+
+function DriveArchivePanel({ tasks, accounts }) {
+  const [scan, setScan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState([]);
+  const [err, setErr] = useState(null);
+  const [needReload, setNeedReload] = useState(false);
+  const [repFrom, setRepFrom] = useState(() => monthKeyOf(Date.now() - 62 * 86400000));
+  const [repTo, setRepTo] = useState(() => monthKeyOf(Date.now()));
+  const tokenRef = useRef({ token: null, at: 0 });
+  const say = (m) => setLog(l => [...l.slice(-40), m]);
+
+  const getToken = async () => {
+    if (tokenRef.current.token && Date.now() - tokenRef.current.at < 45 * 60000) return tokenRef.current.token;
+    const { data: { session } } = await supabase.auth.getSession();
+    const r = await requestAdminAction(session?.access_token, "drive-token", "drive");
+    if (!r.ok) throw new Error(r.message || "No se pudo conectar con Drive.");
+    tokenRef.current = { token: r.driveToken, at: Date.now() };
+    return r.driveToken;
+  };
+  const doScan = async () => {
+    setBusy(true); setErr(null); setLog([]);
+    try { setScan(scanArchivableMedia(await exportFullBackup())); }
+    catch (e) { setErr(e.message || "No se pudo revisar."); }
+    setBusy(false);
+  };
+  const testConn = async () => {
+    setBusy(true); setErr(null);
+    try { tokenRef.current = { token: null, at: 0 }; await getToken(); showToast("✓ Conexión con Drive lista.", true); }
+    catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+
+  const archiveMonth = async (month) => {
+    setBusy(true); setErr(null);
+    const ym = month.ym;
+    try {
+      say(`Mes ${ym}: conectando con Drive…`);
+      let token = await getToken();
+      const root = await driveFolder(token, "QuinTech", null);
+      const mf = await driveFolder(token, ym, root);
+      const ff = await driveFolder(token, "Fotos", mf);
+      const vf = await driveFolder(token, "Videos", mf);
+      const done = [];
+      let n = 0;
+      for (const it of month.items) {
+        n++;
+        try {
+          token = await getToken();
+          const folder = it.bucket === "maintenance-videos" ? vf : ff;
+          const name = it.path.replace(/\//g, "_");
+          if (!(await driveHasFile(token, name, folder))) {
+            const resp = await fetch(it.url);
+            if (!resp.ok) throw new Error("no se pudo leer el archivo original");
+            const blob = await resp.blob();
+            await driveUpload(token, blob, name, folder, blob.type || (it.bucket === "maintenance-videos" ? "video/mp4" : "image/jpeg"));
+          }
+          done.push(it);
+        } catch (e) { say(`  ⚠ ${it.path}: ${e.message}`); }
+        if (n % 5 === 0 || n === month.items.length) say(`  ${n} de ${month.items.length} archivos revisados…`);
+      }
+      if (done.length === 0) throw new Error("No se pudo copiar ningún archivo a Drive.");
+      // Informe del mes (con fecha de generación en el nombre, así no pisa uno anterior).
+      say("  Generando informe del mes…");
+      const wb = await buildActivityReport(ym, ym, tasks, accounts);
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      token = await getToken();
+      await driveUpload(token, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Informe ${ym} (generado ${todayStr().replace(/\//g, "-")}).xlsx`, mf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      // Reemplazar los enlaces en la base (leyendo cada fila de nuevo justo antes de escribir).
+      say("  Actualizando la app…");
+      const placeholder = archivedPlaceholder(ym);
+      const keys = new Set(); done.forEach(it => it.keys.forEach(k => keys.add(k)));
+      for (const key of keys) {
+        const fresh = await sGet(key, true);
+        let txt = JSON.stringify(fresh ?? null);
+        for (const it of done) txt = txt.split(it.url).join(placeholder);
+        await sSet(key, JSON.parse(txt), true);
+      }
+      // Borrar los originales de Supabase (ya están a salvo en Drive).
+      say("  Liberando espacio…");
+      const { data: { session } } = await supabase.auth.getSession();
+      let removed = 0;
+      for (let i = 0; i < done.length; i += 100) {
+        const r = await requestAdminAction(session?.access_token, "drive-delete", "drive", { files: done.slice(i, i + 100).map(it => ({ bucket: it.bucket, path: it.path })) });
+        if (!r.ok) throw new Error(r.message || "No se pudieron borrar los originales.");
+        removed += r.removed || 0;
+      }
+      say(`✓ ${ym}: ${done.length} archivos en Drive, informe guardado y ${removed} originales borrados de la app.`);
+      setNeedReload(true);
+    } catch (e) { setErr(e.message || "Algo falló."); say(`✗ ${ym}: ${e.message || "falló"}`); }
+    setBusy(false);
+  };
+
+  const downloadReport = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const a = repFrom <= repTo ? repFrom : repTo, b = repFrom <= repTo ? repTo : repFrom;
+      const wb = await buildActivityReport(a, b, tasks, accounts);
+      XLSX.writeFile(wb, `informe-actividades-${a}_a_${b}.xlsx`);
+    } catch (e) { setErr(e.message || "No se pudo generar el informe."); }
+    setBusy(false);
+  };
+  const monthOpts = (() => { const out = []; const d = new Date(); for (let i = 0; i < 24; i++) { out.push(monthKeyOf(d.getTime())); d.setMonth(d.getMonth() - 1); } return out; })();
+  const sel = "text-xs border rounded-md px-2 outline-none";
+  const selStyle = { minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink };
+
+  return (
+    <div className="rounded-xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-sm font-bold mb-1" style={{ color: C.ink }}>Archivo en Google Drive</div>
+      <p className="text-xs mb-3" style={{ color: C.inkSoft }}>
+        Las fotos y videos con más de {DRIVE_KEEP_DAYS} días se guardan en tu Drive, en una carpeta por mes, junto con el informe de ese mes. Lo escrito (tareas, seguimientos, registros) se queda en la app; en lugar de la foto vieja aparece "Archivada en Drive". Hazlo de preferencia cuando nadie más esté usando la app.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <Button size="sm" variant="ghost" disabled={busy} onClick={testConn}>Probar conexión</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={doScan}>{busy ? "Trabajando…" : "Buscar qué se puede archivar"}</Button>
+      </div>
+      {err && <div className="text-xs mb-2" style={{ color: C.red }}>{err}</div>}
+      {scan && (
+        <div className="mb-3">
+          <div className="text-xs mb-2" style={{ color: C.inkSoft }}>{scan.total} archivos en total · {scan.recent} recientes (se quedan en la app).</div>
+          {scan.months.length === 0 ? <div className="text-xs" style={{ color: C.green }}>No hay nada con más de {DRIVE_KEEP_DAYS} días. 👍</div> : scan.months.map(mo => (
+            <div key={mo.ym} className="flex items-center justify-between gap-2 text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+              <span>{mo.ym} · 📷 {mo.fotos} · 🎬 {mo.videos}</span>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => archiveMonth(mo)}>Archivar este mes</Button>
+            </div>
+          ))}
+        </div>
+      )}
+      {log.length > 0 && <div className="rounded-lg p-2 mb-3 text-[11px] whitespace-pre-wrap" style={{ background: C.bg, color: C.inkSoft, maxHeight: 160, overflowY: "auto" }}>{log.join("\n")}</div>}
+      {needReload && <div className="rounded-lg p-2 mb-3 text-xs flex items-center justify-between gap-2" style={{ background: C.amberSoft, color: C.ink }}><span>Recarga la app para ver los cambios.</span><Button size="sm" onClick={() => window.location.reload()}>Recargar</Button></div>}
+      <div className="border-t pt-3" style={{ borderColor: C.line }}>
+        <div className="text-xs font-semibold mb-2" style={{ color: C.ink }}>Informe de actividades de un mes a otro</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={repFrom} onChange={e => setRepFrom(e.target.value)} className={sel} style={selStyle}>{monthOpts.map(m => <option key={m} value={m}>{m}</option>)}</select>
+          <span className="text-xs" style={{ color: C.inkSoft }}>a</span>
+          <select value={repTo} onChange={e => setRepTo(e.target.value)} className={sel} style={selStyle}>{monthOpts.map(m => <option key={m} value={m}>{m}</option>)}</select>
+          <Button size="sm" variant="ghost" icon={Download} disabled={busy} onClick={downloadReport}>Descargar Excel</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UsagePanelView({ tasks, accounts }) {
   const [rows, setRows] = useState(null);
   const [media, setMedia] = useState(null);
@@ -15257,6 +15516,8 @@ function UsagePanelView({ tasks, accounts }) {
           </div>
         ))}
       </div>
+
+      <DriveArchivePanel tasks={tasks} accounts={accounts} />
 
       <div className="rounded-xl p-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
         <div className="text-sm font-bold mb-2" style={{ color: C.ink }}>Descargas</div>
@@ -17400,10 +17661,10 @@ function FuelTanksView({ latestValues, fuelHistory, onManualUpdate, onNavigate }
 /** Nombre a mostrar + color según el estado activo de una habitación en Telkonet. */
 function hvacStateTone(profileName) {
   const p = (profileName || "").toUpperCase();
-  if (p === "VIP") return { color: "#a855f7", bg: "#f3e8ff" };
-  if (p.includes("CHECK IN")) return { color: C.blue, bg: C.blueSoft || "#e0f2fe" };
-  if (p.includes("CHECK OUT")) return { color: C.gray, bg: "#f1f5f9" };
-  return { color: C.amber, bg: "#fef3c7" };
+  if (p === "VIP") return { color: C.purple, bg: C.purpleSoft };
+  if (p.includes("CHECK IN")) return { color: C.blue, bg: C.blueSoft };
+  if (p.includes("CHECK OUT")) return { color: C.gray, bg: C.graySoft };
+  return { color: C.amber, bg: C.amberSoft };
 }
 
 /**
@@ -17515,7 +17776,7 @@ function RoomHistoryView({ tasks, mttoLog, equipos, accounts }) {
     <button onClick={() => setTab(id)} className="text-sm font-medium px-3 py-1.5 rounded-md"
       style={tab === id ? { background: C.blue, color: "#fff" } : { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>{label}</button>
   );
-  const toneStyle = (tone) => tone === "open" ? { background: "#fff3d6", color: "#8a5a00" } : { background: "#dff5e3", color: "#1c7a34" };
+  const toneStyle = (tone) => tone === "open" ? { background: C.amberSoft, color: C.ink } : { background: C.greenSoft, color: C.ink };
 
   return (
     <div className="pm-tab-in">
@@ -17804,7 +18065,7 @@ function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigat
       </div>
 
       {importStale && (
-        <div className="rounded-md px-3 py-2 text-sm mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#fff3d6", color: "#8a5a00" }}>
+        <div className="rounded-md px-3 py-2 text-sm mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, color: C.ink }}>
           <span>🛎️ {data.lastImportAt == null ? "Todavía no hay órdenes importadas de HotSOS." : `Las órdenes de HotSOS se importaron hace ${horasDesdeImport >= 24 ? Math.floor(horasDesdeImport / 24) + " día(s)" : Math.floor(horasDesdeImport) + " h"} — puede que haya órdenes nuevas.`}</span>
           <button onClick={() => onNavigate("hotsos-import")} className="text-xs font-semibold underline">Importar ahora</button>
         </div>
@@ -18252,7 +18513,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
                 size={96} stroke={16}
                 segments={[
                   { name: "Ocupadas", value: dashboard.occupiedCount, color: "#3b82f6" },
-                  { name: "Desocupadas", value: rooms.length - dashboard.occupiedCount, color: "#d1d5db" },
+                  { name: "Desocupadas", value: rooms.length - dashboard.occupiedCount, color: C.gray },
                 ]}
                 centerValue={dashboard.occupiedCount} centerLabel="ocupadas"
               />
@@ -18266,7 +18527,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Check IN</span><b style={{ color: C.ink }}>{dashboard.checkInCount}</b></div>
                 <div className="flex justify-between"><span style={{ color: C.inkSoft }}>Check OUT</span><b style={{ color: C.ink }}>{dashboard.checkOutCount}</b></div>
-                <div className="flex justify-between"><span style={{ color: C.purple || "#9333ea" }}>VIP</span><b style={{ color: C.ink }}>{dashboard.vipCount}</b></div>
+                <div className="flex justify-between"><span style={{ color: C.purple }}>VIP</span><b style={{ color: C.ink }}>{dashboard.vipCount}</b></div>
               </div>
             </div>
             <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
@@ -18394,12 +18655,12 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-1.5">
                       <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>
-                      <Users size={14} color={r.Occupied && r.Occupied !== "0" ? "#3b82f6" : "#9ca3af"} title={r.Occupied && r.Occupied !== "0" ? "Ocupada" : "Desocupada"} />
+                      <Users size={14} color={r.Occupied && r.Occupied !== "0" ? C.blue : C.gray} title={r.Occupied && r.Occupied !== "0" ? "Ocupada" : "Desocupada"} />
                     </div>
                     <div className="flex items-center gap-1 flex-wrap justify-end">
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
                     {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length > 0 && (
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#ede9fe", color: "#6d28d9" }}
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: C.purpleSoft, color: C.purple }}
                         title={(hotsosByRoom[String(r.RoomName || "").trim()] || []).map(t => t.titulo).join(" · ")}>
                         🛎️ {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length} orden(es)
                       </span>
@@ -18526,7 +18787,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
                     const changed = prev && prev.profileName !== rec.profileName;
                     const tone = hvacStateTone(rec.profileName);
                     return (
-                      <div key={i} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: changed ? (C.amberSoft || "#fef3c7") : (i % 2 === 0 ? "transparent" : (C.panelSoft || "#f8fafc")) }}>
+                      <div key={i} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: changed ? C.amberSoft : (i % 2 === 0 ? "transparent" : C.panelSoft) }}>
                         <span style={{ color: C.inkSoft }}>{rec.dateTime}</span>
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{rec.profileName}</span>
                         <span style={{ color: C.ink }}>{rec.temperature != null ? `${rec.temperature}°F` : "—"} / set {rec.userSetPoint != null ? `${rec.userSetPoint}°F` : "—"}</span>

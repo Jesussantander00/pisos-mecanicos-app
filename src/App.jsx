@@ -9723,6 +9723,17 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [repeatLastBusy, setRepeatLastBusy] = useState(false);
 
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("pm-local:task-draft");
+      if (!raw) return;
+      sessionStorage.removeItem("pm-local:task-draft");
+      const d = JSON.parse(raw);
+      if (d && d.equipoId) { setForm(f => ({ ...f, equipoId: d.equipoId, titulo: d.titulo || f.titulo })); setShowNew(true); setNewTab("manual"); }
+    } catch { /* noop */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const usernames = Object.keys(accounts || {});
   // Quién está trabajando en este preciso momento, según la hora real de entrada/salida de cada
   // quien en el Horario Mensual — esta es la asignación por defecto (Asignación Inteligente por
@@ -11590,7 +11601,15 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
 
   return (
     <div>
-      <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a {equipo.sistema}</Button>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Volver a {equipo.sistema}</Button>
+        {!viewerLocked && (
+          <Button size="sm" onClick={() => {
+            try { sessionStorage.setItem("pm-local:task-draft", JSON.stringify({ equipoId: equipo.id, titulo: `Revisar ${equipo.nombre}` })); } catch { /* noop */ }
+            window.dispatchEvent(new CustomEvent("pm-go-view", { detail: "tasks" }));
+          }}>➕ Nueva tarea para este equipo</Button>
+        )}
+      </div>
       <div className="flex items-start gap-3 mt-2 mb-4">
         {equipo.fotoMaestra ? (
           <img loading="lazy" src={equipo.fotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />
@@ -15291,6 +15310,9 @@ function DriveArchivePanel({ tasks, accounts }) {
   const [log, setLog] = useState([]);
   const [err, setErr] = useState(null);
   const [needReload, setNeedReload] = useState(false);
+  const [folders, setFolders] = useState(() => { try { return JSON.parse(localStorage.getItem("pm-local:drive-folders") || "{}"); } catch { return {}; } });
+  const rememberFolder = (key, id) => setFolders(f => { const n = { ...f, [key]: id }; try { localStorage.setItem("pm-local:drive-folders", JSON.stringify(n)); } catch { /* noop */ } return n; });
+  const driveLink = (id) => `https://drive.google.com/drive/folders/${id}`;
   const [repFrom, setRepFrom] = useState(() => monthKeyOf(Date.now() - 62 * 86400000));
   const [repTo, setRepTo] = useState(() => monthKeyOf(Date.now()));
   const tokenRef = useRef({ token: null, at: 0 });
@@ -15325,6 +15347,7 @@ function DriveArchivePanel({ tasks, accounts }) {
       let token = await getToken();
       const root = await driveFolder(token, "QuinTech", null);
       const mf = await driveFolder(token, ym, root);
+      rememberFolder("root", root); rememberFolder(ym, mf);
       const ff = await driveFolder(token, "Fotos", mf);
       const vf = await driveFolder(token, "Videos", mf);
       const done = [];
@@ -15377,6 +15400,27 @@ function DriveArchivePanel({ tasks, accounts }) {
     setBusy(false);
   };
 
+  /** Respaldo del texto (tareas, seguimientos, mantenimientos) en Drive, en QuinTech/Respaldos. Las fotos no entran aquí. */
+  const backupText = async () => {
+    setBusy(true); setErr(null);
+    try {
+      say("Respaldo de texto: conectando con Drive…");
+      let token = await getToken();
+      const root = await driveFolder(token, "QuinTech", null);
+      const rf = await driveFolder(token, "Respaldos", root);
+      rememberFolder("root", root); rememberFolder("respaldos", rf);
+      say("  Generando el Excel con todo lo escrito…");
+      const wb = await buildActivityReport("2020-01", monthKeyOf(Date.now()), tasks, accounts);
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      token = await getToken();
+      const name = `Respaldo texto ${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await driveUpload(token, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name, rf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      say(`✓ Guardado en Drive: QuinTech/Respaldos/${name}`);
+      showToast("✓ Respaldo guardado en Drive.", true);
+    } catch (e) { setErr(e.message || "No se pudo guardar el respaldo."); say(`✗ ${e.message || "falló"}`); }
+    setBusy(false);
+  };
+
   const downloadReport = async () => {
     setBusy(true); setErr(null);
     try {
@@ -15399,6 +15443,8 @@ function DriveArchivePanel({ tasks, accounts }) {
       <div className="flex flex-wrap gap-2 mb-3">
         <Button size="sm" variant="ghost" disabled={busy} onClick={testConn}>Probar conexión</Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={doScan}>{busy ? "Trabajando…" : "Buscar qué se puede archivar"}</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={backupText}>Respaldar el texto a Drive</Button>
+        {folders.root && <a href={driveLink(folders.root)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-xs font-semibold px-2" style={{ color: C.amber, minHeight: 36 }}>Abrir carpeta en Drive ↗</a>}
       </div>
       {err && <div className="text-xs mb-2" style={{ color: C.red }}>{err}</div>}
       {scan && (
@@ -15406,7 +15452,7 @@ function DriveArchivePanel({ tasks, accounts }) {
           <div className="text-xs mb-2" style={{ color: C.inkSoft }}>{scan.total} archivos en total · {scan.recent} recientes (se quedan en la app).</div>
           {scan.months.length === 0 ? <div className="text-xs" style={{ color: C.green }}>No hay nada con más de {DRIVE_KEEP_DAYS} días. 👍</div> : scan.months.map(mo => (
             <div key={mo.ym} className="flex items-center justify-between gap-2 text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
-              <span>{mo.ym} · 📷 {mo.fotos} · 🎬 {mo.videos}</span>
+              <span>{mo.ym} · 📷 {mo.fotos} · 🎬 {mo.videos} · ≈ {Math.max(1, Math.round(mo.fotos * 0.15 + mo.videos * 20))} MB</span>
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => archiveMonth(mo)}>Archivar este mes</Button>
             </div>
           ))}
@@ -19116,6 +19162,240 @@ function PreventiveGoalCard({ mttoLog, equipos, onOpenEquipo }) {
         </div>
       )}
     </div>
+  );
+}
+
+
+/* ============================================================
+   INSIGHTS DE INICIO: equipos reincidentes, tareas sin movimiento, resumen de turno,
+   costos del año por equipo y gráficas del mes.
+   ============================================================ */
+function lastTaskActivityMs(t) {
+  const c = (t.comments || []).reduce((m, x) => Math.max(m, new Date(x.at || 0).getTime() || 0), 0);
+  return Math.max(new Date(t.updatedAt || 0).getTime() || 0, new Date(t.createdAt || t.assignedAt || 0).getTime() || 0, c);
+}
+
+/** Equipos con 3 o más fallas (correctivos o tareas) en los últimos 60 días: mejor cambiarlos que seguir reparando. */
+function ReincidentCard({ mttoLog, equipos, tasks, onOpenEquipo }) {
+  const since = Date.now() - 60 * 86400000;
+  const count = {};
+  (mttoLog || []).forEach(r => { if (r.tipo === "correctivo" && new Date(r.fecha).getTime() >= since) count[r.equipoId] = (count[r.equipoId] || 0) + 1; });
+  (tasks || []).forEach(t => {
+    if (!t.equipoId || t.origen === "preventivo-hab" || t.origen === "plantilla") return;
+    if (new Date(t.createdAt || 0).getTime() < since) return;
+    count[t.equipoId] = (count[t.equipoId] || 0) + 1;
+  });
+  const list = (equipos || []).filter(e => e.active !== false && (count[e.id] || 0) >= 3)
+    .map(e => ({ e, n: count[e.id] })).sort((a, b) => b.n - a.n).slice(0, 6);
+  if (list.length === 0) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.redSoft, border: `1px solid ${C.red}` }}>
+      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}>🔁 Equipos que fallan seguido ({list.length})</div>
+      <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>3 o más fallas en 60 días. Puede convenir cambiarlos en vez de seguir reparando.</div>
+      {list.map(({ e, n }) => (
+        <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+          <span className="truncate">{e.nombre}</span>
+          <span className="shrink-0 font-semibold" style={{ color: C.red }}>{n} fallas</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Tareas abiertas que llevan 3 o más días sin ningún movimiento (cambio, comentario). */
+function StaleTasksCard({ tasks, currentUser, isAdmin, nameOf, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const now = Date.now();
+  const list = (tasks || []).filter(t => {
+    if (normalizeTaskState(t.estado) === "finalizada" || isTaskSnoozed(t)) return false;
+    if (!isAdmin && t.asignadoA !== currentUser) return false;
+    return (now - lastTaskActivityMs(t)) / 86400000 >= 3;
+  }).map(t => ({ t, d: Math.floor((now - lastTaskActivityMs(t)) / 86400000) })).sort((a, b) => b.d - a.d);
+  if (list.length === 0) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-semibold" style={{ color: C.ink }}>⏳ {isAdmin ? "Tareas sin movimiento" : "Tus tareas sin movimiento"} ({list.length})</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && list.slice(0, 10).map(({ t, d }) => (
+        <button key={t.id} onClick={() => onNavigate("tasks")} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+          <span className="truncate">{t.titulo}{isAdmin && t.asignadoA ? ` · ${nameOf(t.asignadoA)}` : ""}</span>
+          <span className="shrink-0 font-semibold" style={{ color: C.amber }}>{d} días</span>
+        </button>
+      ))}
+      {open && list.length > 10 && <div className="text-[11px] pt-1" style={{ color: C.gray }}>+{list.length - 10} más en Tareas</div>}
+    </div>
+  );
+}
+
+/** Resumen de entrega de turno: lo cerrado, lo creado y lo pendiente de las últimas horas, listo para copiar o mandar. */
+function ShiftSummaryCard({ tasks, mttoLog, nameOf }) {
+  const [open, setOpen] = useState(false);
+  const [hours, setHours] = useState(8);
+  const [text, setText] = useState("");
+  const build = () => {
+    const since = Date.now() - hours * 3600000;
+    const inWin = (iso) => iso && new Date(iso).getTime() >= since;
+    const closed = (tasks || []).filter(t => normalizeTaskState(t.estado) === "finalizada" && inWin(t.finishedAt));
+    const created = (tasks || []).filter(t => inWin(t.createdAt));
+    const pend = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t));
+    const pendAlta = pend.filter(t => t.prioridad === "alta" || t.prioridad === "critica");
+    const mtto = (mttoLog || []).filter(r => inWin(r.fecha));
+    const L = [];
+    L.push(`*Resumen de turno* — últimas ${hours} h (${fmtDT(new Date().toISOString())})`);
+    L.push("");
+    L.push(`✅ Cerradas: ${closed.length}`);
+    closed.slice(0, 12).forEach(t => L.push(`  • ${t.titulo}${t.asignadoA ? ` (${nameOf(t.asignadoA)})` : ""}`));
+    L.push(`🆕 Nuevas: ${created.length}`);
+    L.push(`🛠️ Mantenimientos registrados: ${mtto.length}`);
+    L.push("");
+    L.push(`⏳ Pendientes abiertas: ${pend.length}${pendAlta.length ? ` (${pendAlta.length} de prioridad alta)` : ""}`);
+    pendAlta.slice(0, 10).forEach(t => L.push(`  🔴 ${t.titulo}${t.asignadoA ? ` — ${nameOf(t.asignadoA)}` : ""}`));
+    pend.filter(t => !pendAlta.includes(t)).slice(0, 8).forEach(t => L.push(`  • ${t.titulo}${t.asignadoA ? ` — ${nameOf(t.asignadoA)}` : ""}`));
+    setText(L.join("\n"));
+  };
+  const copy = async () => { try { await navigator.clipboard.writeText(text); showToast("✓ Resumen copiado.", true); } catch { showToast("No se pudo copiar — selecciona el texto a mano.", false); } };
+  const wa = () => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <button onClick={() => { setOpen(v => !v); if (!open && !text) build(); }} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-bold" style={{ color: C.ink }}>📋 Resumen de turno</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Generar ▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="text-xs" style={{ color: C.inkSoft }}>Últimas</span>
+            <select value={hours} onChange={e => setHours(Number(e.target.value))} className="text-xs border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+              {[4, 8, 12, 24].map(h => <option key={h} value={h}>{h} horas</option>)}
+            </select>
+            <Button size="sm" variant="ghost" onClick={build}>Actualizar</Button>
+          </div>
+          <textarea readOnly value={text} rows={10} className="w-full text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+          <div className="flex gap-2 mt-2">
+            <Button size="sm" onClick={copy}>Copiar</Button>
+            <Button size="sm" variant="ghost" onClick={wa}>Enviar por WhatsApp</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Costos del año por equipo y por sistema, según lo anotado en los mantenimientos. */
+function YearCostCard({ mttoLog, equipos, onOpenEquipo }) {
+  const [open, setOpen] = useState(false);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const money = (n) => "$" + Math.round(n).toLocaleString("es-CO");
+  const rows = useMemo(() => {
+    const byEq = {};
+    let total = 0;
+    (mttoLog || []).forEach(r => {
+      const c = Number(r.costo) || 0;
+      if (!c || new Date(r.fecha).getFullYear() !== year) return;
+      byEq[r.equipoId] = (byEq[r.equipoId] || 0) + c; total += c;
+    });
+    const list = Object.entries(byEq).map(([id, v]) => ({ id, v, e: (equipos || []).find(x => x.id === id) })).sort((a, b) => b.v - a.v);
+    return { list, total };
+  }, [mttoLog, equipos, year]);
+  const years = [...new Set((mttoLog || []).map(r => new Date(r.fecha).getFullYear()).filter(y => y > 2000))];
+  if (!years.includes(new Date().getFullYear())) years.push(new Date().getFullYear());
+  years.sort((a, b) => b - a);
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-bold" style={{ color: C.ink }}>💰 Costos de mantenimiento del año</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2">
+          <div className="flex items-center gap-2 mb-2">
+            <select value={year} onChange={e => setYear(Number(e.target.value))} className="text-xs border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <span className="text-sm font-bold" style={{ color: C.ink }}>Total: {money(rows.total)}</span>
+          </div>
+          {rows.list.length === 0 ? <div className="text-xs" style={{ color: C.inkSoft }}>No hay costos anotados en {year}. Se llenan al registrar un mantenimiento con valor.</div> : rows.list.slice(0, 15).map(({ id, v, e }) => (
+            <button key={id} onClick={() => e && onOpenEquipo(id)} className="w-full text-left text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+              <div className="flex justify-between gap-2"><span className="truncate">{e?.nombre || "Equipo borrado"}</span><span className="shrink-0 font-semibold">{money(v)}</span></div>
+              <div className="h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: C.bg }}><div className="h-full" style={{ width: `${Math.max(3, Math.round((v / rows.list[0].v) * 100))}%`, background: C.amber }} /></div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Gráficas del mes: tareas cerradas por semana, tiempo promedio de cierre y equipos con más fallas. */
+function MonthChartsCard({ tasks, mttoLog, equipos }) {
+  const [open, setOpen] = useState(false);
+  const [ym, setYm] = useState(() => monthKeyOf(Date.now()));
+  const data = useMemo(() => {
+    const inMonth = (iso) => iso && monthKeyOf(new Date(iso).getTime()) === ym;
+    const closed = (tasks || []).filter(t => normalizeTaskState(t.estado) === "finalizada" && inMonth(t.finishedAt));
+    const weeks = [0, 0, 0, 0, 0];
+    closed.forEach(t => { const d = new Date(t.finishedAt).getDate(); weeks[Math.min(4, Math.floor((d - 1) / 7))]++; });
+    const hrs = closed.map(t => (new Date(t.finishedAt) - new Date(t.createdAt || t.assignedAt || t.finishedAt)) / 3600000).filter(h => h >= 0 && isFinite(h));
+    const avg = hrs.length ? hrs.reduce((a, b) => a + b, 0) / hrs.length : 0;
+    const fallas = {};
+    (mttoLog || []).forEach(r => { if (r.tipo === "correctivo" && inMonth(r.fecha)) fallas[r.equipoId] = (fallas[r.equipoId] || 0) + 1; });
+    const top = Object.entries(fallas).map(([id, n]) => ({ n, nombre: (equipos || []).find(e => e.id === id)?.nombre || "Equipo borrado" })).sort((a, b) => b.n - a.n).slice(0, 5);
+    const created = (tasks || []).filter(t => inMonth(t.createdAt)).length;
+    return { weeks, closed: closed.length, avg, top, created };
+  }, [tasks, mttoLog, equipos, ym]);
+  const monthOpts = (() => { const out = []; const d = new Date(); for (let i = 0; i < 12; i++) { out.push(monthKeyOf(d.getTime())); d.setMonth(d.getMonth() - 1); } return out; })();
+  const maxW = Math.max(1, ...data.weeks), maxT = Math.max(1, ...data.top.map(x => x.n));
+  const avgTxt = data.avg < 1 ? `${Math.round(data.avg * 60)} min` : data.avg < 48 ? `${data.avg.toFixed(1)} h` : `${(data.avg / 24).toFixed(1)} días`;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-bold" style={{ color: C.ink }}>📊 Resumen del mes con gráficas</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2">
+          <select value={ym} onChange={e => setYm(e.target.value)} className="text-xs border rounded-md px-2 outline-none mb-3" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+            {monthOpts.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+            <div className="rounded-lg p-2" style={{ background: C.bg }}><div className="text-lg font-bold" style={{ color: C.ink }}>{data.created}</div><div className="text-[10px]" style={{ color: C.inkSoft }}>creadas</div></div>
+            <div className="rounded-lg p-2" style={{ background: C.bg }}><div className="text-lg font-bold" style={{ color: C.green }}>{data.closed}</div><div className="text-[10px]" style={{ color: C.inkSoft }}>cerradas</div></div>
+            <div className="rounded-lg p-2" style={{ background: C.bg }}><div className="text-lg font-bold" style={{ color: C.ink }}>{data.closed ? avgTxt : "—"}</div><div className="text-[10px]" style={{ color: C.inkSoft }}>cierre promedio</div></div>
+          </div>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.ink }}>Cerradas por semana</div>
+          <div className="flex items-end gap-2 mb-3" style={{ height: 80 }}>
+            {data.weeks.map((n, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
+                <div className="text-[10px] mb-0.5" style={{ color: C.inkSoft }}>{n}</div>
+                <div className="w-full rounded-t" style={{ height: `${Math.max(2, Math.round((n / maxW) * 56))}px`, background: C.amber }} />
+                <div className="text-[10px] mt-0.5" style={{ color: C.gray }}>S{i + 1}</div>
+              </div>
+            ))}
+          </div>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.ink }}>Equipos con más fallas</div>
+          {data.top.length === 0 ? <div className="text-xs" style={{ color: C.inkSoft }}>Sin correctivos registrados este mes.</div> : data.top.map(x => (
+            <div key={x.nombre} className="mb-1.5">
+              <div className="flex justify-between text-xs" style={{ color: C.ink }}><span className="truncate">{x.nombre}</span><span className="font-semibold">{x.n}</span></div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.bg }}><div className="h-full" style={{ width: `${Math.round((x.n / maxT) * 100)}%`, background: C.red }} /></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HomeInsights({ tasks, mttoLog, equipos, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo }) {
+  return (
+    <>
+      {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
+      <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
+      <ShiftSummaryCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} />
+      {isAdmin && <MonthChartsCard tasks={tasks} mttoLog={mttoLog} equipos={equipos} />}
+      {isAdmin && <YearCostCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
+    </>
   );
 }
 
@@ -23484,6 +23764,11 @@ export default function App() {
   // porqué. Cambiar de una sección a otra sin pasar por Inicio no apila más "atrases": basta un
   // solo toque de atrás para volver a Inicio desde donde sea.
   useBackClose(view !== "home", () => setView("home"));
+  useEffect(() => {
+    const h = (e) => { if (e?.detail) setView(e.detail); };
+    window.addEventListener("pm-go-view", h);
+    return () => window.removeEventListener("pm-go-view", h);
+  }, [setView]);
   const [nowClock, setNowClock] = useState(() => new Date());
   // Detecta cuándo hay una versión nueva de la app lista para usar (así no hace falta borrar
   // e instalar de nuevo cada vez que se sube una actualización) — revisa cada 30 min mientras
@@ -26432,6 +26717,9 @@ export default function App() {
           {view === "home" && isAdmin && <StorageAlert onNavigate={setView} />}
           {view === "home" && isAdmin && <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && isAdmin && <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
+          {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} currentUser={currentUser} isAdmin={isAdmin}
+            nameOf={(u) => profiles?.[u]?.display_name || u} onNavigate={setView}
+            onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
           {view === "home" && <SetupGuideCard onEnablePush={enablePushNotifications} userKey={currentUser} />}
           {view === "home" && (

@@ -101,7 +101,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel = "Sí, conti
   );
 }
 
-export function PcbBackground({ variant = "login" }) {
+function PcbTile({ variant = "login" }) {
   const cfg = PCB_CONFIGS[variant] || PCB_CONFIGS.login;
   const id = "pcb" + variant;
   return (
@@ -111,12 +111,16 @@ export function PcbBackground({ variant = "login" }) {
         @keyframes pcbNode{0%,100%{opacity:.5}50%{opacity:1}}
         @keyframes pcbBlink{0%,100%{opacity:.25}50%{opacity:1}}
         @keyframes pcbScan{0%{transform:translateY(-20%)}100%{transform:translateY(120%)}}
+        @keyframes pcbBurst{0%{stroke-dashoffset:100;opacity:1}28%{stroke-dashoffset:0;opacity:1}29%,100%{stroke-dashoffset:0;opacity:0}}
         .pcb-run{stroke-dasharray:5 95;animation:pcbRun 4.8s linear infinite}
+        .pcb-run.pcb-fast{stroke-dasharray:7 93}
+        .pcb-run.pcb-burst{stroke-dasharray:9 91;animation-name:pcbBurst;animation-timing-function:cubic-bezier(.3,.1,.2,1)}
         .pcb-node{animation:pcbNode 3s ease-in-out infinite}
         .pcb-blink{animation:pcbBlink 1.6s steps(2,end) infinite}
         .pcb-auth input::placeholder{color:#8aa2b8}
         .pcb-scan{position:absolute;left:0;right:0;height:160px;background:linear-gradient(180deg,transparent,rgba(56,189,248,.07),transparent);animation:pcbScan 8s linear infinite;pointer-events:none}
-        @media (prefers-reduced-motion:reduce){.pcb-run,.pcb-node,.pcb-blink,.pcb-scan{animation:none}}
+        /* Los circuitos son decoración suave: se mueven siempre (en PC con "animaciones desactivadas" del sistema también), pero más lentos y sin parpadeo brusco. */
+        @media (prefers-reduced-motion:reduce){.pcb-blink{animation-duration:3.2s}.pcb-scan{display:none}}
       `}</style>
       <svg aria-hidden="true" viewBox={cfg.vb} preserveAspectRatio={cfg.par} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
         <defs>
@@ -140,7 +144,7 @@ export function PcbBackground({ variant = "login" }) {
           {cfg.traces.map((d, i) => <path key={"t" + i} d={d} />)}
         </g>
         <g fill="none" stroke="#9be0ff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" filter={`url(#${id}g)`}>
-          {cfg.pulses.map((p, i) => <path key={i} className="pcb-run" pathLength="100" d={p.d} transform={p.tr} style={{ animationDuration: p.t + "s", animationDelay: p.o + "s" }} />)}
+          {cfg.pulses.map((p, i) => { const k = i % 3; return <path key={i} className={"pcb-run" + (k === 1 ? " pcb-fast" : k === 2 ? " pcb-burst" : "")} pathLength="100" d={p.d} transform={p.tr} style={{ animationDuration: (k === 1 ? p.t * 0.45 : k === 2 ? p.t * 1.5 : p.t) + "s", animationDelay: p.o + "s" }} />; })}
         </g>
         {cfg.chips.map(([x, y], i) => <use key={"c" + i} href={`#${id}chip`} x={x} y={y} />)}
         {cfg.res.map(([x, y, r], i) => <use key={"r" + i} href={`#${id}res`} x={x} y={y} transform={r ? `rotate(${r} ${x} ${y})` : undefined} />)}
@@ -156,6 +160,35 @@ export function PcbBackground({ variant = "login" }) {
       </svg>
       {variant === "login" && <div className="pcb-scan" aria-hidden="true" />}
     </>
+  );
+}
+
+/** Fondo de circuitos para cualquier tamaño de pantalla: en celular es una sola placa; en pantallas anchas
+ *  (computador) se repiten varias placas lado a lado para que los circuitos mantengan su tamaño y densidad
+ *  en vez de agrandarse. Todas se mueven igual. */
+export function PcbBackground({ variant = "login" }) {
+  const cfg = PCB_CONFIGS[variant] || PCB_CONFIGS.login;
+  const ref = useRef(null);
+  const [n, setN] = useState(1);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const calc = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (!w || !h) return;
+      setN(Math.max(1, Math.min(6, Math.round(w / (h * (cfg.w / cfg.h))))));
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [cfg.w, cfg.h]);
+  return (
+    <div ref={ref} style={{ position: "absolute", inset: 0, display: "flex", pointerEvents: "none", overflow: "hidden" }} aria-hidden="true">
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} style={{ position: "relative", flex: 1, minWidth: 0, overflow: "hidden", transform: i % 2 ? "scaleX(-1)" : undefined }}><PcbTile variant={variant} /></div>
+      ))}
+    </div>
   );
 }
 

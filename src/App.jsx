@@ -10590,6 +10590,14 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
         )}
       </div>
 
+      {viewMode === "kanban" && isAdmin && !viewerLocked && (
+        <WorkloadStrip tasks={tasks} accounts={accounts} onAssign={(id, u, name) => {
+          const t = (tasks || []).find(x => x.id === id);
+          if (!t || t.asignadoA === u) return;
+          onUpdateTask(id, { asignadoA: u });
+          showToast(`"${t.titulo}" pasó a ${name}.`, true);
+        }} />
+      )}
       {viewMode === "kanban" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {KANBAN_COLUMNS.map(col => {
@@ -11784,6 +11792,8 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
           <p className="text-xs" style={{ color: C.gray }}>Sin video guardado — {isAdmin ? "agrega el enlace de un video corto mostrando cómo se hace el mantenimiento." : "no hay ninguno cargado todavía."}</p>
         ))}
       </div>
+
+      <EquipoPartsCard records={records} invItems={invItems} />
 
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <button onClick={() => setShowTimeline(v => !v)} className="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft, minHeight: 32 }}>
@@ -18265,6 +18275,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
   const [search, setSearch] = useState("");
   const [historyRoom, setHistoryRoom] = useState(null); // { RoomID, RoomName }
   const [stateRoom, setStateRoom] = useState(null); // { RoomID, RoomName, choice }
+  const [vipTask, setVipTask] = useState(true); // al poner VIP, crear una tarea de revisión previa con checklist
   const [busyRoomId, setBusyRoomId] = useState(null);
   const [flash, setFlash] = useState(null);
   const [expandedRoomId, setExpandedRoomId] = useState(null);
@@ -18430,7 +18441,12 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
       if (r.Occupied && r.Occupied !== "0") byFloor[floor].occupied += 1;
     }
     const floors = Object.values(byFloor).sort((a, b) => a.floor.localeCompare(b.floor, undefined, { numeric: true }));
-    return { occupiedCount, vipCount, checkInCount, checkOutCount, lowBattery, withAlerts, tempIssues, floors };
+    const checkoutActive = rooms
+      .filter(r => (r.ProfileName || "").includes("Check OUT") && r.ProfileName !== "VIP")
+      .map(r => ({ r, presence: !!(r.Occupied && r.Occupied !== "0"), watts: Number(r.Watts) || 0 }))
+      .filter(x => x.presence || x.watts >= 100)
+      .sort((a, b) => b.watts - a.watts);
+    return { occupiedCount, vipCount, checkInCount, checkOutCount, lowBattery, withAlerts, tempIssues, floors, checkoutActive };
   }, [rooms]);
 
   const openHistory = async (room) => {
@@ -18464,7 +18480,20 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
       });
       const data = await resp.json();
       if (!resp.ok || data.ok === false) throw new Error(data.message || "Telkonet no confirmó el cambio.");
-      setFlash({ ok: true, msg: `${stateRoom.RoomName}: estado cambiado a ${stateRoom.choice.name}.` });
+      let vipMsg = "";
+      if (stateRoom.choice.name === "VIP" && vipTask && onCreateTasksBatch) {
+        try {
+          const room = String(stateRoom.RoomName || "").trim();
+          await onCreateTasksBatch([{
+            titulo: `Revisión VIP hab. ${room}`,
+            descripcion: `Habitación ${room} puesta en VIP desde TelkHab — revisar el aire y el termostato antes de la llegada del huésped.`,
+            prioridad: "media", asignadoA: "", origen: "vip-hab", roomKey: room,
+            checklist: ["Probar que el aire enfríe y el termostato responda", "Revisar que no haya goteo ni ruido raro", "Limpiar o revisar el filtro", "Confirmar temperatura de confort (set point)", "Probar el control remoto o la pantalla"],
+          }]);
+          vipMsg = " Se creó la tarea de revisión VIP.";
+        } catch { vipMsg = " (No se pudo crear la tarea de revisión.)"; }
+      }
+      setFlash({ ok: true, msg: `${stateRoom.RoomName}: estado cambiado a ${stateRoom.choice.name}.${vipMsg}` });
       setStateRoom(null);
       await load();
     } catch (e) {
@@ -18604,6 +18633,22 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
                     <span style={{ color: C.ink }}>{r.RoomName}</span>
                     <span style={{ color: C.inkSoft }}>{r.Temperature}°F / set {Number(r.UserSetPoint)}°F</span>
                     <span className="font-semibold" style={{ color: C.red }}>Δ {delta.toFixed(1)}°F</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dashboard.checkoutActive.length > 0 && (
+            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>Check OUT con presencia o consumo ({dashboard.checkoutActive.length})</div>
+              <p className="text-[11px] mb-2" style={{ color: C.gray }}>Habitaciones que figuran vacías (Check OUT) pero detectan presencia o consumo de energía — pueden estar gastando aire sin necesidad.</p>
+              <div className="space-y-1">
+                {dashboard.checkoutActive.slice(0, 20).map(({ r, presence, watts }) => (
+                  <div key={r.RoomID} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.amberSoft }}>
+                    <span style={{ color: C.ink }}>{r.RoomName}</span>
+                    <span style={{ color: C.inkSoft }}>{r.Temperature != null ? `${r.Temperature}°F / set ${Number(r.UserSetPoint)}°F` : ""}</span>
+                    <span className="font-semibold" style={{ color: C.amber }}>{[presence ? "presencia" : "", watts >= 100 ? `${Math.round(watts)} W` : ""].filter(Boolean).join(" · ")}</span>
                   </div>
                 ))}
               </div>
@@ -18782,6 +18827,12 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
               Vas a cambiar la habitación <b>{stateRoom.RoomName}</b> de <b>{stateRoom.current || "—"}</b> a <b>{stateRoom.choice.name}</b>.
               Esto cambia de verdad el aire acondicionado de esa habitación — confirma solo si estás seguro.
             </p>
+            {stateRoom.choice.name === "VIP" && onCreateTasksBatch && (
+              <label className="flex items-start gap-2 text-xs mb-4 cursor-pointer" style={{ color: C.ink }}>
+                <input type="checkbox" checked={vipTask} onChange={e => setVipTask(e.target.checked)} style={{ marginTop: 2 }} />
+                <span>Crear una tarea de revisión previa con checklist (aire, termostato, filtro, goteo) para que quede lista antes del huésped.</span>
+              </label>
+            )}
             <div className="flex items-center gap-2">
               <Button onClick={confirmSetState} disabled={busyRoomId === stateRoom.RoomID}>
                 {busyRoomId === stateRoom.RoomID ? "Cambiando…" : "Sí, cambiar"}
@@ -19166,6 +19217,68 @@ function PreventiveGoalCard({ mttoLog, equipos, onOpenEquipo }) {
 }
 
 
+
+/** Carga de trabajo por técnico (tareas abiertas) — y se puede soltar una tarjeta del tablero sobre una persona para reasignarla. */
+function WorkloadStrip({ tasks, accounts, onAssign }) {
+  const [over, setOver] = useState(null);
+  const open = {};
+  (tasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t)) open[t.asignadoA] = (open[t.asignadoA] || 0) + 1; });
+  const people = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia; })
+    .map(u => ({ u, n: open[u] || 0, name: accounts[u]?.display_name || u })).sort((a, b) => b.n - a.n);
+  if (people.length === 0) return null;
+  const max = Math.max(1, ...people.map(p => p.n));
+  return (
+    <div className="rounded-xl p-2.5 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Carga por técnico · arrastra una tarjeta sobre una persona para reasignarla</div>
+      <div className="flex gap-2 flex-wrap">
+        {people.map(p => (
+          <div key={p.u}
+            onDragOver={e => { e.preventDefault(); setOver(p.u); }}
+            onDragLeave={() => setOver(o => (o === p.u ? null : o))}
+            onDrop={e => { e.preventDefault(); setOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) onAssign(id, p.u, p.name); }}
+            className="rounded-lg px-2.5 py-1.5" style={{ minWidth: 112, background: over === p.u ? C.amberSoft : C.bg, border: `1px solid ${over === p.u ? C.amber : C.line}` }}>
+            <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.ink }}><span className="truncate font-semibold">{p.name.split(" ")[0]}</span><b>{p.n}</b></div>
+            <div className="h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: C.line }}><div className="h-full" style={{ width: `${Math.round((p.n / max) * 100)}%`, background: p.n >= 8 ? C.red : p.n >= 5 ? C.amber : C.green }} /></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Repuestos que usa cada equipo según sus mantenimientos, con lo que hay hoy en bodega. */
+function EquipoPartsCard({ records, invItems }) {
+  const [open, setOpen] = useState(false);
+  const rows = useMemo(() => {
+    const by = {};
+    (records || []).forEach(r => (r.repuestos || []).forEach(p => {
+      if (!p.itemId) return;
+      const o = (by[p.itemId] = by[p.itemId] || { itemId: p.itemId, usado: 0, veces: 0 });
+      o.usado += Number(p.cantidad) || 0; o.veces += 1;
+    }));
+    return Object.values(by).map(o => ({ ...o, it: (invItems || []).find(i => i.id === o.itemId) })).sort((a, b) => b.veces - a.veces);
+  }, [records, invItems]);
+  if (rows.length === 0) return null;
+  const faltan = rows.filter(x => x.it && x.it.minThreshold > 0 ? x.it.quantity <= x.it.minThreshold : x.it && x.it.quantity <= 0).length;
+  return (
+    <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft, minHeight: 32 }}>
+        <span>Repuestos de este equipo ({rows.length}){faltan > 0 ? ` · ⚠️ ${faltan} bajos` : ""}</span><span>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && rows.map(x => {
+        const bajo = x.it && (x.it.minThreshold > 0 ? x.it.quantity <= x.it.minThreshold : x.it.quantity <= 0);
+        return (
+          <div key={x.itemId} className="flex items-center justify-between gap-2 text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+            <span className="truncate">{x.it ? x.it.name : "Repuesto ya no está en el inventario"}</span>
+            <span className="shrink-0" style={{ color: C.inkSoft }}>usado {x.usado} ({x.veces} {x.veces === 1 ? "vez" : "veces"})</span>
+            <span className="shrink-0 font-semibold" style={{ color: bajo ? C.red : C.green }}>{x.it ? `bodega: ${x.it.quantity}${x.it.unit ? " " + x.it.unit : ""}` : "—"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ============================================================
    INSIGHTS DE INICIO: equipos reincidentes, tareas sin movimiento, resumen de turno,
    costos del año por equipo y gráficas del mes.
@@ -19387,12 +19500,166 @@ function MonthChartsCard({ tasks, mttoLog, equipos }) {
   );
 }
 
-function HomeInsights({ tasks, mttoLog, equipos, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo }) {
+
+/** Buscador global: tareas, equipos, repuestos y habitaciones desde una sola caja. */
+function GlobalSearchCard({ tasks, equipos, invItems, onNavigate, onOpenEquipo }) {
+  const [q, setQ] = useState("");
+  const n = normalizeSearchText(q.trim());
+  const res = useMemo(() => {
+    if (n.length < 2) return null;
+    const hit = (v) => normalizeSearchText(String(v || "")).includes(n);
+    return {
+      tareas: (tasks || []).filter(t => hit(t.titulo) || hit(t.descripcion) || hit(t.roomKey)).slice(0, 5),
+      equipos: (equipos || []).filter(e => e.active !== false && (hit(e.nombre) || hit(e.sistema) || hit(e.marca) || hit(e.modelo) || hit(e.serial))).slice(0, 5),
+      repuestos: (invItems || []).filter(i => hit(i.name) || hit(i.sku)).slice(0, 5),
+      room: /^\d{3,5}$/.test(q.trim()) ? q.trim() : null,
+    };
+  }, [n, tasks, equipos, invItems, q]);
+  const total = res ? res.tareas.length + res.equipos.length + res.repuestos.length + (res.room ? 1 : 0) : 0;
+  const rowCls = "w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left";
+  const rowSt = { borderColor: C.line, color: C.ink, minHeight: 36 };
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 Buscar en todo: tareas, equipos, repuestos, habitaciones…"
+        className="w-full text-sm border rounded-md px-3 outline-none" style={{ minHeight: 40, borderColor: C.line, background: C.bg, color: C.ink }} />
+      {res && total === 0 && <div className="text-xs mt-2" style={{ color: C.inkSoft }}>No encontré nada con "{q.trim()}".</div>}
+      {res && res.room && <button onClick={() => onNavigate("room-history")} className={rowCls} style={rowSt}><span>🛏️ Habitación {res.room}</span><span style={{ color: C.amber }}>Ver historial →</span></button>}
+      {res && res.tareas.length > 0 && <div className="text-[10px] font-semibold uppercase mt-2" style={{ color: C.gray }}>Tareas</div>}
+      {res && res.tareas.map(t => <button key={t.id} onClick={() => onNavigate("tasks")} className={rowCls} style={rowSt}><span className="truncate">{t.titulo}</span><span className="shrink-0" style={{ color: C.gray }}>{TASK_STATES.find(x => x.code === normalizeTaskState(t.estado))?.label || ""}</span></button>)}
+      {res && res.equipos.length > 0 && <div className="text-[10px] font-semibold uppercase mt-2" style={{ color: C.gray }}>Equipos</div>}
+      {res && res.equipos.map(e => <button key={e.id} onClick={() => onOpenEquipo(e.id)} className={rowCls} style={rowSt}><span className="truncate">{e.nombre}</span><span className="shrink-0" style={{ color: C.gray }}>{e.sistema}</span></button>)}
+      {res && res.repuestos.length > 0 && <div className="text-[10px] font-semibold uppercase mt-2" style={{ color: C.gray }}>Repuestos</div>}
+      {res && res.repuestos.map(i => <button key={i.id} onClick={() => onNavigate("inventory")} className={rowCls} style={rowSt}><span className="truncate">{i.name}{i.sku ? ` · ${i.sku}` : ""}</span><span className="shrink-0" style={{ color: i.minThreshold > 0 && i.quantity <= i.minThreshold ? C.red : C.gray }}>{i.quantity} {i.unit || ""}</span></button>)}
+    </div>
+  );
+}
+
+/** Modo emergencia: una pantalla simple con letras grandes para reportar algo urgente en segundos. */
+function EmergencyButton({ tasks, currentUser, onCreateTask, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const [lugar, setLugar] = useState("");
+  const [que, setQue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mine = (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada" && (t.prioridad === "alta" || t.prioridad === "critica"));
+  const send = async () => {
+    if (!que.trim()) { showToast("Cuenta en pocas palabras qué pasa.", false); return; }
+    setBusy(true);
+    try {
+      await onCreateTask({ titulo: `🚨 EMERGENCIA — ${lugar.trim() || "sin lugar"}: ${que.trim().slice(0, 80)}`, descripcion: `${que.trim()}\n\nLugar: ${lugar.trim() || "no indicado"}. Reportada desde el modo emergencia.`, prioridad: "alta", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null, etiquetas: ["emergencia"] });
+      showToast("🚨 Emergencia reportada como tarea de prioridad alta.", true);
+      setOpen(false); setLugar(""); setQue("");
+    } catch (e) { showToast(e.message || "No se pudo reportar — intenta de nuevo.", false); }
+    setBusy(false);
+  };
   return (
     <>
+      <button onClick={() => setOpen(true)} className="w-full rounded-xl mb-4 font-bold text-sm" style={{ minHeight: 48, background: C.redSoft, color: C.red, border: `1px solid ${C.red}` }}>🚨 Emergencia — reportar ya</button>
+      {open && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setOpen(false)}>
+          <div className="rounded-2xl w-full max-w-md p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+            <div className="text-lg font-bold mb-3" style={{ color: C.red }}>🚨 Modo emergencia</div>
+            <input value={lugar} onChange={e => setLugar(e.target.value)} placeholder="¿Dónde? (habitación, piso, cuarto…)" className="w-full text-base border rounded-lg px-3 mb-2 outline-none" style={{ minHeight: 52, borderColor: C.line, background: C.bg, color: C.ink }} />
+            <div className="flex items-start gap-2 mb-3">
+              <textarea value={que} onChange={e => setQue(e.target.value)} rows={3} placeholder="¿Qué pasa?" className="flex-1 text-base border rounded-lg px-3 py-2 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+              <VoiceInputButton onResult={t => setQue(d => (d ? d + " " : "") + t)} />
+            </div>
+            <button onClick={send} disabled={busy} className="w-full rounded-xl font-bold text-base mb-2" style={{ minHeight: 56, background: C.red, color: "#fff", opacity: busy ? 0.6 : 1 }}>{busy ? "Enviando…" : "REPORTAR EMERGENCIA"}</button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => { setOpen(false); onNavigate("tasks"); }} className="rounded-xl text-sm font-semibold" style={{ minHeight: 48, background: C.bg, color: C.ink, border: `1px solid ${C.line}` }}>Mis tareas{mine.length ? ` (${mine.length} críticas)` : ""}</button>
+              <button onClick={() => setOpen(false)} className="rounded-xl text-sm font-semibold" style={{ minHeight: 48, background: C.bg, color: C.inkSoft, border: `1px solid ${C.line}` }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Entrega de turno guiada: se marca qué pendientes pasan al siguiente turno, se escribe una nota y todo queda guardado. */
+function ShiftHandoverCard({ tasks, mttoLog, nameOf, byName }) {
+  const [open, setOpen] = useState(false);
+  const [hours, setHours] = useState(8);
+  const [note, setNote] = useState("");
+  const [sel, setSel] = useState(null);
+  const [last, setLast] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const isAlta = (t) => t.prioridad === "alta" || t.prioridad === "critica";
+  const pend = useMemo(() => (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t))
+    .sort((a, b) => (isAlta(b) ? 1 : 0) - (isAlta(a) ? 1 : 0)).slice(0, 25), [tasks]);
+  const chosen = sel || new Set(pend.filter(isAlta).map(t => t.id));
+  const toggle = (id) => { const n = new Set(chosen); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
+  useEffect(() => { if (open) sGet("shift-handovers", true).then(v => setLast(Array.isArray(v) && v.length ? v[0] : null)).catch(() => {}); }, [open]);
+  const text = useMemo(() => {
+    const since = Date.now() - hours * 3600000;
+    const inWin = (iso) => iso && new Date(iso).getTime() >= since;
+    const closed = (tasks || []).filter(t => normalizeTaskState(t.estado) === "finalizada" && inWin(t.finishedAt));
+    const created = (tasks || []).filter(t => inWin(t.createdAt));
+    const mtto = (mttoLog || []).filter(r => inWin(r.fecha));
+    const L = [`*Entrega de turno* — ${byName} (${fmtDT(new Date().toISOString())})`, "", `✅ Cerradas en ${hours} h: ${closed.length}`];
+    closed.slice(0, 10).forEach(t => L.push(`  • ${t.titulo}${t.asignadoA ? ` (${nameOf(t.asignadoA)})` : ""}`));
+    L.push(`🆕 Nuevas: ${created.length}   🛠️ Mantenimientos: ${mtto.length}`, "");
+    const pass = pend.filter(t => chosen.has(t.id));
+    L.push(`➡️ Pasan al siguiente turno (${pass.length}):`);
+    pass.forEach(t => L.push(`  ${isAlta(t) ? "🔴" : "•"} ${t.titulo}${t.asignadoA ? ` — ${nameOf(t.asignadoA)}` : ""}`));
+    if (note.trim()) L.push("", `📝 Nota: ${note.trim()}`);
+    return L.join("\n");
+  }, [tasks, mttoLog, hours, note, pend, sel, byName]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const prev = await sGet("shift-handovers", true);
+      const entry = { at: new Date().toISOString(), by: byName, text };
+      await sSet("shift-handovers", [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 30), true);
+      setLast(entry); showToast("✓ Entrega guardada — el siguiente turno la verá.", true);
+    } catch { showToast("No se pudo guardar la entrega.", false); }
+    setSaving(false);
+  };
+  const copy = async () => { try { await navigator.clipboard.writeText(text); showToast("✓ Entrega copiada.", true); } catch { showToast("No se pudo copiar.", false); } };
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-bold" style={{ color: C.ink }}>📋 Entrega de turno guiada</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Abrir ▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2">
+          {last && <div className="rounded-lg p-2 mb-2 text-[11px] whitespace-pre-wrap" style={{ background: C.bg, color: C.inkSoft, maxHeight: 120, overflowY: "auto" }}><b>Última entrega ({last.by}, {fmtDT(last.at)}):</b>{"\n"}{last.text}</div>}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs" style={{ color: C.inkSoft }}>Resumir las últimas</span>
+            <select value={hours} onChange={e => setHours(Number(e.target.value))} className="text-xs border rounded-md px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>{[4, 8, 12, 24].map(h => <option key={h} value={h}>{h} horas</option>)}</select>
+          </div>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.ink }}>¿Qué pasa al siguiente turno?</div>
+          {pend.length === 0 ? <div className="text-xs mb-2" style={{ color: C.green }}>No hay pendientes abiertos. 👍</div> : (
+            <div className="mb-2" style={{ maxHeight: 180, overflowY: "auto" }}>
+              {pend.map(t => (
+                <label key={t.id} className="flex items-start gap-2 text-xs py-1.5 border-t cursor-pointer" style={{ borderColor: C.line, color: C.ink }}>
+                  <input type="checkbox" checked={chosen.has(t.id)} onChange={() => toggle(t.id)} style={{ marginTop: 2 }} />
+                  <span>{isAlta(t) ? "🔴 " : ""}{t.titulo}{t.asignadoA ? ` — ${nameOf(t.asignadoA)}` : ""}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Nota para el siguiente turno (opcional)…" className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+          <textarea readOnly value={text} rows={8} className="w-full text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+          <div className="flex gap-2 mt-2 flex-wrap">
+            <Button size="sm" disabled={saving} onClick={save}>{saving ? "Guardando…" : "Guardar entrega"}</Button>
+            <Button size="sm" variant="ghost" onClick={copy}>Copiar</Button>
+            <Button size="sm" variant="ghost" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener")}>WhatsApp</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked }) {
+  return (
+    <>
+      {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
+      <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
       {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
       <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
-      <ShiftSummaryCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} />
+      <ShiftHandoverCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} byName={nameOf(currentUser)} />
       {isAdmin && <MonthChartsCard tasks={tasks} mttoLog={mttoLog} equipos={equipos} />}
       {isAdmin && <YearCostCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
     </>
@@ -26717,7 +26984,8 @@ export default function App() {
           {view === "home" && isAdmin && <StorageAlert onNavigate={setView} />}
           {view === "home" && isAdmin && <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && isAdmin && <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
-          {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} currentUser={currentUser} isAdmin={isAdmin}
+          {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
+            onCreateTask={createTask} viewerLocked={viewerLocked}
             nameOf={(u) => profiles?.[u]?.display_name || u} onNavigate={setView}
             onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}

@@ -19921,7 +19921,60 @@ function IdleLogoutSetting() {
   );
 }
 
-function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog }) {
+/** Módulos agrupados en fichas (misma lista que el menú lateral): una forma rápida de llegar a cualquier módulo desde Inicio. */
+function ModuleGroupsCard({ groups, onNavigate }) {
+  const list = (groups || []).filter(g => g.items && g.items.length);
+  const [gid, setGid] = useState(() => { try { return localStorage.getItem("pm-local:home-group") || ""; } catch { return ""; } });
+  if (list.length === 0) return null;
+  const cur = list.find(g => g.id === gid) || list[0];
+  const palette = ["#2563eb", "#0891b2", "#d97706", "#7c3aed", "#16a34a", "#0d9488", "#dc2626", "#0ea5e9"];
+  const pick = (id) => { setGid(id); try { localStorage.setItem("pm-local:home-group", id); } catch { /* sin almacenamiento */ } };
+  const badgeText = (b) => (b === "!" ? "!" : Number(b) > 99 ? "99+" : String(b));
+  return (
+    <div className="mb-4">
+      <style>{`
+        @keyframes pmTileIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+        @keyframes pmBadge{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+        .pm-tile{position:relative;display:flex;flex-direction:column;justify-content:space-between;text-align:left;box-sizing:border-box;min-height:88px;padding:11px 12px;border-radius:16px;overflow:hidden;animation:pmTileIn .45s cubic-bezier(.2,.8,.2,1) both;transition:transform .2s,box-shadow .2s,border-color .2s}
+        .pm-tile:hover{transform:translateY(-3px);border-color:#38bdf8 !important;box-shadow:0 10px 26px rgba(37,99,235,.16)}
+        .pm-tile:active{transform:scale(.98)}
+        .pm-tile:after{content:"";position:absolute;right:-20px;bottom:-20px;width:70px;height:70px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.2),transparent 70%);pointer-events:none}
+        .pm-tile .pm-ic{transition:transform .25s}
+        .pm-tile:hover .pm-ic{transform:scale(1.12) rotate(-4deg)}
+        .pm-tile-badge{position:absolute;top:8px;right:8px;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;animation:pmBadge 2.2s ease-in-out infinite}
+        .pm-strip{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+        .pm-strip::-webkit-scrollbar{display:none}
+        @media (prefers-reduced-motion:reduce){.pm-tile,.pm-tile-badge{animation:none}}
+      `}</style>
+      <div className="flex items-baseline justify-between mb-2 px-0.5">
+        <div className="text-[13px] font-bold uppercase" style={{ color: C.inkSoft, letterSpacing: "0.14em" }}>Módulos</div>
+        <div className="text-[11px]" style={{ color: C.inkSoft }}>{cur.items.length} disponibles</div>
+      </div>
+      <div className="pm-strip" role="tablist" aria-label="Grupos de módulos">
+        {list.map(g => {
+          const on = g.id === cur.id;
+          return (
+            <button key={g.id} role="tab" aria-selected={on} onClick={() => pick(g.id)} className="shrink-0 text-[13px] font-semibold whitespace-nowrap"
+              style={{ minHeight: 40, padding: "0 14px", borderRadius: 12, background: on ? "linear-gradient(135deg,#38bdf8,#2563eb)" : C.panel, color: on ? "#04121f" : C.inkSoft, border: `1px solid ${on ? "transparent" : C.line}` }}>
+              {g.label} · {g.items.length}
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-2.5 mt-2.5">
+        {cur.items.map((n, i) => (
+          <button key={n.id} onClick={() => onNavigate(n.id)} className="pm-tile" style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.ink, animationDelay: `${Math.min(i, 10) * 0.04}s` }}>
+            {n.badge ? <span className="pm-tile-badge">{badgeText(n.badge)}</span> : null}
+            <n.icon size={26} className="pm-ic" color={palette[i % palette.length]} strokeWidth={1.8} />
+            <div className="text-sm font-bold leading-tight pr-1" style={{ fontFamily: "'Space Grotesk', Inter, system-ui, sans-serif" }}>{n.label}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog, navGroups }) {
   return (
     <div className="pm-stagger">
       <style>{`
@@ -19932,6 +19985,7 @@ function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin,
         @media (prefers-reduced-motion:reduce){.pm-stagger > *{animation:none}}
       `}</style>
       {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
+      <ModuleGroupsCard groups={navGroups} onNavigate={onNavigate} />
       <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
       {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
       <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
@@ -27297,7 +27351,7 @@ export default function App() {
           {view === "home" && isAdmin && <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && isAdmin && <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
-            onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog}
+            onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog} navGroups={NAV_GROUPS}
             nameOf={(u) => profiles?.[u]?.display_name || u} onNavigate={setView}
             onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}

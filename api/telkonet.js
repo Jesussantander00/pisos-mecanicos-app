@@ -24,7 +24,7 @@
 // internamente esto podría dejar de funcionar y haría falta revisar/actualizar las rutas de abajo.
 
 import { getSupabaseAdmin, requireApprovedUser } from "./_lib/security.js";
-import { runDailyDigest } from "./_lib/dailyDigest.js";
+import { runDailyDigest, notifyAdmins } from "./_lib/dailyDigest.js";
 import { runDriveBackup } from "./_lib/driveBackup.js";
 
 const BASE = "https://aws.telkonet.com/Central";
@@ -458,6 +458,10 @@ export default async function handler(req, res) {
     let backup;
     try { backup = await runDriveBackup(supabaseAdmin); } catch (e) { backup = { ok: false, message: e.message || "Falló el respaldo." }; console.error("Respaldo automático falló:", backup.message); }
     console.log("Respaldo automático:", JSON.stringify(backup));
+    if (!backup || (!backup.ok && !backup.skipped)) {
+      try { await notifyAdmins(supabaseAdmin, "⚠️ Falló el respaldo automático", String(backup?.message || "No se pudo guardar el respaldo en Drive.").slice(0, 150)); }
+      catch (e) { console.error("No se pudo avisar del fallo del respaldo:", e.message); }
+    }
     try {
       const result = await runDailyDigest(supabaseAdmin);
       res.status(200).json({ ok: true, ...result, backup });

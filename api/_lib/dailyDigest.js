@@ -83,3 +83,20 @@ export async function runDailyDigest(supabaseAdmin) {
 
   return { openTasks: open.length, overdue: overdue.length, unassigned: unassigned.length, morningPeople, morningSent, adminPeople, adminSent };
 }
+
+// Aviso urgente a los administradores (por ejemplo, cuando falla el respaldo automático).
+// Solo LEE las suscripciones y los perfiles; no escribe nada.
+export async function notifyAdmins(supabaseAdmin, title, body) {
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) throw new Error("Faltan VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY en Vercel.");
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:soporte@example.com", publicKey, privateKey);
+  const subscriptions = await readKey(supabaseAdmin, "push-subscriptions");
+  const { data: profiles, error } = await supabaseAdmin.from("profiles").select("id, is_admin, approved");
+  if (error) throw new Error(`No se pudieron leer los perfiles: ${error.message}`);
+  let sent = 0;
+  for (const admin of (profiles || []).filter((p) => p.is_admin && p.approved)) {
+    sent += await send(subscriptions.filter((s) => s.ownerUsername === admin.id), title, body);
+  }
+  return sent;
+}

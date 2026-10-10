@@ -6938,22 +6938,22 @@ const PCB_CONFIGS = {
   home: {
     vb: "0 0 390 258", par: "xMidYMax slice", w: 390, h: 258,
     buses: [
-      { d: "M-10 140 H36 L52 156 H160", ys: [0, 6, 12, 18] },
-      { d: "M248 156 H290 L314 180 H400", ys: [0, 6, 12, 18] },
+      { d: "M-10 188 H36 L52 204 H160", ys: [0, 6, 12, 18] },
+      { d: "M248 204 H290 L314 228 H400", ys: [0, 6, 12, 18] },
     ],
-    traces: ["M-10 214 H20", "M52 214 H110 L128 232 H200 V270", "M200 214 V204", "M224 214 V204", "M340 -10 V12 L356 28 H400", "M20 -10 V16 L34 30 H90"],
+    traces: ["M-10 250 H20", "M52 250 H110", "M340 -10 V12 L356 28 H400"],
     pulses: [
-      { d: "M-10 140 H36 L52 156 H160", t: 4, o: 0 }, { d: "M-10 152 H36 L52 168 H160", t: 5.2, o: -1.8 },
-      { d: "M248 156 H290 L314 180 H400", t: 4.6, o: -0.8 }, { d: "M248 168 H290 L314 192 H400", t: 6, o: -3 },
+      { d: "M-10 188 H36 L52 204 H160", t: 4, o: 0 }, { d: "M-10 200 H36 L52 216 H160", t: 5.2, o: -1.8 },
+      { d: "M248 204 H290 L314 228 H400", t: 4.6, o: -0.8 }, { d: "M248 216 H290 L314 240 H400", t: 6, o: -3 },
       { d: "M340 -10 V12 L356 28 H400", t: 5, o: -2 },
     ],
-    chips: [[160, 146, "U1"]],
-    res: [[36, 214, 0], [62, 30, 0]],
+    chips: [[160, 194, "U1"]],
+    res: [[36, 250, 0]],
     caps: [],
-    vias: [[200, 204], [224, 204], [200, 270], [20, 214], [52, 214], [90, 30], [400, 28]],
-    nodes: [[52, 156, 0], [314, 180, 1], [356, 28, 1.8]],
+    vias: [[20, 250], [52, 250], [400, 28]],
+    nodes: [[52, 204, 0], [314, 228, 1], [356, 28, 1.8]],
     holes: [],
-    texts: [[172, 142, "U1"], [28, 204, "R3"], [318, 152, "V+ 5.0"]],
+    texts: [[170, 192, "U1"], [28, 240, "R3"], [318, 200, "V+ 5.0"]],
   },
 };
 
@@ -19663,7 +19663,13 @@ function EmergencyButton({ tasks, currentUser, onCreateTask, onNavigate }) {
   };
   return (
     <>
-      <button onClick={() => setOpen(true)} className="w-full rounded-xl mb-4 font-bold text-sm" style={{ minHeight: 48, background: C.redSoft, color: C.red, border: `1px solid ${C.red}` }}>🚨 Emergencia — reportar ya</button>
+      <style>{`
+        @keyframes pmSosBeat{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}70%{box-shadow:0 0 0 12px rgba(239,68,68,0)}}
+        .pm-sos{animation:pmSosBeat 2.4s ease-out infinite;transition:transform .15s}
+        .pm-sos:active{transform:scale(.98)}
+        @media (prefers-reduced-motion:reduce){.pm-sos{animation:none}}
+      `}</style>
+      <button onClick={() => setOpen(true)} className="pm-sos w-full rounded-2xl mb-4 font-bold text-sm tracking-wide" style={{ minHeight: 52, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "1px solid #fca5a5" }}>🚨 Emergencia — reportar ya</button>
       {open && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setOpen(false)}>
           <div className="rounded-2xl w-full max-w-md p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
@@ -19917,7 +19923,14 @@ function IdleLogoutSetting() {
 
 function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog }) {
   return (
-    <>
+    <div className="pm-stagger">
+      <style>{`
+        @keyframes pmRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+        .pm-stagger > *{animation:pmRise .5s cubic-bezier(.2,.8,.2,1) both}
+        .pm-stagger > *:nth-child(2){animation-delay:.05s}.pm-stagger > *:nth-child(3){animation-delay:.1s}.pm-stagger > *:nth-child(4){animation-delay:.15s}
+        .pm-stagger > *:nth-child(5){animation-delay:.2s}.pm-stagger > *:nth-child(6){animation-delay:.25s}.pm-stagger > *:nth-child(n+7){animation-delay:.3s}
+        @media (prefers-reduced-motion:reduce){.pm-stagger > *{animation:none}}
+      `}</style>
       {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
       <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
       {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
@@ -19931,7 +19944,7 @@ function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin,
       {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
       {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
       <IdleLogoutSetting />
-    </>
+    </div>
   );
 }
 
@@ -27250,15 +27263,16 @@ export default function App() {
         )}
         {/* Barra de navegación inferior — solo en móvil. Pensada para usar con una sola mano:
             los 4 destinos más comunes, sin tener que estirar el pulgar hasta arriba. */}
-        <nav className="pm-safe-bottom sm:hidden fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t" style={{ background: C.panel, borderColor: C.line }}>
+        <nav className="pm-safe-bottom sm:hidden fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t" style={{ background: C.panel, borderColor: C.line, boxShadow: "0 -6px 24px rgba(15,34,54,.10)" }}>
           {[
             { id: "home", label: "Inicio", icon: Home, onClick: () => setView("home") },
             { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, onClick: () => setView("tasks") },
             { id: "qr", label: "Escanear", icon: QrCode, onClick: () => setShowQrScanner(true) },
             { id: "profile", label: "Menú", icon: MenuIcon, onClick: () => setSidebarOpen(true) },
           ].map(item => (
-            <button key={item.id} onClick={item.onClick} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
+            <button key={item.id} onClick={item.onClick} className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-transform active:scale-95"
               style={{ color: (item.id === "home" ? view === "home" : item.id === "tasks" && view === "tasks") ? C.amber : C.inkSoft, minHeight: 52 }}>
+              {(item.id === "home" ? view === "home" : item.id === "tasks" && view === "tasks") && <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "30%", right: "30%", height: 3, borderRadius: "0 0 3px 3px", background: C.amber, boxShadow: `0 0 10px ${C.amber}` }} />}
               <item.icon size={20} />
               <span className="text-[10px] font-medium">{item.label}</span>
             </button>

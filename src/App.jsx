@@ -10078,6 +10078,7 @@ function TasksView({ tasks, accounts, employees, scheduleEntries, currentUser, c
   /** Deja registro de que esta persona abrió la tarea — una entrada por persona, se actualiza la
    *  fecha si ya la había visto antes en vez de duplicarla. */
   const markTaskViewed = (t) => {
+    if (viewerLocked) return; // las cuentas de solo ver no escriben (ni siquiera el "visto por")
     const already = (t.vistoPor || []).find(v => v.username === currentUsername);
     const next = already
       ? t.vistoPor.map(v => v.username === currentUsername ? { ...v, at: nowIso() } : v)

@@ -156,7 +156,11 @@ function getDeviceInfo() {
 try {
   const savedTheme = localStorage.getItem("pm-local:theme"); // "dark" | "light" | null (nunca eligió = automático por hora)
   const useDark = savedTheme === "dark" || (savedTheme !== "light" && isNightHour());
-  if (useDark) Object.assign(C, DARK_COLORS);
+  if (useDark) {
+    Object.assign(C, DARK_COLORS);
+    document.documentElement.classList.add("pm-dark");
+    document.documentElement.style.colorScheme = "dark"; // controles nativos (fechas, listas, scroll) también oscuros
+  }
 } catch { /* noop */ }
 syncCssVars();
 function applyTheme(dark) {
@@ -6835,9 +6839,10 @@ function ToastHost() {
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 items-center px-4 w-full sm:w-auto pointer-events-none">
       {items.map(t => (
-        <div key={t.id} className="rounded-lg shadow-lg px-4 py-2.5 text-sm font-medium max-w-[90vw] sm:max-w-sm text-center pointer-events-auto"
-          style={{ background: t.ok ? "#1a7f4a" : "#c0392b", color: "#fff" }}>
-          {t.text}
+        <div key={t.id} className="pm-slide-up-in rounded-xl shadow-lg px-4 py-2.5 text-sm font-medium max-w-[90vw] sm:max-w-sm text-center pointer-events-auto flex items-center justify-center gap-2"
+          style={{ background: t.ok ? "linear-gradient(135deg,#1a7f4a,#15803d)" : "linear-gradient(135deg,#c0392b,#a93226)", color: "#fff", border: "1px solid rgba(255,255,255,.18)" }}>
+          {t.ok ? <CheckCircle2 size={16} className="shrink-0 pm-pop" aria-hidden="true" /> : <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />}
+          <span>{t.text}</span>
         </div>
       ))}
     </div>
@@ -18683,7 +18688,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
         </div>
       )}
 
-      {loading && <div className="text-sm text-center py-8" style={{ color: C.gray }}>Cargando habitaciones…</div>}
+      {loading && <SkeletonRows rows={4} />}
       {error && !loading && (
         <div className="rounded-md px-3 py-2 text-sm mb-3" style={{ background: C.redSoft, color: C.red }}>
           {error} <button className="underline ml-1" onClick={load}>Reintentar</button>
@@ -18802,7 +18807,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
               Habitaciones cuya temperatura estuvo fuera de rango (6°F o más del set point) en al menos el 25% de las lecturas de la última semana — buenas candidatas para revisar el equipo.
               Este número se calcula una vez al día en segundo plano, no en vivo, por eso puede tardar un día en reflejar habitaciones nuevas.
             </p>
-            {maintenanceReport.loading && <div className="text-sm text-center py-4" style={{ color: C.gray }}>Cargando…</div>}
+            {maintenanceReport.loading && <SkeletonRows rows={3} />}
             {maintenanceReport.error && !maintenanceReport.loading && (
               <div className="rounded-md px-3 py-2 text-sm" style={{ background: C.redSoft, color: C.red }}>
                 {maintenanceReport.error} <button className="underline ml-1" onClick={loadMaintenanceReport}>Reintentar</button>
@@ -18964,7 +18969,7 @@ function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasks
             {!historyRoom.loading && !historyRoom.error && historyRoom.startDate && (
               <p className="text-xs mb-3" style={{ color: C.gray }}>{historyRoom.startDate} — {historyRoom.endDate}</p>
             )}
-            {historyRoom.loading && <div className="text-sm text-center py-6" style={{ color: C.gray }}>Cargando…</div>}
+            {historyRoom.loading && <SkeletonRows rows={3} />}
             {historyRoom.error && <div className="rounded-md px-3 py-2 text-sm" style={{ background: C.redSoft, color: C.red }}>{historyRoom.error}</div>}
             {!historyRoom.loading && !historyRoom.error && (
               Object.keys(historyRoom.graphs || {}).length === 0 ? (
@@ -19225,7 +19230,7 @@ function TaskTemplatesView({ templates, accounts, onSave, onDelete, onCreate }) 
           <Button size="sm" disabled={!form.nombre.trim()} onClick={save}>Guardar plantilla</Button>
         </div>
       </div>
-      {(templates || []).length === 0 ? <p className="text-sm text-center py-6" style={{ color: C.gray }}>Todavía no hay plantillas.</p> : (templates || []).map(t => (
+      {(templates || []).length === 0 ? <EmptyState icon={ClipboardList} title="Todavía no hay plantillas" hint="Guarda una tarea que repites seguido y la creas luego en un toque." /> : (templates || []).map(t => (
         <div key={t.id} className="rounded-xl p-3 mb-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -19413,7 +19418,7 @@ function ReincidentCard({ mttoLog, equipos, tasks, onOpenEquipo }) {
   if (list.length === 0) return null;
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.redSoft, border: `1px solid ${C.red}` }}>
-      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}>🔁 Equipos que fallan seguido ({list.length})</div>
+      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}><TitleIco i={RotateCcw} color={C.red} />Equipos que fallan seguido ({list.length})</div>
       <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>3 o más fallas en 60 días. Puede convenir cambiarlos en vez de seguir reparando.</div>
       {list.map(({ e, n }) => (
         <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
@@ -19483,7 +19488,7 @@ function ShiftSummaryCard({ tasks, mttoLog, nameOf }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <button onClick={() => { setOpen(v => !v); if (!open && !text) build(); }} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
-        <span className="text-sm font-bold" style={{ color: C.ink }}>📋 Resumen de turno</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={ClipboardList} />Resumen de turno</span>
         <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Generar ▼"}</span>
       </button>
       {open && (
@@ -19528,7 +19533,7 @@ function YearCostCard({ mttoLog, equipos, onOpenEquipo }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
-        <span className="text-sm font-bold" style={{ color: C.ink }}>💰 Costos de mantenimiento del año</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={TrendingUp} />Costos de mantenimiento del año</span>
         <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
       </button>
       {open && (
@@ -19574,7 +19579,7 @@ function MonthChartsCard({ tasks, mttoLog, equipos }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
-        <span className="text-sm font-bold" style={{ color: C.ink }}>📊 Resumen del mes con gráficas</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={CalendarDays} />Resumen del mes con gráficas</span>
         <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
       </button>
       {open && (
@@ -19592,7 +19597,7 @@ function MonthChartsCard({ tasks, mttoLog, equipos }) {
             {data.weeks.map((n, i) => (
               <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
                 <div className="text-[10px] mb-0.5" style={{ color: C.inkSoft }}>{n}</div>
-                <div className="w-full rounded-t" style={{ height: `${Math.max(2, Math.round((n / maxW) * 56))}px`, background: C.amber }} />
+                <div className="w-full rounded-t pm-grow-y" style={{ height: `${Math.max(2, Math.round((n / maxW) * 56))}px`, background: `linear-gradient(180deg, ${C.amber}, #f5c26b)`, animationDelay: `${i * 0.08}s` }} />
                 <div className="text-[10px] mt-0.5" style={{ color: C.gray }}>S{i + 1}</div>
               </div>
             ))}
@@ -19601,7 +19606,7 @@ function MonthChartsCard({ tasks, mttoLog, equipos }) {
           {data.top.length === 0 ? <div className="text-xs" style={{ color: C.inkSoft }}>Sin correctivos registrados este mes.</div> : data.top.map(x => (
             <div key={x.nombre} className="mb-1.5">
               <div className="flex justify-between text-xs" style={{ color: C.ink }}><span className="truncate">{x.nombre}</span><span className="font-semibold">{x.n}</span></div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.bg }}><div className="h-full" style={{ width: `${Math.round((x.n / maxT) * 100)}%`, background: C.red }} /></div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.bg }}><div className="h-full pm-grow-x" style={{ width: `${Math.round((x.n / maxT) * 100)}%`, background: C.red }} /></div>
             </div>
           ))}
         </div>
@@ -19630,7 +19635,7 @@ function GlobalSearchCard({ tasks, equipos, invItems, onNavigate, onOpenEquipo }
   const rowSt = { borderColor: C.line, color: C.ink, minHeight: 36 };
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 Buscar en todo: tareas, equipos, repuestos, habitaciones…"
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar en todo: tareas, equipos, repuestos, habitaciones…"
         className="w-full text-sm border rounded-md px-3 outline-none" style={{ minHeight: 40, borderColor: C.line, background: C.bg, color: C.ink }} />
       {res && total === 0 && <div className="text-xs mt-2" style={{ color: C.inkSoft }}>No encontré nada con "{q.trim()}".</div>}
       {res && res.room && <button onClick={() => onNavigate("room-history")} className={rowCls} style={rowSt}><span>🛏️ Habitación {res.room}</span><span style={{ color: C.amber }}>Ver historial →</span></button>}
@@ -19669,11 +19674,11 @@ function EmergencyButton({ tasks, currentUser, onCreateTask, onNavigate }) {
         .pm-sos:active{transform:scale(.98)}
         @media (prefers-reduced-motion:reduce){.pm-sos{animation:none}}
       `}</style>
-      <button onClick={() => setOpen(true)} className="pm-sos w-full rounded-2xl mb-4 font-bold text-sm tracking-wide" style={{ minHeight: 52, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "1px solid #fca5a5" }}>🚨 Emergencia — reportar ya</button>
+      <button onClick={() => setOpen(true)} className="pm-sos w-full rounded-2xl mb-4 font-bold text-sm tracking-wide" style={{ minHeight: 52, background: "linear-gradient(135deg,#ef4444,#b91c1c)", color: "#fff", border: "1px solid #fca5a5" }}><AlertTriangle size={18} strokeWidth={2.2} style={{ display: "inline", verticalAlign: "-3px", marginRight: 8 }} aria-hidden="true" />Emergencia — reportar ya</button>
       {open && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setOpen(false)}>
           <div className="rounded-2xl w-full max-w-md p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
-            <div className="text-lg font-bold mb-3" style={{ color: C.red }}>🚨 Modo emergencia</div>
+            <div className="text-lg font-bold mb-3" style={{ color: C.red }}><TitleIco i={AlertTriangle} color={C.red} />Modo emergencia</div>
             <input value={lugar} onChange={e => setLugar(e.target.value)} placeholder="¿Dónde? (habitación, piso, cuarto…)" className="w-full text-base border rounded-lg px-3 mb-2 outline-none" style={{ minHeight: 52, borderColor: C.line, background: C.bg, color: C.ink }} />
             <div className="flex items-start gap-2 mb-3">
               <textarea value={que} onChange={e => setQue(e.target.value)} rows={3} placeholder="¿Qué pasa?" className="flex-1 text-base border rounded-lg px-3 py-2 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
@@ -19734,7 +19739,7 @@ function ShiftHandoverCard({ tasks, mttoLog, nameOf, byName }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
-        <span className="text-sm font-bold" style={{ color: C.ink }}>📋 Entrega de turno guiada</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={ClipboardCheck} />Entrega de turno guiada</span>
         <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Abrir ▼"}</span>
       </button>
       {open && (
@@ -19777,7 +19782,7 @@ function BackupReminderCard({ onNavigate }) {
   if (days != null && days < 7) return null;
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft || C.panel, border: `1px solid ${C.amber}` }}>
-      <div className="text-sm font-semibold" style={{ color: C.ink }}>💾 {days == null ? "Todavía no hay un respaldo en Drive" : `Hace ${days} días no se hace un respaldo en Drive`}</div>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}><TitleIco i={Save} />{days == null ? "Todavía no hay un respaldo en Drive" : `Hace ${days} días no se hace un respaldo en Drive`}</div>
       <div className="text-[11px] mt-0.5 mb-2" style={{ color: C.inkSoft }}>Un respaldo guarda tareas, seguimientos y mantenimientos en tu Drive por si algo se daña.</div>
       <button onClick={() => onNavigate("admin")} className="text-xs font-semibold rounded-lg px-3" style={{ minHeight: 36, background: C.amber, color: "#fff" }}>Ir a respaldar</button>
     </div>
@@ -19800,7 +19805,7 @@ function NewDeviceCard({ loginLog, nameOf }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
-        <span className="text-sm font-bold" style={{ color: C.ink }}>📱 Ingresos desde dispositivos nuevos ({nuevos.length})</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={Users} />Ingresos desde dispositivos nuevos ({nuevos.length})</span>
         <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
       </button>
       {open && nuevos.map(l => (
@@ -19831,7 +19836,7 @@ function FailurePredictCard({ mttoLog, equipos, onOpenEquipo }) {
   if (list.length === 0) return null;
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}>📉 Fallas cada vez más seguidas ({list.length})</div>
+      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}><TitleIco i={TrendingDown} color={C.red} />Fallas cada vez más seguidas ({list.length})</div>
       <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>El tiempo entre las últimas fallas se está acortando. Conviene una revisión a fondo antes de la próxima.</div>
       {list.slice(0, 6).map(({ e, prev, last }) => (
         <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
@@ -19861,7 +19866,7 @@ function MonthlyBudgetCard({ mttoLog }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${over ? C.red : C.line}` }}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-bold" style={{ color: C.ink }}>🧾 Presupuesto del mes</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={ClipboardCheck} />Presupuesto del mes</span>
         <button onClick={() => { setDraft(budget ? String(budget) : ""); setEdit(v => !v); }} className="text-xs" style={{ color: C.amber, minHeight: 32 }}>{edit ? "Cancelar" : (budget ? "Cambiar" : "Definir")}</button>
       </div>
       {edit && (
@@ -19891,7 +19896,7 @@ function LowStockOrderCard({ invItems }) {
   return (
     <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
-        <span className="text-sm font-bold" style={{ color: C.ink }}>🛒 Repuestos por pedir ({low.length})</span>
+        <span className="text-sm font-bold" style={{ color: C.ink }}><TitleIco i={PackagePlus} />Repuestos por pedir ({low.length})</span>
         <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
       </button>
       {open && (
@@ -19912,7 +19917,7 @@ function IdleLogoutSetting() {
   const [min, setMin] = useState(() => { try { return localStorage.getItem("pm-local:idle-min") || "0"; } catch { return "0"; } });
   return (
     <div className="rounded-xl p-3 mb-4 flex items-center justify-between gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-      <span className="text-xs" style={{ color: C.ink }}>🔒 Cerrar sesión sola en este dispositivo</span>
+      <span className="text-xs" style={{ color: C.ink }}><TitleIco i={ShieldCheck} />Cerrar sesión sola en este dispositivo</span>
       <select value={min} onChange={e => { setMin(e.target.value); try { localStorage.setItem("pm-local:idle-min", e.target.value); } catch { /* sin almacenamiento */ } }}
         className="rounded-lg px-2 text-xs" style={{ minHeight: 36, background: C.bg, border: `1px solid ${C.line}`, color: C.ink }}>
         <option value="0">Nunca</option><option value="30">Tras 30 min sin usar</option><option value="120">Tras 2 horas</option><option value="480">Tras 8 horas</option>
@@ -19974,6 +19979,59 @@ function ModuleGroupsCard({ groups, onNavigate }) {
   );
 }
 
+/** Ícono de línea para los títulos de las tarjetas (reemplaza los emojis, que se ven distintos en cada celular). */
+function TitleIco({ i: I, color }) {
+  return <I size={15} strokeWidth={2} color={color || C.amber} aria-hidden="true" style={{ display: "inline", verticalAlign: "-2px", marginRight: 6 }} />;
+}
+
+/** Muestra solo los primeros avisos y esconde el resto detrás de "Ver N más", para que Inicio no sea una pila interminable. */
+function AlertsStack({ max = 3, children }) {
+  const ref = useRef(null);
+  const [count, setCount] = useState(0);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const upd = () => setCount(el.children.length);
+    upd();
+    const mo = new MutationObserver(upd);
+    mo.observe(el, { childList: true });
+    return () => mo.disconnect();
+  }, []);
+  const extra = Math.max(0, count - max);
+  return (
+    <div>
+      <style>{`.pm-alerts-2:not(.pm-open)>*:nth-child(n+3),.pm-alerts-3:not(.pm-open)>*:nth-child(n+4){display:none}`}</style>
+      <div ref={ref} className={`pm-alerts-${max}${open ? " pm-open" : ""}`}>{children}</div>
+      {extra > 0 && (
+        <button onClick={() => setOpen(v => !v)} className="w-full text-xs font-semibold rounded-xl mb-4" style={{ minHeight: 40, background: C.panel, border: `1px solid ${C.line}`, color: C.amber }}>
+          {open ? "Mostrar menos ▲" : `Ver ${extra} aviso${extra === 1 ? "" : "s"} más ▼`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Mensaje amable cuando una lista está vacía. */
+function EmptyState({ icon: I = ClipboardList, title, hint }) {
+  return (
+    <div className="text-center py-8 px-4">
+      <div className="mx-auto mb-2 flex items-center justify-center rounded-full" style={{ width: 52, height: 52, background: C.blueSoft }}><I size={24} color={C.blue} strokeWidth={1.8} /></div>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}>{title}</div>
+      {hint && <div className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{hint}</div>}
+    </div>
+  );
+}
+
+/** Bloques grises que "respiran" mientras llegan los datos. */
+function SkeletonRows({ rows = 3 }) {
+  return (
+    <div className="py-3" aria-busy="true" aria-label="Cargando">
+      {Array.from({ length: rows }).map((_, i) => <div key={i} className="pm-skeleton rounded-lg mb-2" style={{ height: 44, background: C.line, opacity: 1 - i * 0.18 }} />)}
+    </div>
+  );
+}
+
 function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog, navGroups }) {
   return (
     <div className="pm-stagger">
@@ -19987,16 +20045,18 @@ function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin,
       {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
       <ModuleGroupsCard groups={navGroups} onNavigate={onNavigate} />
       <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
+      <AlertsStack max={3}>
       {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
       <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
+      {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
+      {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
+      {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
+      </AlertsStack>
       <ShiftHandoverCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} byName={nameOf(currentUser)} />
       {isAdmin && <MonthChartsCard tasks={tasks} mttoLog={mttoLog} equipos={equipos} />}
       {isAdmin && <YearCostCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
-      {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
       {isAdmin && <MonthlyBudgetCard mttoLog={mttoLog} />}
       {isAdmin && <LowStockOrderCard invItems={invItems} />}
-      {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
-      {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
       <IdleLogoutSetting />
     </div>
   );
@@ -27333,6 +27393,7 @@ export default function App() {
           ))}
         </nav>
         <main className="flex-1 p-4 pb-24 sm:pb-8 max-w-5xl w-full mx-auto overflow-x-hidden">
+          <div key={view} className="pm-view-in">
           {viewerLocked && (
             <div className="rounded-lg p-2.5 mb-3 flex items-center gap-2 text-xs font-medium" style={{ background: C.bg, border: `1px solid ${C.line}`, color: C.inkSoft }}>
               <Eye size={14} /> Modo solo ver — puedes navegar y consultar todo, pero no vas a ver botones para crear, editar o cerrar nada.
@@ -27345,11 +27406,15 @@ export default function App() {
               <ArrowLeft size={14} /> Volver a Inicio
             </button>
           )}
-          {view === "home" && isAdmin && <WeekSemaphore tasks={tasks} criticalStock={criticalStockItems.length} />}
-          {view === "home" && isAdmin && <BackupReminder />}
-          {view === "home" && isAdmin && <StorageAlert onNavigate={setView} />}
-          {view === "home" && isAdmin && <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
-          {view === "home" && isAdmin && <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
+          {view === "home" && isAdmin && (
+            <AlertsStack max={2}>
+              <WeekSemaphore tasks={tasks} criticalStock={criticalStockItems.length} />
+              <BackupReminder />
+              <StorageAlert onNavigate={setView} />
+              <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />
+              <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />
+            </AlertsStack>
+          )}
           {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
             onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog} navGroups={NAV_GROUPS}
             nameOf={(u) => profiles?.[u]?.display_name || u} onNavigate={setView}
@@ -27520,6 +27585,7 @@ export default function App() {
           {view === "round-completion" && isAdmin && (
             <RoundCompletionView roundsIndex={roundsIndex} tourHistory={tourHistory} />
           )}
+          </div>
         </main>
       </div>
     </div>

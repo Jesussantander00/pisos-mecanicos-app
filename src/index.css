@@ -154,3 +154,40 @@ button:disabled { cursor: not-allowed; }
   button:not(:disabled):active, [role="button"]:active { scale: 1; }
   .pm-card-hover:hover { translate: none; }
 }
+
+/* ===== Mejoras de interfaz (lote 10) ===== */
+/* Transición entre vistas: termina en transform:none para no romper elementos fixed hijos */
+@keyframes pm-view-in-k { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.pm-view-in { animation: pm-view-in-k 240ms var(--ease-out) backwards; }
+
+/* Barras de gráficas que crecen */
+@keyframes pm-grow-y-k { from { transform: scaleY(0); } to { transform: none; } }
+.pm-grow-y { transform-origin: bottom center; animation: pm-grow-y-k 500ms var(--ease-out) backwards; }
+.pm-grow-x { transform-origin: left center; animation: pm-grow-x 500ms var(--ease-out) backwards; }
+
+/* Pop de confirmación (avisos) */
+@keyframes pm-pop-k { 0% { transform: scale(.6); } 60% { transform: scale(1.15); } 100% { transform: none; } }
+.pm-pop { animation: pm-pop-k 320ms var(--ease-out) backwards; }
+
+/* Tipografía: títulos con Space Grotesk */
+h1, h2, h3 { font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.01em; }
+
+/* Texto minúsculo más legible */
+.text-\[10px\] { font-size: 11px; }
+
+/* Botones fáciles de tocar en celular: área invisible ampliada */
+@media (pointer: coarse) {
+  button, [role="button"] { position: relative; }
+  button::after, [role="button"]::after {
+    content: ""; position: absolute; left: -4px; right: -4px; top: -6px; bottom: -6px;
+  }
+}
+
+/* Modo oscuro: detalles */
+.pm-dark ::placeholder { color: rgba(203, 213, 225, 0.5); }
+.pm-dark ::selection { background: rgba(56, 189, 248, 0.35); }
+.pm-dark { color-scheme: dark; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-view-in, .pm-grow-y, .pm-grow-x, .pm-pop { animation: none !important; }
+}

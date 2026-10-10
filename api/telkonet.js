@@ -25,6 +25,7 @@
 
 import { getSupabaseAdmin, requireApprovedUser } from "./_lib/security.js";
 import { runDailyDigest } from "./_lib/dailyDigest.js";
+import { runDriveBackup } from "./_lib/driveBackup.js";
 
 const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
@@ -455,7 +456,10 @@ export default async function handler(req, res) {
     }
     try {
       const result = await runDailyDigest(supabaseAdmin);
-      res.status(200).json({ ok: true, ...result });
+      // Respaldo diario a Drive: va aparte del resumen — si falla, el resumen ya salió y solo se informa.
+      let backup;
+      try { backup = await runDriveBackup(supabaseAdmin); } catch (e) { backup = { ok: false, message: e.message || "Falló el respaldo." }; }
+      res.status(200).json({ ok: true, ...result, backup });
     } catch (e) {
       res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario." });
     }

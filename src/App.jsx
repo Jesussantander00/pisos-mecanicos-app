@@ -11502,6 +11502,7 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
   const [editingVidaUtil, setEditingVidaUtil] = useState(false);
   const [fechaInstalacionDraft, setFechaInstalacionDraft] = useState(equipo.fechaInstalacion || "");
   const [garantiaDraft, setGarantiaDraft] = useState(equipo.garantiaHasta || "");
+  const [valorReempDraft, setValorReempDraft] = useState(equipo.valorReemplazo ? String(equipo.valorReemplazo) : "");
   const [showTimeline, setShowTimeline] = useState(false);
   const [vidaUtilDraft, setVidaUtilDraft] = useState(equipo.vidaUtilAnios || "");
   const [savingVidaUtil, setSavingVidaUtil] = useState(false);
@@ -11843,6 +11844,29 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
         </div>
       )}
 
+      {(() => {
+        const v = Number(equipo.valorReemplazo) || 0;
+        const gastado = (records || []).reduce((a, r) => a + (Number(r.costo) || 0), 0);
+        const money = (n) => "$" + Math.round(n).toLocaleString("es-CO");
+        if (!v) return isAdmin && gastado > 0 ? (
+          <div className="rounded-lg border p-3 mb-4 text-xs" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
+            💸 Se han gastado {money(gastado)} en este equipo. Agrega su <b>valor de reemplazo</b> (en "Vida útil estimada" → Editar) para saber si conviene seguir reparándolo.
+          </div>
+        ) : null;
+        const pct = Math.round((gastado / v) * 100);
+        const tone = pct >= 60 ? C.red : pct >= 40 ? C.amber : C.green;
+        return (
+          <div className="rounded-lg border p-3 mb-4" style={{ borderColor: tone, background: C.panel }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Reparar o reemplazar</div>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>{money(gastado)} gastados de {money(v)} que cuesta uno nuevo ({pct}%)</div>
+            <div className="h-2 rounded-full overflow-hidden mt-1" style={{ background: C.bg }}><div style={{ width: Math.min(100, pct) + "%", height: "100%", background: tone }} /></div>
+            <p className="text-xs mt-1" style={{ color: tone === C.green ? C.inkSoft : tone }}>
+              {pct >= 60 ? "Ya se gastó más de la mitad de lo que cuesta uno nuevo: conviene reemplazarlo." : pct >= 40 ? "Va cerca de la mitad del costo de uno nuevo: vigílalo antes de otra reparación grande." : "Todavía sale más barato repararlo que cambiarlo."}
+            </p>
+          </div>
+        );
+      })()}
+
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Vida útil estimada</div>
         {editingVidaUtil ? (
@@ -11862,9 +11886,14 @@ function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onLogMaint
               <input type="date" value={garantiaDraft} onChange={e => setGarantiaDraft(e.target.value)}
                 className="text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
             </div>
+            <div>
+              <label className="text-[10px] block mb-0.5" style={{ color: C.gray }}>Valor de reemplazo ($)</label>
+              <input type="text" inputMode="numeric" value={valorReempDraft} onChange={e => setValorReempDraft(e.target.value)} placeholder="ej: 4500000"
+                className="text-sm border rounded-md px-2 py-1.5 outline-none w-32" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+            </div>
             <Button size="sm" disabled={savingVidaUtil} onClick={async () => {
               setSavingVidaUtil(true);
-              await onUpdateEquipoInfo?.(equipo.id, { fechaInstalacion: fechaInstalacionDraft || null, vidaUtilAnios: vidaUtilDraft ? Number(vidaUtilDraft) : null, garantiaHasta: garantiaDraft || null });
+              await onUpdateEquipoInfo?.(equipo.id, { fechaInstalacion: fechaInstalacionDraft || null, vidaUtilAnios: vidaUtilDraft ? Number(vidaUtilDraft) : null, garantiaHasta: garantiaDraft || null, valorReemplazo: Number(String(valorReempDraft).replace(/[^\d]/g, "")) || null });
               setSavingVidaUtil(false); setEditingVidaUtil(false);
             }}>Guardar</Button>
             <button onClick={() => setEditingVidaUtil(false)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>

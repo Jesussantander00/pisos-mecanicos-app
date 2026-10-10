@@ -89,6 +89,35 @@ export async function sSet(key, value, shared) {
   }
 }
 
+const isRecordList = (v) => Array.isArray(v) && v.length > 0 && v.every(x => x && typeof x === "object" && x.id != null);
+const stampOf = (r) => new Date(r?.updatedAt || r?.createdAt || r?.at || 0).getTime() || 0;
+
+/**
+ * Al reconectar, en vez de PISAR lo que otros guardaron mientras este celular estaba sin señal,
+ * se MEZCLA: lo que se creó o cambió aquí se suma a lo que hay en el servidor (si el mismo registro
+ * existe en ambos, queda el más reciente). Solo aplica a listas de registros con "id" (tareas,
+ * mantenimientos, inventario…). Si el servidor no se puede leer, se devuelve el valor tal cual y
+ * la escritura sigue el camino de siempre (y falla/reintenta si de verdad no hay señal).
+ * Límite: algo que se BORRÓ sin señal puede reaparecer, porque no hay forma de distinguir un
+ * borrado de "no estaba en esta copia".
+ */
+async function mergeWithServer(key, value) {
+  if (!isRecordList(value)) return value;
+  try {
+    const { data, error } = await supabase.from("app_storage").select("value").eq("key", key).maybeSingle();
+    if (error || !data || !isRecordList(data.value)) return value;
+    const server = data.value;
+    const byId = new Map(server.map(r => [r.id, r]));
+    const nuevos = [];
+    for (const r of value) {
+      const s = byId.get(r.id);
+      if (!s) nuevos.push(r);
+      else if (stampOf(r) >= stampOf(s)) byId.set(r.id, r);
+    }
+    return [...nuevos, ...server.map(r => byId.get(r.id))];
+  } catch { return value; }
+}
+
 /** Reintenta subir todo lo que quedó pendiente por falta de señal. Se llama sola al reconectar.
  *
  * Antes, si algo fallaba por una razón que NO era falta de señal (por ejemplo, la sesión venció,
@@ -105,7 +134,7 @@ export async function flushOfflineQueue() {
   let lastError = null;
   for (const item of q) {
     try {
-      await writeToSupabase(item.key, item.value);
+      await writeToSupabase(item.key, await mergeWithServer(item.key, item.value));
       synced++;
     } catch (e) {
       lastError = { key: item.key, message: e?.message || String(e) };

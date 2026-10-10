@@ -2225,26 +2225,6 @@ function WeekSemaphore({ tasks, criticalStock = 0 }) {
   );
 }
 
-/** Recordatorio de respaldo (item 17): si hace más de 30 días que nadie descarga un respaldo. */
-function BackupReminder() {
-  const [hidden, setHidden] = useState(false);
-  let last = 0;
-  try {
-    ["pm-local:last-manual-backup", "pm-local:last-auto-backup"].forEach(k => { const v = localStorage.getItem(k); if (v) last = Math.max(last, new Date(v).getTime() || 0); });
-  } catch { /* noop */ }
-  const dias = last ? Math.floor((Date.now() - last) / 86400000) : null;
-  if (hidden || (dias != null && dias <= 30)) return null;
-  return (
-    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-sm font-semibold" style={{ color: C.ink }}>💾 {dias == null ? "Todavía no has descargado un respaldo en este dispositivo" : `Hace ${dias} días que no se descarga un respaldo`}</div>
-        <button onClick={() => setHidden(true)} aria-label="Cerrar" style={{ minWidth: 28, minHeight: 28 }}><X size={16} color={C.gray} /></button>
-      </div>
-      <div className="mt-2"><BackupButton /></div>
-    </div>
-  );
-}
-
 /** Ficha al escanear el QR de una herramienta (item 10). */
 function ScannedToolSheet({ tool, accounts, currentUser, onClose, onLend, onReturn }) {
   useBackCloseModal(true, onClose);
@@ -3075,26 +3055,37 @@ function EmptyState({ icon: I = ClipboardList, title, hint }) {
   );
 }
 
-function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog, navGroups }) {
-  return (
-    <div className="pm-stagger">
-      <style>{`
+function HomeInsights({ part, tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog, navGroups, extraAlerts }) {
+  const style = (
+    <style>{`
         @keyframes pmRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
         .pm-stagger > *{animation:pmRise .5s cubic-bezier(.2,.8,.2,1) both}
         .pm-stagger > *:nth-child(2){animation-delay:.05s}.pm-stagger > *:nth-child(3){animation-delay:.1s}.pm-stagger > *:nth-child(4){animation-delay:.15s}
         .pm-stagger > *:nth-child(5){animation-delay:.2s}.pm-stagger > *:nth-child(6){animation-delay:.25s}.pm-stagger > *:nth-child(n+7){animation-delay:.3s}
         @media (prefers-reduced-motion:reduce){.pm-stagger > *{animation:none}}
       `}</style>
-      {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
+  );
+  if (part === "top") {
+    return (
+      <div className="pm-stagger">
+        {style}
+        {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
+        <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
+        <AlertsStack max={3}>
+          {extraAlerts}
+          {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
+          <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
+          {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
+          {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
+          {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
+        </AlertsStack>
+      </div>
+    );
+  }
+  return (
+    <div className="pm-stagger">
+      {style}
       <ModuleGroupsCard groups={navGroups} onNavigate={onNavigate} />
-      <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
-      <AlertsStack max={3}>
-      {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
-      <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
-      {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
-      {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
-      {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
-      </AlertsStack>
       <ShiftHandoverCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} byName={nameOf(currentUser)} />
       {isAdmin && <MonthChartsCard tasks={tasks} mttoLog={mttoLog} equipos={equipos} />}
       {isAdmin && <YearCostCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
@@ -6770,23 +6761,31 @@ export default function App() {
               <ArrowLeft size={14} /> Volver a Inicio
             </button>
           )}
-          {view === "home" && isAdmin && (
-            <AlertsStack max={2}>
-              <WeekSemaphore tasks={tasks} criticalStock={criticalStockItems.length} />
-              <BackupReminder />
-              <StorageAlert onNavigate={setView} />
-              <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />
-              <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />
-            </AlertsStack>
-          )}
-          {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
-            onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog} navGroups={NAV_GROUPS}
-            nameOf={(u) => profiles?.[u]?.display_name || u} onNavigate={setView}
-            onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
-          {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
-          {view === "home" && <SetupGuideCard onEnablePush={enablePushNotifications} userKey={currentUser} />}
-          {view === "home" && (
-            <HomeView currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
+          {view === "home" && (() => {
+            const goEq = (id) => { setPendingEquipoId(id); setView("maintenance"); };
+            const nm = (u) => profiles?.[u]?.display_name || u;
+            const homeTop = (
+              <>
+                <HomeInsights part="top" tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
+                  onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog} navGroups={NAV_GROUPS} nameOf={nm} onNavigate={setView} onOpenEquipo={goEq}
+                  extraAlerts={isAdmin ? [
+                    <WeekSemaphore key="ws" tasks={tasks} criticalStock={criticalStockItems.length} />,
+                    <StorageAlert key="sa" onNavigate={setView} />,
+                    <WarrantyAlert key="wa" equipos={mttoEquipos} onOpenEquipo={goEq} />,
+                    <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
+                  ] : null} />
+                {!isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
+              </>
+            );
+            const homeBottom = (
+              <>
+                <HomeInsights part="bottom" tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
+                  onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog} navGroups={NAV_GROUPS} nameOf={nm} onNavigate={setView} onOpenEquipo={goEq} />
+                <SetupGuideCard onEnablePush={enablePushNotifications} userKey={currentUser} />
+              </>
+            );
+            return (
+            <HomeView topSlot={homeTop} bottomSlot={homeBottom} currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
               hasSignature={!!account.signature} onGoToProfile={() => setView("profile")}
               tourProgress={{ done: tourProgressCount, total: FLOORS.length }}
               lowStockDetail={lowStockItems}
@@ -6796,7 +6795,8 @@ export default function App() {
               changelogEntries={changelogEntries}
               shiftAlerts={shiftAlerts}
               counts={{ activeIssues: activeCount, lowStock: lowStockItems.length, criticalLowStock: criticalStockItems.length, coldOutOfRange: coldOutOfRange.length, meterAnomalies: meterAnomalies.length, justFinished, openTasks: openTasksCount, pendingAccounts: pendingAccountsCount, preventiveOverdue: preventiveOverdueCount, misTareasVencidas }} />
-          )}
+                      );
+          })()}
           {view === "ronda" && (
             <RoundView floor={floor} currentUser={displayName} shift={shift} activeIssues={activeIssues}
               latestValues={latestValues} floorIndex={FLOORS.findIndex(f => f.id === floorId)} floorCount={FLOORS.length}

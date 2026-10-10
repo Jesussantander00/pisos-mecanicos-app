@@ -777,6 +777,26 @@ export function Lightbox({ url, onClose }) {
   );
 }
 
+/** Recordatorio de respaldo (item 17): si hace más de 30 días que nadie descarga un respaldo. */
+function BackupReminder() {
+  const [hidden, setHidden] = useState(false);
+  let last = 0;
+  try {
+    ["pm-local:last-manual-backup", "pm-local:last-auto-backup"].forEach(k => { const v = localStorage.getItem(k); if (v) last = Math.max(last, new Date(v).getTime() || 0); });
+  } catch { /* noop */ }
+  const dias = last ? Math.floor((Date.now() - last) / 86400000) : null;
+  if (hidden || (dias != null && dias <= 30)) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-semibold" style={{ color: C.ink }}>💾 {dias == null ? "Todavía no has descargado un respaldo en este dispositivo" : `Hace ${dias} días que no se descarga un respaldo`}</div>
+        <button onClick={() => setHidden(true)} aria-label="Cerrar" style={{ minWidth: 28, minHeight: 28 }}><X size={16} color={C.gray} /></button>
+      </div>
+      <div className="mt-2"><BackupButton /></div>
+    </div>
+  );
+}
+
 /** Resumen de entrega de turno: lo cerrado, lo creado y lo pendiente de las últimas horas, listo para copiar o mandar. */
 function ShiftSummaryCard({ tasks, mttoLog, nameOf }) {
   const [open, setOpen] = useState(false);

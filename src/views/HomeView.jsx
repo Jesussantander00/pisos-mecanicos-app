@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, LayoutGrid, List, Package, Search, Send, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, Package, Send, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
 import { C, GERENCIA_ALLOWED_VIEWS, MAX_FAVORITES, elapsed, hoursBetween, normalizeSearchText, normalizeTaskState, nowIso } from "../shared/core";
-import { Button, MiniGauge, NavBadge, PcbBackground } from "../shared/components";
+import { Button, MiniGauge, PcbBackground } from "../shared/components";
 import { __pmState } from "../shared/core";
 
 
@@ -33,7 +33,7 @@ function WhatsNewBanner({ entries, currentUser }) {
   );
 }
 
-export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries, shiftAlerts }) {
+export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries, shiftAlerts, topSlot, bottomSlot }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState(() => {
@@ -166,16 +166,6 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
           </div>
           <Gauge size={26} color={C.amber} className="shrink-0" />
         </div>
-        <div className="relative mt-3.5">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: C.inkSoft }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar módulo… (ej: cuartos fríos, tareas)" aria-label="Buscar módulo"
-            className="w-full text-sm rounded-xl pl-9 pr-9 outline-none" style={{ background: "#fff", color: C.ink, minHeight: 46 }} />
-          {search && (
-            <button onClick={() => setSearch("")} aria-label="Borrar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1" style={{ color: C.inkSoft }}>
-              <X size={16} />
-            </button>
-          )}
-        </div>
         {!gerenciaLocked && (
           <div className="grid grid-cols-3 gap-2 mt-3">
             <button onClick={() => { __pmState.__pmTasksEntryFilter = "vencidas"; onNavigate("tasks"); }} className="text-left rounded-xl px-3 py-2.5" style={{ background: "#2a4058" }} title="Tareas asignadas a ti con más de 24 horas abiertas">
@@ -193,6 +183,8 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
           </div>
         )}
       </div>
+
+      {topSlot}
 
       <WhatsNewBanner entries={changelogEntries} currentUser={currentUser} />
 
@@ -340,33 +332,6 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
         </div>
       )}
 
-      {/* Favoritos — hasta 5 herramientas fijadas por el usuario con la estrella, para no buscarlas cada vez */}
-      {!gerenciaLocked && !searchNorm && (
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Tus favoritos</div>
-            {favMsg && <div className="text-xs" style={{ color: C.amber }}>{favMsg}</div>}
-          </div>
-          {favModules.length === 0 ? (
-            <div className="text-xs rounded-lg border border-dashed p-3" style={{ borderColor: C.line, color: C.gray }}>
-              Toca la ⭐ en cualquier tarjeta de abajo para fijar aquí las {MAX_FAVORITES} herramientas que más usas en tu turno.
-            </div>
-          ) : (
-            <div className="flex items-stretch rounded-xl border overflow-hidden" style={{ borderColor: C.line, background: C.panel }}>
-              {favModules.map((m, i) => (
-                <button key={m.id} onClick={() => onNavigate(m.id)}
-                  className="flex-1 flex flex-col items-center gap-1 py-3 px-2 transition hover:bg-black/[0.03] active:bg-black/[0.06] relative"
-                  style={{ borderLeft: i > 0 ? `1px solid ${C.line}` : "none", minHeight: 48 }}>
-                  <m.icon size={18} color={C.amber} />
-                  <span className="text-xs font-semibold text-center truncate w-full" style={{ color: C.ink }} title={m.label}>{m.label}</span>
-                  <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Usados recientemente — lo último que se abrió, para no tener que buscarlo si no está en favoritos */}
       {!gerenciaLocked && !searchNorm && recentModules.length > 0 && (
         <div className="mb-4">
@@ -384,84 +349,7 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
         </div>
       )}
 
-      {!searchNorm && (
-        <div className="flex items-center justify-between mb-3 gap-2">
-          <p className="text-sm" style={{ color: C.inkSoft }}>
-            {gerenciaLocked
-              ? "Tu cuenta es de solo consulta — puedes ver los paneles de resultados, pero no registrar ni editar nada operativo."
-              : "Todas tus herramientas, a un toque. Fija con la estrella las que más usas."}
-          </p>
-          <div className="flex items-center gap-2 shrink-0">
-            {(
-              <div className="flex rounded-md border overflow-hidden" style={{ borderColor: C.line }}>
-                <button onClick={() => setModuleView("cards")} title="Vista de tarjetas" className="p-1.5" style={{ background: moduleViewMode === "cards" ? C.amberSoft : C.panel }}>
-                  <LayoutGrid size={14} color={moduleViewMode === "cards" ? "#7a5405" : C.gray} />
-                </button>
-                <button onClick={() => setModuleView("list")} title="Vista de lista" className="p-1.5" style={{ background: moduleViewMode === "list" ? C.amberSoft : C.panel, borderLeft: `1px solid ${C.line}` }}>
-                  <List size={14} color={moduleViewMode === "list" ? "#7a5405" : C.gray} />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      {searchNorm && (
-        <p className="text-sm mb-3" style={{ color: C.inkSoft }}>
-          {visibleModules.length} resultado{visibleModules.length === 1 ? "" : "s"} para "{search.trim()}"
-        </p>
-      )}
-
-      {visibleModules.length === 0 ? (
-        <div className="text-sm text-center py-10" style={{ color: C.gray }}>
-          No encontré nada para "{search.trim()}". Intenta con otra palabra.
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {groupedModules.map(({ group, items }) => (
-            <div key={group}>
-              <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: GROUP_COLORS[group] || C.inkSoft }}>{group}</div>
-              {moduleViewMode === "list" ? (
-                <div className="rounded-lg border overflow-hidden" style={{ borderColor: C.line }}>
-                  {items.map((m, i) => (
-                    <button key={m.id} onClick={() => goTo(m.id)}
-                      className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 hover:bg-black/[0.03]"
-                      style={{ background: C.panel, borderTop: i > 0 ? `1px solid ${C.line}` : "none" }}>
-                      <m.icon size={15} className="shrink-0" style={{ color: GROUP_COLORS[m.group] || C.amber }} />
-                      <span className="text-sm font-medium flex-1 min-w-0 truncate" style={{ color: C.ink }} title={m.label}>{m.label}</span>
-                      {!gerenciaLocked && favorites.includes(m.id) && <Sparkles size={12} color={C.amber} fill={C.amber} />}
-                      <NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
-                {items.map(m => {
-                  const gc = GROUP_COLORS[m.group] || C.amber;
-                  return (
-                  <button key={m.id} onClick={() => goTo(m.id)} title={m.desc}
-                    className="group rounded-2xl border p-2 transition duration-150 ease-out relative hover:-translate-y-0.5 hover:shadow-md flex flex-col items-center justify-center gap-2 text-center"
-                    style={{ borderColor: m.highlight ? C.amber : C.line, background: C.panel, minHeight: 104, boxShadow: m.highlight ? `0 0 0 1px ${C.amber}` : "none" }}>
-                    {!gerenciaLocked && (
-                      <span role="button" tabIndex={0} title={favorites.includes(m.id) ? "Quitar de favoritos" : "Fijar en favoritos"}
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); toggleFavorite(m.id); } }}
-                        className={`absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full flex items-center justify-center transition-opacity ${favorites.includes(m.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
-                        style={{ background: C.panel, border: `1px solid ${C.line}`, minWidth: 24, minHeight: 24 }}>
-                        <Sparkles size={12} color={favorites.includes(m.id) ? C.amber : C.gray} fill={favorites.includes(m.id) ? C.amber : "none"} />
-                      </span>
-                    )}
-                    <span className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${gc}22`, color: gc }}><m.icon size={22} /></span>
-                    <span className="text-xs font-semibold leading-tight" style={{ color: C.ink, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{m.label}</span>
-                    <span className="absolute top-1.5 right-1.5"><NavBadge count={m.badge} urgent={m.urgentBadge !== false} pulse={m.pulse} /></span>
-                  </button>
-                  );
-                })}
-              </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {bottomSlot}
     </div>
   );
 }

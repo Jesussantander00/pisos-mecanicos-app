@@ -6907,6 +6907,115 @@ function ConfirmDialog({ open, title, message, confirmLabel = "Sí, continuar", 
 }
 
 /* ============================================================
+   FONDO DE PLACA DE CIRCUITO (ingreso e Inicio)
+   Buses de pistas, chips, resistencias, vías, serigrafía y pulsos de luz. Solo decorativo.
+   ============================================================ */
+const PCB_CONFIGS = {
+  login: {
+    vb: "0 0 390 844", par: "xMidYMid slice", w: 390, h: 844,
+    buses: [
+      { d: "M-10 94 H48 L72 118 H250", ys: [0, 6, 12, 18] },
+      { d: "M330 118 H352 L372 138 V250 L384 262 H400", ys: [0, 6, 12] },
+      { d: "M116 700 H186 L210 724 H400", ys: [0, 6, 12, 18] },
+      { d: "M-10 596 H30 L48 614 V690 H36", ys: [0, 6, 12] },
+    ],
+    traces: ["M-10 190 H34", "M58 190 H108 L128 210 H184 V250", "M-10 420 H56 V470 H140 L166 496 H290 V540", "M400 440 H340 L322 458 V520", "M150 854 V804 L170 784 H300 L316 800 V854", "M-10 780 H60 L76 796 V854", "M110 -10 V40 L126 56 H200", "M290 -10 V30 L306 46 H400", "M36 742 V770", "M44 742 V770"],
+    pulses: [
+      { d: "M-10 94 H48 L72 118 H250", t: 4.4, o: 0 }, { d: "M-10 106 H48 L72 130 H250", t: 5.6, o: -1.4 },
+      { d: "M330 118 H352 L372 138 V250 L384 262 H400", t: 6.2, o: -3, tr: "translate(0 6)" },
+      { d: "M116 700 H186 L210 724 H400", t: 5, o: -0.6 }, { d: "M116 712 H186 L210 736 H400", t: 6.6, o: -2.4 },
+      { d: "M-10 596 H30 L48 614 V690 H36", t: 5.8, o: -4 }, { d: "M-10 420 H56 V470 H140 L166 496 H290 V540", t: 7, o: -1 },
+      { d: "M150 854 V804 L170 784 H300 L316 800 V854", t: 6, o: -5 }, { d: "M110 -10 V40 L126 56 H200", t: 4.8, o: -2 },
+    ],
+    chips: [[250, 108, "U1"], [36, 690, "U2"]],
+    res: [[46, 190, 0], [320, 486, 90], [236, 784, 0], [200, 56, 0], [348, 46, 0]],
+    caps: [[262, 500], [82, 640]],
+    vias: [[184, 250], [290, 540], [322, 520], [200, 56], [316, 854], [76, 854], [150, 854], [36, 770], [44, 770], [110, 40], [400, 46], [34, 190], [58, 190]],
+    nodes: [[72, 118, 0], [210, 724, 0.8], [372, 138, 1.5], [56, 470, 0.4]],
+    holes: [[352, 806, 12]],
+    texts: [[262, 102, "U1"], [48, 684, "U2"], [40, 180, "R12"], [228, 778, "R7"], [256, 518, "C4"], [78, 660, "C9"], [300, 834, "J2"], [338, 832, "TP1"], [132, 68, "V+ 5.0"], [30, 40, "QT-REV.C"]],
+  },
+  home: {
+    vb: "0 0 390 258", par: "xMidYMax slice", w: 390, h: 258,
+    buses: [
+      { d: "M-10 140 H36 L52 156 H160", ys: [0, 6, 12, 18] },
+      { d: "M248 156 H290 L314 180 H400", ys: [0, 6, 12, 18] },
+    ],
+    traces: ["M-10 214 H20", "M52 214 H110 L128 232 H200 V270", "M200 214 V204", "M224 214 V204", "M340 -10 V12 L356 28 H400", "M20 -10 V16 L34 30 H90"],
+    pulses: [
+      { d: "M-10 140 H36 L52 156 H160", t: 4, o: 0 }, { d: "M-10 152 H36 L52 168 H160", t: 5.2, o: -1.8 },
+      { d: "M248 156 H290 L314 180 H400", t: 4.6, o: -0.8 }, { d: "M248 168 H290 L314 192 H400", t: 6, o: -3 },
+      { d: "M340 -10 V12 L356 28 H400", t: 5, o: -2 },
+    ],
+    chips: [[160, 146, "U1"]],
+    res: [[36, 214, 0], [62, 30, 0]],
+    caps: [],
+    vias: [[200, 204], [224, 204], [200, 270], [20, 214], [52, 214], [90, 30], [400, 28]],
+    nodes: [[52, 156, 0], [314, 180, 1], [356, 28, 1.8]],
+    holes: [],
+    texts: [[172, 142, "U1"], [28, 204, "R3"], [318, 152, "V+ 5.0"]],
+  },
+};
+
+function PcbBackground({ variant = "login" }) {
+  const cfg = PCB_CONFIGS[variant] || PCB_CONFIGS.login;
+  const id = "pcb" + variant;
+  return (
+    <>
+      <style>{`
+        @keyframes pcbRun{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+        @keyframes pcbNode{0%,100%{opacity:.5}50%{opacity:1}}
+        @keyframes pcbBlink{0%,100%{opacity:.25}50%{opacity:1}}
+        @keyframes pcbScan{0%{transform:translateY(-20%)}100%{transform:translateY(120%)}}
+        .pcb-run{stroke-dasharray:5 95;animation:pcbRun 4.8s linear infinite}
+        .pcb-node{animation:pcbNode 3s ease-in-out infinite}
+        .pcb-blink{animation:pcbBlink 1.6s steps(2,end) infinite}
+        .pcb-auth input::placeholder{color:#8aa2b8}
+        .pcb-scan{position:absolute;left:0;right:0;height:160px;background:linear-gradient(180deg,transparent,rgba(56,189,248,.07),transparent);animation:pcbScan 8s linear infinite;pointer-events:none}
+        @media (prefers-reduced-motion:reduce){.pcb-run,.pcb-node,.pcb-blink,.pcb-scan{animation:none}}
+      `}</style>
+      <svg aria-hidden="true" viewBox={cfg.vb} preserveAspectRatio={cfg.par} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+        <defs>
+          <filter id={id + "g"} x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.8" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+          <pattern id={id + "grid"} width="12" height="12" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".6" fill="rgba(125,211,252,.10)" /></pattern>
+          <radialGradient id={id + "glow"} cx="85%" cy="12%" r="75%"><stop offset="0" stopColor="#38bdf8" stopOpacity=".3" /><stop offset="1" stopColor="#38bdf8" stopOpacity="0" /></radialGradient>
+          <g id={id + "via"}><circle r="5" fill="#06121f" stroke="#d9a441" strokeWidth="1.5" /><circle r="1.7" fill="#38bdf8" /></g>
+          <g id={id + "res"}><rect x="-9" y="-3.6" width="18" height="7.2" rx="1" fill="#0b2238" stroke="#5aa9d6" strokeWidth="1" /><rect x="-9" y="-3.6" width="4" height="7.2" fill="#d9a441" /><rect x="5" y="-3.6" width="4" height="7.2" fill="#d9a441" /></g>
+          <g id={id + "chip"}>
+            <rect x="8" y="0" width="64" height="52" rx="4" fill="#0a1d30" stroke="#5aa9d6" strokeWidth="1.2" />
+            <rect x="15" y="7" width="50" height="38" rx="2" fill="rgba(56,189,248,.06)" stroke="rgba(125,211,252,.3)" />
+            <path d="M0 10h8M0 16h8M0 22h8M0 28h8M0 34h8M0 40h8M72 10h8M72 16h8M72 22h8M72 28h8M72 34h8M72 40h8M20 -8v8M28 -8v8M36 -8v8M44 -8v8M52 -8v8M60 -8v8M20 52v8M28 52v8M36 52v8M44 52v8M52 52v8M60 52v8" stroke="#d9a441" strokeWidth="2.4" />
+            <circle cx="17" cy="9" r="1.8" fill="#7dd3fc" />
+            <rect x="32" y="20" width="16" height="12" rx="1" fill="rgba(56,189,248,.25)" className="pcb-blink" />
+          </g>
+        </defs>
+        <rect width={cfg.w} height={cfg.h} fill={`url(#${id}glow)`} />
+        <rect width={cfg.w} height={cfg.h} fill={`url(#${id}grid)`} />
+        <g fill="none" stroke="rgba(56,189,248,.42)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round">
+          {cfg.buses.map((b, i) => b.ys.map(y => <path key={i + "-" + y} d={b.d} transform={`translate(0 ${y})`} />))}
+          {cfg.traces.map((d, i) => <path key={"t" + i} d={d} />)}
+        </g>
+        <g fill="none" stroke="#9be0ff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" filter={`url(#${id}g)`}>
+          {cfg.pulses.map((p, i) => <path key={i} className="pcb-run" pathLength="100" d={p.d} transform={p.tr} style={{ animationDuration: p.t + "s", animationDelay: p.o + "s" }} />)}
+        </g>
+        {cfg.chips.map(([x, y], i) => <use key={"c" + i} href={`#${id}chip`} x={x} y={y} />)}
+        {cfg.res.map(([x, y, r], i) => <use key={"r" + i} href={`#${id}res`} x={x} y={y} transform={r ? `rotate(${r} ${x} ${y})` : undefined} />)}
+        {cfg.caps.map(([x, y], i) => (
+          <g key={"k" + i}><rect x={x} y={y} width="14" height="8" rx="1" fill="#0b2238" stroke="#5aa9d6" strokeWidth="1" /><rect x={x} y={y} width="3.4" height="8" fill="#d9a441" /><rect x={x + 10.6} y={y} width="3.4" height="8" fill="#d9a441" /></g>
+        ))}
+        {cfg.vias.map(([x, y], i) => <use key={"v" + i} href={`#${id}via`} x={x} y={y} />)}
+        <g fill="#38bdf8">{cfg.nodes.map(([x, y, d], i) => <circle key={i} className="pcb-node" cx={x} cy={y} r="2.2" style={{ animationDelay: d + "s" }} />)}</g>
+        {cfg.holes.map(([x, y, r], i) => <g key={"h" + i}><circle cx={x} cy={y} r={r} fill="#050d16" stroke="#d9a441" strokeWidth="2" /><circle cx={x} cy={y} r={r / 2} fill="#02070d" stroke="rgba(125,211,252,.4)" /></g>)}
+        <g fontFamily="ui-monospace, Menlo, Consolas, monospace" fontSize="7" fill="rgba(190,225,248,.42)" letterSpacing="1">
+          {cfg.texts.map(([x, y, t], i) => <text key={i} x={x} y={y}>{t}</text>)}
+        </g>
+      </svg>
+      {variant === "login" && <div className="pcb-scan" aria-hidden="true" />}
+    </>
+  );
+}
+
+/* ============================================================
    AUTENTICACIÓN (usuario + contraseña)
    Nota de seguridad real: las contraseñas se guardan como hash SHA-256
    en el almacenamiento compartido del artifact. Es una protección básica
@@ -6931,72 +7040,53 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
     }
   };
 
-  const circuitBg = `url("data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'>
-      <g fill='none' stroke='rgba(56,189,248,0.16)' stroke-width='1.5'>
-        <path d='M0 30 H45 V90 H160' />
-        <path d='M100 0 V50 H160' />
-        <path d='M0 120 H60 V160' />
-        <path d='M130 60 V160' />
-        <path d='M60 90 H100' />
-      </g>
-      <g fill='rgba(56,189,248,0.28)'>
-        <circle cx='45' cy='30' r='2.6' />
-        <circle cx='45' cy='90' r='2.6' />
-        <circle cx='100' cy='50' r='2.6' />
-        <circle cx='60' cy='120' r='2.6' />
-        <circle cx='130' cy='60' r='2.6' />
-        <circle cx='60' cy='90' r='2.6' />
-        <circle cx='100' cy='90' r='2.6' />
-      </g>
-    </svg>`
-  )}")`;
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#0b1622", backgroundImage: circuitBg, backgroundRepeat: "repeat" }}>
-      <div className="w-full max-w-sm mx-4">
+    <div className="pcb-auth min-h-screen flex items-center justify-center relative overflow-hidden" style={{ background: "radial-gradient(120% 70% at 50% 18%, #0d2740 0%, #071522 55%, #040b13 100%)" }}>
+      <PcbBackground variant="login" />
+      <div className="w-full max-w-sm mx-4 relative" style={{ zIndex: 2 }}>
         <div className="text-center mb-6">
-          <img src="/icon-192.png" alt="QuinTech" className="mx-auto w-12 h-12 rounded-lg mb-3 object-cover" />
-          <h1 className="text-white text-lg font-semibold tracking-tight">QuinTech</h1>
+          <img src="/icon-192.png" alt="QuinTech" className="mx-auto rounded-3xl mb-3 object-cover" style={{ width: 84, height: 84, border: "1px solid rgba(125,211,252,.55)", boxShadow: "0 0 0 6px rgba(56,189,248,.08), 0 0 42px rgba(56,189,248,.55)" }} />
+          <h1 className="text-white text-3xl font-bold tracking-tight" style={{ textShadow: "0 2px 14px rgba(4,12,20,.9)" }}>QuinTech</h1>
           <p className="text-sm" style={{ color: "#8fa3b8" }}>{mode === "login" ? "Inicia sesión para comenzar el recorrido" : "Crea tu cuenta de operador"}</p>
-          <p className="text-white text-base font-bold tracking-tight mt-1">Innovación Tecnológica</p>
+          <p className="text-xs font-semibold mt-1" style={{ color: "#7dd3fc", letterSpacing: "0.22em", textTransform: "uppercase", textShadow: "0 2px 12px rgba(4,12,20,.9)" }}>Innovación Tecnológica</p>
         </div>
-        <div className="rounded-xl p-5" style={{ background: "#d1d5db" }}>
-          <div className="flex rounded-md overflow-hidden mb-4 border" style={{ borderColor: "#9ca3af", background: "#d1d5db" }}>
-            <button onClick={() => setMode("login")} className="flex-1 py-2 text-sm font-medium"
-              style={{ background: mode === "login" ? "#1f2937" : "#d1d5db", color: mode === "login" ? "#fff" : "#4b5563" }}>Iniciar sesión</button>
-            <button onClick={() => setMode("register")} className="flex-1 py-2 text-sm font-medium"
-              style={{ background: mode === "register" ? "#1f2937" : "#d1d5db", color: mode === "register" ? "#fff" : "#4b5563" }}>Crear cuenta</button>
+        <div className="rounded-2xl p-5" style={{ background: "rgba(8,20,33,.72)", border: "1px solid rgba(125,211,252,.3)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", boxShadow: "0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06)" }}>
+          <div className="flex rounded-xl overflow-hidden mb-4 p-1 gap-1" style={{ background: "rgba(3,10,18,.7)" }}>
+            <button onClick={() => setMode("login")} className="flex-1 py-2 text-sm font-semibold"
+              style={{ background: mode === "login" ? "linear-gradient(135deg,#38bdf8,#2563eb)" : "transparent", color: mode === "login" ? "#04121f" : "#9fb8cc", borderRadius: 9, minHeight: 40 }}>Iniciar sesión</button>
+            <button onClick={() => setMode("register")} className="flex-1 py-2 text-sm font-semibold"
+              style={{ background: mode === "register" ? "linear-gradient(135deg,#38bdf8,#2563eb)" : "transparent", color: mode === "register" ? "#04121f" : "#9fb8cc", borderRadius: 9, minHeight: 40 }}>Crear cuenta</button>
           </div>
 
           <div className="space-y-2.5">
             {mode === "register" && (
               <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Tu nombre completo"
                 autoComplete="name"
-                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }} />
+                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "rgba(148,197,235,.28)", background: "rgba(5,14,24,.7)", color: "#e8f3fc", minHeight: 46 }} />
             )}
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Correo" type="email"
               autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="email"
-              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }} />
+              className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "rgba(148,197,235,.28)", background: "rgba(5,14,24,.7)", color: "#e8f3fc", minHeight: 46 }} />
             <div className="relative">
               <input value={password} onChange={e => setPassword(e.target.value)} type={showPw ? "text" : "password"} placeholder="Contraseña"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
-                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }}
+                className="w-full px-3 py-2 pr-16 rounded-md text-sm border outline-none" style={{ borderColor: "rgba(148,197,235,.28)", background: "rgba(5,14,24,.7)", color: "#e8f3fc", minHeight: 46 }}
                 onKeyDown={e => { if (e.key === "Enter" && mode === "login") submit(); }} />
               <button type="button" onClick={() => setShowPw(v => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium px-1.5 py-1" style={{ color: "#6b7280" }}>
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium px-1.5 py-1" style={{ color: "#7dd3fc" }}>
                 {showPw ? "Ocultar" : "Mostrar"}
               </button>
             </div>
             {mode === "register" && (
               <input value={password2} onChange={e => setPassword2(e.target.value)} type={showPw ? "text" : "password"} placeholder="Confirmar contraseña"
                 autoComplete="new-password"
-                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "#9ca3af", background: "#fff", color: "#1f2937" }}
+                className="w-full px-3 py-2 rounded-md text-sm border outline-none" style={{ borderColor: "rgba(148,197,235,.28)", background: "rgba(5,14,24,.7)", color: "#e8f3fc", minHeight: 46 }}
                 onKeyDown={e => { if (e.key === "Enter") submit(); }} />
             )}
             {mode === "register" && password2 && password !== password2 && (
-              <div className="text-xs" style={{ color: "#dc2626" }}>Las contraseñas no coinciden.</div>
+              <div className="text-xs" style={{ color: "#fca5a5" }}>Las contraseñas no coinciden.</div>
             )}
-            {error && <div className="text-xs" style={{ color: "#dc2626" }}>{error}</div>}
+            {error && <div className="text-xs" style={{ color: "#fca5a5" }}>{error}</div>}
             {mode === "register" && (
               <div className="text-xs rounded-md p-2" style={{ background: C.amberSoft, color: C.ink }}>
                 Tu cuenta queda pendiente de aprobación por un administrador (salvo que seas la primera persona en registrarse en todo el sistema).
@@ -7006,13 +7096,13 @@ function AuthScreen({ onLogin, onRegister, error, busy }) {
               {mode === "login" ? "Entrar" : "Crear cuenta"}
             </Button>
             {mode === "login" && (
-              <p className="text-xs text-center" style={{ color: "#6b7280" }}>
+              <p className="text-xs text-center" style={{ color: "#9fb8cc" }}>
                 ¿Olvidaste tu contraseña? Pídele a un administrador que te la restablezca desde el Panel de administrador.
               </p>
             )}
           </div>
         </div>
-        <p className="text-center text-xs mt-4" style={{ color: "#8b98a8" }}>
+        <p className="text-center text-xs mt-4" style={{ color: "#7f97ad" }}>
           Acceso por correo y contraseña para identificar cada recorrido. No sustituye un sistema de seguridad corporativo.
           Una vez inicias sesión en este navegador, queda recordada aquí — no hace falta volver a entrar cada vez que abres la página,
           salvo que borres los datos de navegación o uses una pestaña de incógnito.
@@ -16717,31 +16807,9 @@ function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate,
     <div className="pb-20">
       {/* pb-20: deja espacio para que el botón flotante "Asistente IA" nunca tape
           contenido real (como "Ver todos los módulos") cuando se hace scroll hasta el final. */}
-      <div className="relative rounded-2xl p-4 mb-4 overflow-hidden" style={{ background: `linear-gradient(135deg, ${C.steel} 0%, ${C.steelDark} 100%)`, isolation: "isolate" }}>
-        <style>{`
-          @keyframes pmNodePulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
-          @keyframes pmTracePulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.75; } }
-        `}</style>
-        {/* Fondo decorativo tipo placa de circuito iluminada — solo estético, no interactivo */}
-        <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" aria-hidden="true" style={{ pointerEvents: "none", zIndex: -1 }}>
-          <defs>
-            <pattern id="pmCircuitPattern" width="130" height="100" patternUnits="userSpaceOnUse">
-              <path d="M0 22 H38 V54 H76 V12 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 5s ease-in-out infinite" }} />
-              <path d="M16 100 V70 H58 V90 H96 V48 H130" fill="none" stroke="#2f6fb0" strokeWidth="1.1" style={{ animation: "pmTracePulse 6.5s ease-in-out infinite 1.2s" }} />
-              <path d="M0 85 H24 V60 H0" fill="none" stroke="#245a91" strokeWidth="1" style={{ animation: "pmTracePulse 7s ease-in-out infinite 0.6s" }} />
-              <circle cx="38" cy="22" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.2s ease-in-out infinite" }} />
-              <circle cx="76" cy="54" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4s ease-in-out infinite 0.8s" }} />
-              <circle cx="58" cy="70" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 3.6s ease-in-out infinite 1.6s" }} />
-              <circle cx="96" cy="48" r="2.6" fill="#5fb4ff" style={{ animation: "pmNodePulse 4.4s ease-in-out infinite 0.3s" }} />
-            </pattern>
-            <radialGradient id="pmCircuitGlow" cx="82%" cy="15%" r="90%">
-              <stop offset="0%" stopColor="#3fa9ff" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#3fa9ff" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#pmCircuitPattern)" opacity="0.65" />
-          <rect width="100%" height="100%" fill="url(#pmCircuitGlow)" />
-        </svg>
+      <div className="relative rounded-2xl p-4 mb-4 overflow-hidden" style={{ background: `linear-gradient(135deg, ${C.steel} 0%, ${C.steelDark} 100%)`, isolation: "isolate", paddingBottom: 78 }}>
+        {/* Fondo de placa de circuito impreso animada — solo estético, no interactivo */}
+        <div className="absolute inset-0" style={{ zIndex: -1, pointerEvents: "none" }}><PcbBackground variant="home" /></div>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/icon-192.png" alt="" className="w-10 h-10 rounded-xl object-cover shrink-0" />

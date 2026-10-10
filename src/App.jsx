@@ -122,6 +122,15 @@ function isNightHour(d = new Date()) {
   return hourDecimal >= sunset || hourDecimal < sunrise;
 }
 
+/** Identificador anónimo de este dispositivo (se crea una vez y queda en el navegador). Sirve para avisar de ingresos desde un aparato nuevo. */
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem("pm-local:device-id");
+    if (!id) { id = "dev_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem("pm-local:device-id", id); }
+    return id;
+  } catch { return "dev_sin-almacenamiento"; }
+}
+
 /**
  * Navegador y sistema operativo de quien hizo el cambio — para el historial de auditoría. Un
  * navegador no puede leer la IP real por sí solo (eso solo lo puede capturar un servidor), pero
@@ -15430,6 +15439,7 @@ function DriveArchivePanel({ tasks, accounts }) {
       await driveUpload(token, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name, rf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       say(`✓ Guardado en Drive: QuinTech/Respaldos/${name}`);
       showToast("✓ Respaldo guardado en Drive.", true);
+      sSet("last-backup", { at: new Date().toISOString() }, true).catch(() => {});
     } catch (e) { setErr(e.message || "No se pudo guardar el respaldo."); say(`✗ ${e.message || "falló"}`); }
     setBusy(false);
   };
@@ -19655,7 +19665,160 @@ function ShiftHandoverCard({ tasks, mttoLog, nameOf, byName }) {
   );
 }
 
-function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked }) {
+/** Recordatorio de respaldo: el cron gratis de Vercel ya está ocupado, así que avisa al administrador cuando hace más de 7 días que no hay respaldo en Drive. */
+function BackupReminderCard({ onNavigate }) {
+  const [at, setAt] = useState(undefined);
+  useEffect(() => { let on = true; sGet("last-backup", true).then(v => { if (on) setAt(v?.at || null); }).catch(() => { if (on) setAt(null); }); return () => { on = false; }; }, []);
+  if (at === undefined) return null;
+  const days = at ? Math.floor((Date.now() - new Date(at).getTime()) / 86400000) : null;
+  if (days != null && days < 7) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft || C.panel, border: `1px solid ${C.amber}` }}>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}>💾 {days == null ? "Todavía no hay un respaldo en Drive" : `Hace ${days} días no se hace un respaldo en Drive`}</div>
+      <div className="text-[11px] mt-0.5 mb-2" style={{ color: C.inkSoft }}>Un respaldo guarda tareas, seguimientos y mantenimientos en tu Drive por si algo se daña.</div>
+      <button onClick={() => onNavigate("admin")} className="text-xs font-semibold rounded-lg px-3" style={{ minHeight: 36, background: C.amber, color: "#fff" }}>Ir a respaldar</button>
+    </div>
+  );
+}
+
+/** Avisa al administrador de cuentas que entraron en los últimos 7 días desde un dispositivo que nunca habían usado. */
+function NewDeviceCard({ loginLog, nameOf }) {
+  const [open, setOpen] = useState(false);
+  const since = Date.now() - 7 * 86400000;
+  const log = (loginLog || []).filter(l => l.deviceId);
+  const firstSeen = {};
+  [...log].reverse().forEach(l => { const k = l.userId + "|" + l.deviceId; if (!firstSeen[k]) firstSeen[k] = l; });
+  const hadBefore = {};
+  (loginLog || []).forEach(l => { if (!l.deviceId) hadBefore[l.userId] = true; });
+  const nuevos = Object.values(firstSeen).filter(l => new Date(l.at).getTime() >= since)
+    .filter(l => (loginLog || []).some(o => o.userId === l.userId && new Date(o.at).getTime() < new Date(l.at).getTime() - 60000))
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+  if (nuevos.length === 0) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-bold" style={{ color: C.ink }}>📱 Ingresos desde dispositivos nuevos ({nuevos.length})</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
+      </button>
+      {open && nuevos.map(l => (
+        <div key={l.userId + l.deviceId} className="text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+          <b>{nameOf(l.userId)}</b> · {l.device || "Dispositivo"} · {fmtDT(l.at)}
+        </div>
+      ))}
+      {open && <div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>Si no reconoces alguno, cambia la contraseña de esa cuenta desde Administración.</div>}
+    </div>
+  );
+}
+
+/** Equipos cuyas fallas se están acercando: el tiempo entre las últimas dos es mucho menor que el anterior. */
+function FailurePredictCard({ mttoLog, equipos, onOpenEquipo }) {
+  const by = {};
+  (mttoLog || []).forEach(r => { if (r.tipo === "correctivo" && r.equipoId) (by[r.equipoId] = by[r.equipoId] || []).push(new Date(r.fecha).getTime()); });
+  const list = [];
+  Object.entries(by).forEach(([id, arr]) => {
+    const d = arr.filter(x => x > 0).sort((a, b) => a - b);
+    if (d.length < 3) return;
+    const last = (d[d.length - 1] - d[d.length - 2]) / 86400000;
+    const prev = (d[d.length - 2] - d[d.length - 3]) / 86400000;
+    const e = (equipos || []).find(x => x.id === id);
+    if (!e || e.active === false) return;
+    if (prev >= 5 && last <= prev * 0.6) list.push({ e, prev: Math.round(prev), last: Math.max(1, Math.round(last)) });
+  });
+  list.sort((a, b) => (a.last / a.prev) - (b.last / b.prev));
+  if (list.length === 0) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}>📉 Fallas cada vez más seguidas ({list.length})</div>
+      <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>El tiempo entre las últimas fallas se está acortando. Conviene una revisión a fondo antes de la próxima.</div>
+      {list.slice(0, 6).map(({ e, prev, last }) => (
+        <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+          <span className="truncate">{e.nombre}</span>
+          <span className="shrink-0" style={{ color: C.amber }}>cada {prev} d → {last} d</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Presupuesto mensual de mantenimiento vs. lo gastado en el mes (según los costos de los registros). */
+function MonthlyBudgetCard({ mttoLog }) {
+  const [budget, setBudget] = useState(undefined);
+  const [edit, setEdit] = useState(false);
+  const [draft, setDraft] = useState("");
+  useEffect(() => { let on = true; sGet("budget-mensual", true).then(v => { if (on) setBudget(Number(v?.monto) || 0); }).catch(() => { if (on) setBudget(0); }); return () => { on = false; }; }, []);
+  const now = new Date();
+  const spent = (mttoLog || []).reduce((a, r) => { const d = new Date(r.fecha); return (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) ? a + (Number(r.costo) || 0) : a; }, 0);
+  const money = (n) => "$" + Math.round(n).toLocaleString("es-CO");
+  if (budget === undefined) return null;
+  const save = async () => { const n = Number(String(draft).replace(/[^\d]/g, "")) || 0; setBudget(n); setEdit(false); try { await sSet("budget-mensual", { monto: n, by: nowIso() }, true); } catch { showToast("No se pudo guardar el presupuesto.", false); } };
+  const day = now.getDate(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const proj = day > 0 ? (spent / day) * dim : 0;
+  const pct = budget > 0 ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
+  const over = budget > 0 && spent > budget;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${over ? C.red : C.line}` }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-bold" style={{ color: C.ink }}>🧾 Presupuesto del mes</span>
+        <button onClick={() => { setDraft(budget ? String(budget) : ""); setEdit(v => !v); }} className="text-xs" style={{ color: C.amber, minHeight: 32 }}>{edit ? "Cancelar" : (budget ? "Cambiar" : "Definir")}</button>
+      </div>
+      {edit && (
+        <div className="flex gap-2 my-2">
+          <input inputMode="numeric" value={draft} onChange={e => setDraft(e.target.value)} placeholder="Monto en pesos (ej: 2000000)" className="flex-1 rounded-lg px-3 text-sm" style={{ minHeight: 40, background: C.bg, border: `1px solid ${C.line}`, color: C.ink }} />
+          <button onClick={save} className="rounded-lg px-3 text-xs font-semibold" style={{ minHeight: 40, background: C.amber, color: "#fff" }}>Guardar</button>
+        </div>
+      )}
+      {budget > 0 ? (
+        <>
+          <div className="text-xs mt-1" style={{ color: C.inkSoft }}>{money(spent)} de {money(budget)} ({pct}%){over ? " — te pasaste" : ""}</div>
+          <div className="h-2 rounded-full mt-1 overflow-hidden" style={{ background: C.line }}><div style={{ width: pct + "%", height: "100%", background: over ? C.red : pct >= 80 ? C.amber : C.green }} /></div>
+          <div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>A este ritmo cerrarías el mes en {money(proj)}{proj > budget ? " (por encima del presupuesto)" : ""}.</div>
+        </>
+      ) : <div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>Gastado este mes: {money(spent)}. Define un presupuesto para ver el avance.</div>}
+    </div>
+  );
+}
+
+/** Arma el mensaje de pedido con lo que está bajo el mínimo y lo abre en WhatsApp (tú eliges a quién enviarlo). */
+function LowStockOrderCard({ invItems }) {
+  const low = computeLowStock(invItems || []);
+  const [open, setOpen] = useState(false);
+  if (low.length === 0) return null;
+  const falta = (it) => Math.max(1, Math.ceil((it.minThreshold || 0) * 2 - (it.quantity || 0)));
+  const text = `Pedido de repuestos — ${new Date().toLocaleDateString("es-CO")}\n` + low.slice(0, 40).map(it => `• ${it.name}${it.sku ? " (" + it.sku + ")" : ""}: pedir ${falta(it)} ${it.unit || "unidad"} (quedan ${it.quantity})`).join("\n");
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between gap-2 text-left" style={{ minHeight: 36 }}>
+        <span className="text-sm font-bold" style={{ color: C.ink }}>🛒 Repuestos por pedir ({low.length})</span>
+        <span className="text-xs" style={{ color: C.amber }}>{open ? "▲" : "Ver ▼"}</span>
+      </button>
+      {open && (
+        <>
+          {low.slice(0, 40).map(it => <div key={it.id} className="flex justify-between gap-2 text-xs py-1 border-t" style={{ borderColor: C.line, color: C.ink }}><span className="truncate">{it.name}</span><span className="shrink-0">quedan {it.quantity} · pedir {falta(it)}</span></div>)}
+          <div className="flex gap-2 mt-2">
+            <a href={"https://wa.me/?text=" + encodeURIComponent(text)} target="_blank" rel="noopener noreferrer" className="rounded-lg px-3 text-xs font-semibold flex items-center" style={{ minHeight: 40, background: "#25D366", color: "#fff" }}>Enviar por WhatsApp</a>
+            <button onClick={() => { try { navigator.clipboard.writeText(text); showToast("✓ Lista copiada", true); } catch { showToast("No se pudo copiar", false); } }} className="rounded-lg px-3 text-xs font-semibold" style={{ minHeight: 40, border: `1px solid ${C.line}`, color: C.ink }}>Copiar lista</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Cierre de sesión automático por inactividad — se elige por dispositivo (útil en tablets compartidas). */
+function IdleLogoutSetting() {
+  const [min, setMin] = useState(() => { try { return localStorage.getItem("pm-local:idle-min") || "0"; } catch { return "0"; } });
+  return (
+    <div className="rounded-xl p-3 mb-4 flex items-center justify-between gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <span className="text-xs" style={{ color: C.ink }}>🔒 Cerrar sesión sola en este dispositivo</span>
+      <select value={min} onChange={e => { setMin(e.target.value); try { localStorage.setItem("pm-local:idle-min", e.target.value); } catch { /* sin almacenamiento */ } }}
+        className="rounded-lg px-2 text-xs" style={{ minHeight: 36, background: C.bg, border: `1px solid ${C.line}`, color: C.ink }}>
+        <option value="0">Nunca</option><option value="30">Tras 30 min sin usar</option><option value="120">Tras 2 horas</option><option value="480">Tras 8 horas</option>
+      </select>
+    </div>
+  );
+}
+
+function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin, nameOf, onNavigate, onOpenEquipo, onCreateTask, viewerLocked, loginLog }) {
   return (
     <>
       {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
@@ -19665,6 +19828,12 @@ function HomeInsights({ tasks, mttoLog, equipos, invItems, currentUser, isAdmin,
       <ShiftHandoverCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} byName={nameOf(currentUser)} />
       {isAdmin && <MonthChartsCard tasks={tasks} mttoLog={mttoLog} equipos={equipos} />}
       {isAdmin && <YearCostCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
+      {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
+      {isAdmin && <MonthlyBudgetCard mttoLog={mttoLog} />}
+      {isAdmin && <LowStockOrderCard invItems={invItems} />}
+      {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
+      {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
+      <IdleLogoutSetting />
     </>
   );
 }
@@ -24573,7 +24742,7 @@ export default function App() {
       await handleAuthChange(data.session);
       setView("home");
       // Registra el ingreso para poder ver, como admin, quién está usando la app y con qué frecuencia.
-      const logEntry = { userId: data.session.user.id, at: nowIso() };
+      const logEntry = { userId: data.session.user.id, at: nowIso(), device: getDeviceInfo(), deviceId: getDeviceId() };
       const nextLog = [logEntry, ...loginLog].slice(0, 2000);
       setLoginLog(nextLog);
       sSet("login-log", nextLog, true); // no se espera (await) a propósito, para no atrasar el ingreso
@@ -24624,6 +24793,20 @@ export default function App() {
   };
 
   const logout = async () => { await supabase.auth.signOut(); setCurrentUser(null); setProfiles({}); };
+  const logoutRef = useRef(null); logoutRef.current = logout;
+  // Cierre de sesión por inactividad (opcional, por dispositivo): se mide con toques, teclas y clics.
+  useEffect(() => {
+    if (!currentUser) return;
+    let last = Date.now();
+    const bump = () => { last = Date.now(); };
+    const evs = ["pointerdown", "keydown", "touchstart", "scroll"];
+    evs.forEach(ev => window.addEventListener(ev, bump, { passive: true }));
+    const iv = setInterval(() => {
+      let min = 0; try { min = Number(localStorage.getItem("pm-local:idle-min")) || 0; } catch { /* sin almacenamiento */ }
+      if (min > 0 && Date.now() - last > min * 60000) { clearInterval(iv); showToast("Sesión cerrada por inactividad.", true); logoutRef.current?.(); }
+    }, 30000);
+    return () => { clearInterval(iv); evs.forEach(ev => window.removeEventListener(ev, bump)); };
+  }, [currentUser]);
 
   const addChangelogEntry = async ({ title, description }) => {
     const entry = { id: uid("cl"), title, description, at: nowIso(), by: displayName };
@@ -27003,7 +27186,7 @@ export default function App() {
           {view === "home" && isAdmin && <WarrantyAlert equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && isAdmin && <PreventiveGoalCard mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && <HomeInsights tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} invItems={invItems} currentUser={currentUser} isAdmin={isAdmin}
-            onCreateTask={createTask} viewerLocked={viewerLocked}
+            onCreateTask={createTask} viewerLocked={viewerLocked} loginLog={loginLog}
             nameOf={(u) => profiles?.[u]?.display_name || u} onNavigate={setView}
             onOpenEquipo={(id) => { setPendingEquipoId(id); setView("maintenance"); }} />}
           {view === "home" && !isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}

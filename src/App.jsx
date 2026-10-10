@@ -9549,6 +9549,8 @@ function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invIt
                   <span className="flex items-center gap-1.5" style={{ color: C.ink }}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: TASK_STATE_COLORS[normalizeTaskState(ev.estado)]?.fg || C.gray }} />
                     {TASK_STATES.find(s => s.code === normalizeTaskState(ev.estado))?.label || ev.estado}
+                    {ev.nota ? <span style={{ color: C.inkSoft }}> — {ev.nota}</span> : null}
+                    {ev.by ? <span style={{ color: C.gray }}> · {ev.by}</span> : null}
                   </span>
                   <span style={{ color: C.gray }}>{fmtDT(ev.at)}</span>
                 </div>
@@ -25577,8 +25579,23 @@ export default function App() {
     await sSet("tasks", next, true);
   };
 
+  /** Anota quién hizo cada cambio en la cronología de la tarea: a las entradas nuevas de timeLog les pone
+   *  el nombre de quien está usando la app, y si solo cambió la persona asignada deja una entrada "Reasignada a …". */
+  const withActor = (before, patch) => {
+    const prev = (before && before.timeLog) || [];
+    if (patch.timeLog && patch.timeLog.length > prev.length) {
+      return { ...patch, timeLog: patch.timeLog.map((e, i) => (i >= prev.length && !e.by ? { ...e, by: displayName } : e)) };
+    }
+    if (before && !patch.timeLog && patch.asignadoA !== undefined && patch.asignadoA !== before.asignadoA) {
+      const nuevo = profiles?.[patch.asignadoA]?.display_name || patch.asignadoA || "nadie";
+      return { ...patch, timeLog: [...prev, { estado: normalizeTaskState(patch.estado || before.estado), at: nowIso(), nota: `Reasignada a ${nuevo}`, by: displayName }] };
+    }
+    return patch;
+  };
+
   const updateTask = async (id, patch) => {
     const before = tasks.find(t => t.id === id);
+    patch = withActor(before, patch);
     // Una orden que el administrador devolvió y vuelve a cerrarse: se marca y se le avisa (una sola vez).
     const reCierre = !!(before && before.devueltaAt && !before.reCerradaAt && patch.estado && normalizeTaskState(patch.estado) === "finalizada" && normalizeTaskState(before.estado) !== "finalizada");
     if (reCierre) patch = { ...patch, reCerradaAt: nowIso() };
@@ -25626,7 +25643,7 @@ export default function App() {
     if (ids.length === 0) return;
     const befores = {};
     ids.forEach(id => { befores[id] = tasks.find(t => t.id === id); });
-    const next = tasks.map(t => patchesById[t.id] ? { ...t, ...patchesById[t.id], updatedAt: ts } : t);
+    const next = tasks.map(t => patchesById[t.id] ? { ...t, ...withActor(t, patchesById[t.id]), updatedAt: ts } : t);
     setTasks(next);
     await sSet("tasks", next, true);
     ids.forEach(id => {

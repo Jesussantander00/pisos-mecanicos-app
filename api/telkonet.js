@@ -454,14 +454,15 @@ export default async function handler(req, res) {
       res.status(500).json({ ok: false, message: "Falta configurar Supabase en el servidor." });
       return;
     }
+    // Respaldo diario a Drive: va PRIMERO y por separado, para que se haga aunque el resumen falle.
+    let backup;
+    try { backup = await runDriveBackup(supabaseAdmin); } catch (e) { backup = { ok: false, message: e.message || "Falló el respaldo." }; console.error("Respaldo automático falló:", backup.message); }
+    console.log("Respaldo automático:", JSON.stringify(backup));
     try {
       const result = await runDailyDigest(supabaseAdmin);
-      // Respaldo diario a Drive: va aparte del resumen — si falla, el resumen ya salió y solo se informa.
-      let backup;
-      try { backup = await runDriveBackup(supabaseAdmin); } catch (e) { backup = { ok: false, message: e.message || "Falló el respaldo." }; }
       res.status(200).json({ ok: true, ...result, backup });
     } catch (e) {
-      res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario." });
+      res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario.", backup });
     }
     return;
   }

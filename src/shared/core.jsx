@@ -2292,6 +2292,33 @@ export function findReincidencia(room, problema, categoria, closedTasks, days = 
   return best ? { id: best.id, titulo: best.titulo, dias: Math.max(0, Math.floor((Date.now() - best.ts) / 86400000)) } : null;
 }
 
+/* ============================================================
+   PLANOS POR PISO (solo administrador): se abre la planta del piso, se toca una habitación y se ve
+   cuánto mantenimiento ha tenido (pintura, aire, hidráulico, eléctrico…) con fechas y detalle.
+   Los datos salen de lo que la app ya guarda: tareas (incluidas las órdenes de HotSOS) y los
+   mantenimientos de los equipos cuyo nombre trae el número de la habitación.
+   ============================================================ */
+export const PLAN_GROUPS = [
+  { id: "Pintura", color: "#a855f7" },
+  { id: "Aire / HVAC", color: "#0ea5e9" },
+  { id: "Hidráulico", color: "#2563eb" },
+  { id: "Eléctrico", color: "#f59e0b" },
+  { id: "Puertas y muebles", color: "#16a34a" },
+  { id: "Remodelación", color: "#ec4899" },
+  { id: "Otros", color: "#64748b" },
+];
+export function planGroupOf(text, label) {
+  const s = normalizeSearchText(`${text || ""} ${label || ""}`);
+  if (/remodel|renovaci|reforma/.test(s)) return "Remodelación";
+  if (/pint|resane|estuco|macilla|estructural/.test(s)) return "Pintura";
+  if (/\baire\b|fan ?coil|termostat|hvac|evaporador|condensador|ventilaci|calefacci|rejilla/.test(s)) return "Aire / HVAC";
+  if (/agua|ducha|grifo|inodoro|lavamanos|fuga|filtraci|sanitari|hidraul|banera|desague|tuber/.test(s)) return "Hidráulico";
+  if (/\bluz\b|luces|lampara|interruptor|toma ?corriente|electric|bombillo|breaker/.test(s)) return "Eléctrico";
+  if (/puerta|cerradura|mueble|cortina|closet|carpinter|cerrajer|bisagra|gabinete|tocador|velador/.test(s)) return "Puertas y muebles";
+  return "Otros";
+}
+export const planColorOf = (g) => (PLAN_GROUPS.find(x => x.id === g) || PLAN_GROUPS[PLAN_GROUPS.length - 1]).color;
+
 /**
  * Inventario de herramientas — distinto al de repuestos: las herramientas no se consumen, se
  * prestan y se devuelven. Quién tiene qué prestado en este momento, para no perder herramientas

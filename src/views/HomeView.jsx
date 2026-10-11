@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, Package, Send, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, Layers, Package, Send, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
 import { C, GERENCIA_ALLOWED_VIEWS, MAX_FAVORITES, elapsed, hoursBetween, normalizeSearchText, normalizeTaskState, nowIso } from "../shared/core";
 import { Button, MiniGauge, PcbBackground } from "../shared/components";
 import { __pmState } from "../shared/core";
@@ -93,6 +93,7 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin, group: "Operación en Campo" },
+    { id: "floorplans", label: "Planos por piso", icon: Layers, desc: "Plano de cada piso: toca una habitación y ve su historial de pintura, aire y más", access: isAdmin, group: "Operación en Campo" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);

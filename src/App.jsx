@@ -34,6 +34,7 @@ import { MaintenanceLogAuditView } from "./views/MaintenanceLogAuditView";
 import { CronogramaAnualView } from "./views/CronogramaAnualView";
 import { SchedulesView } from "./views/SchedulesView";
 import { TasksView } from "./views/TasksView";
+import { PlanosView } from "./views/PlanosView";
 import { RoomHistoryView } from "./views/RoomHistoryView";
 import { TodayBoardView } from "./views/TodayBoardView";
 import { AdminView } from "./views/AdminView";
@@ -6329,6 +6330,7 @@ export default function App() {
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
         ...(isAdmin ? [{ id: "hvac", label: "TelkHab", icon: Thermometer }] : []),
+        ...(isAdmin ? [{ id: "floorplans", label: "Planos por piso", icon: Layers }] : []),
       ],
     },
     {
@@ -6923,6 +6925,9 @@ export default function App() {
           {view === "calendar" && isAdmin && <CalendarView tasks={tasks} accounts={profiles} />}
           {view === "templates" && isAdmin && <TaskTemplatesView templates={taskTemplates} accounts={profiles} onSave={saveTaskTemplate} onDelete={deleteTaskTemplate} onCreate={createTasksBatch} />}
           {view === "usage" && isAdmin && <UsagePanelView tasks={tasks} accounts={profiles} />}
+          {view === "floorplans" && isAdmin && (
+            <PlanosView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} onNavigate={setView} />
+          )}
           {view === "room-history" && isAdmin && (
             <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />
           )}

@@ -102,6 +102,7 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
     { id: "energy", label: "Energía", icon: Zap, desc: "Consumo diario y por medidor", access: isAdmin, group: "Reportes y Análisis" },
     { id: "lifecycle", label: "Vida útil y garantías", icon: History, desc: "Equipos al final de su vida útil, garantías por vencer y fallas repetidas", access: isAdmin, group: "Reportes y Análisis" },
     { id: "budget", label: "Presupuesto y costos", icon: TrendingUp, desc: "Presupuesto del mes, gastos y ritmo", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "activity-log", label: "Actividad y permisos", icon: ShieldCheck, desc: "Quién cambió qué y qué puede hacer cada persona", access: isAdmin, group: "Reportes y Análisis" },
     { id: "recognition", label: "Reconocimientos", icon: ShieldCheck, desc: "Técnico del mes y ranking que solo suma", access: isAdmin, group: "Reportes y Análisis" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps

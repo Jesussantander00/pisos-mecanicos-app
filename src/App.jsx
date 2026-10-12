@@ -2302,7 +2302,7 @@ function HeatMapView({ tasks, mttoLog, equipos, onNavigate }) {
             <span className="text-[11px] font-semibold w-6 shrink-0" style={{ color: C.inkSoft }}>{f}</span>
             <div className="flex gap-[3px] flex-wrap">
               {roomsOf(f).map(r => { const n = count(r); return (
-                <button key={r} onClick={() => setSel(r)} aria-label={`Habitación ${r}, ${n} registros`} title={`${r} · ${n}`} style={{ width: 22, height: 22, borderRadius: 5, background: colorOf(n), border: sel === r ? "2px solid #0ea5e9" : "none", padding: 0 }} />
+                <button key={r} onClick={() => setSel(r)} aria-label={`Habitación ${r}, ${n} registros`} title={`${r} · ${n}`} style={{ width: 26, height: 26, borderRadius: 5, background: colorOf(n), border: sel === r ? "2px solid #0ea5e9" : "none", padding: 0 }} />
               ); })}
             </div>
           </div>
@@ -2620,6 +2620,55 @@ function GuestRequestsView({ tasks, accounts, onNavigate }) {
         );
       })}
       <button onClick={() => onNavigate("tasks")} className="w-full mt-2 text-sm font-semibold rounded-xl" style={{ minHeight: 48, background: C.steelDark, color: "#fff" }}>Ir a Tareas</button>
+    </div>
+  );
+}
+
+/* ===== Actividad y permisos (solo lectura): quién cambió qué y quién puede qué ===== */
+function ActivityLogView({ log, accounts }) {
+  const [who, setWho] = useState("");
+  const [tab, setTab] = useState("log");
+  const people = useMemo(() => [...new Set((log || []).map(l => l.by).filter(Boolean))].sort(), [log]);
+  const shown = (log || []).filter(l => !who || l.by === who).slice(0, 80);
+  const when = (iso) => { try { return new Date(iso).toLocaleString("es-CO", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+  const roles = Object.entries(accounts || {}).filter(([, a]) => a && a.approved !== false).map(([u, a]) => ({
+    u, n: a.display_name || u,
+    can: [["Ver y cerrar sus tareas", true], ["Registrar mantenimiento", !a.is_viewer], ["Inventario", !!(a.is_admin || a.is_almacenista)], ["Panel ejecutivo", !!(a.is_admin || a.is_gerencia)], ["TelkHab, planos y módulos admin", !!a.is_admin], ["Gestionar horarios", !!(a.is_admin || a.can_manage_schedule)]],
+    tag: a.is_admin ? "Administrador" : a.is_gerencia ? "Gerencia" : a.is_almacenista ? "Almacenista" : a.is_viewer ? "Solo ver" : "Operador",
+  }));
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Actividad y permisos</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Quién cambió qué y cuándo, y qué puede hacer cada persona. Es solo de consulta: los permisos se cambian en Administración.</p>
+      </div>
+      <div className="flex gap-2 mb-3">
+        {[["log", "Registro"], ["roles", "Permisos"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className="flex-1 text-sm font-semibold rounded-xl" style={{ minHeight: 44, background: tab === k ? C.steelDark : C.panel, color: tab === k ? "#fff" : C.inkSoft, border: `1px solid ${tab === k ? C.steelDark : C.line}` }}>{l}</button>)}
+      </div>
+      {tab === "log" ? (
+        <>
+          <select value={who} onChange={e => setWho(e.target.value)} aria-label="Filtrar por persona" className="w-full text-sm border rounded-md px-3 mb-3 outline-none" style={{ minHeight: 44, borderColor: C.line, background: C.panel, color: C.ink }}>
+            <option value="">Todas las personas</option>{people.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+            {shown.length === 0 ? <div className="text-sm text-center py-4" style={{ color: C.gray }}>Todavía no hay cambios registrados.</div> : shown.map(l => (
+              <div key={l.id || l.at} className="py-2 border-t first:border-t-0" style={{ borderColor: C.line }}>
+                <div className="text-sm" style={{ color: C.ink }}><b>{l.by || "Alguien"}</b> {l.action === "creacion" ? "creó" : l.action === "borrado" ? "borró" : "cambió"} {l.field ? `${l.field} de ` : ""}{l.entityLabel || l.kind || "un registro"}{l.before != null && l.after != null ? ` (${String(l.before).slice(0, 30)} → ${String(l.after).slice(0, 30)})` : ""}</div>
+                <div className="text-[11px]" style={{ color: C.inkSoft }}>{when(l.at)}{l.device ? ` · ${typeof l.device === "string" ? l.device : l.device.label || ""}` : ""}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          {roles.map(r => (
+            <div key={r.u} className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+              <div className="flex justify-between items-center"><b className="text-sm" style={{ color: C.ink }}>{r.n}</b><span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: C.bg, color: C.inkSoft }}>{r.tag}</span></div>
+              <div className="mt-1 text-xs" style={{ color: C.inkSoft, lineHeight: 1.8 }}>{r.can.map(([l, ok]) => <div key={l}>{ok ? "✓" : "✗"} {l}</div>)}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -6795,7 +6844,7 @@ export default function App() {
       id: "historial", label: "Historial y reportes", items: [
         ...(isAdmin ? [{ id: "maintenance-log", label: "Historial de mantenimientos", icon: History, badge: pendingReviewCount, urgentBadge: pendingReviewCount > 0, pulse: pendingReviewCount > 0 }] : []),
         ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays }] : []),
-        ...(isAdmin ? [{ id: "heatmap", label: "Mapa de calor", icon: Thermometer }, { id: "energy", label: "Energía", icon: Zap }, { id: "lifecycle", label: "Vida útil y garantías", icon: History }, { id: "budget", label: "Presupuesto y costos", icon: TrendingUp }, { id: "recognition", label: "Reconocimientos", icon: ShieldCheck }] : []),
+        ...(isAdmin ? [{ id: "heatmap", label: "Mapa de calor", icon: Thermometer }, { id: "energy", label: "Energía", icon: Zap }, { id: "lifecycle", label: "Vida útil y garantías", icon: History }, { id: "budget", label: "Presupuesto y costos", icon: TrendingUp }, { id: "activity-log", label: "Actividad y permisos", icon: ShieldCheck }, { id: "recognition", label: "Reconocimientos", icon: ShieldCheck }] : []),
         { id: "reports", label: "Reportes", icon: History },
         { id: "tanks", label: "Tanques de agua potable", icon: Droplets },
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
@@ -7395,6 +7444,7 @@ export default function App() {
           {view === "energy" && isAdmin && <EnergyView meterHistory={meterHistory} />}
           {view === "lifecycle" && isAdmin && <LifecycleView equipos={mttoEquipos} mttoLog={mttoLog} onNavigate={setView} />}
           {view === "budget" && isAdmin && <BudgetView />}
+          {view === "activity-log" && isAdmin && <ActivityLogView log={generalEditLog} accounts={profiles} />}
           {view === "recognition" && isAdmin && <RecognitionView tasks={tasks} accounts={profiles} />}
           {view === "room-history" && isAdmin && (
             <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />

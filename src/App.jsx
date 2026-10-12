@@ -37,6 +37,7 @@ import { SchedulesView } from "./views/SchedulesView";
 import { TasksView } from "./views/TasksView";
 import { PlanosView } from "./views/PlanosView";
 import { BlockedRoomsView } from "./views/BlockedRoomsView";
+import { BudgetView } from "./views/BudgetView";
 import { RoomHistoryView } from "./views/RoomHistoryView";
 import { TodayBoardView } from "./views/TodayBoardView";
 import { AdminView } from "./views/AdminView";
@@ -2344,7 +2345,9 @@ function PlantStatusView({ tasks, activeIssues, coldOutOfRange, meterAnomalies, 
   criticalFuelTanks.forEach(t => alerts.push({ k: "f" + t.nombre, lvl: 3, t: `Combustible bajo: ${t.nombre} al ${t.pct} %`, go: "fuel" }));
   coldOutOfRange.forEach(c => alerts.push({ k: "c" + c.id, lvl: 3, t: `Cuarto frío fuera de rango: ${c.n || c.id}`, go: "coldrooms" }));
   meterAnomalies.forEach(a => alerts.push({ k: "m" + a.meter.id + a.sub, lvl: 2, t: `Lectura rara en medidor: ${a.meter.n}`, go: "meters" }));
-  urgent.forEach(t => alerts.push({ k: "u" + t.id, lvl: 3, t: `Urgente abierta: ${t.titulo || "Tarea"}`, go: "tasks" }));
+  if (urgent.length) alerts.push({ k: "urg", lvl: 3, t: `${urgent.length} tarea${urgent.length === 1 ? "" : "s"} urgente${urgent.length === 1 ? "" : "s"} abierta${urgent.length === 1 ? "" : "s"}`, go: "tasks" });
+  const staleOpen = open.filter(t => Date.now() - new Date(t.createdAt || t.assignedAt || Date.now()).getTime() > 7 * 86400000).length;
+  if (staleOpen) alerts.push({ k: "old", lvl: 2, t: `${staleOpen} tarea${staleOpen === 1 ? "" : "s"} abierta${staleOpen === 1 ? "" : "s"} hace más de 7 días`, go: "tasks" });
   (staleIssues || []).slice(0, 5).forEach((s, i) => alerts.push({ k: "s" + i, lvl: 2, t: "Equipo fuera de servicio hace mucho tiempo", go: "issues" }));
   lateBlocked.forEach(b => alerts.push({ k: "b" + b.id, lvl: 2, t: `Habitación ${b.room} pasó la fecha de liberación`, go: "blocked-rooms" }));
   (lowStockItems || []).slice(0, 4).forEach(i => alerts.push({ k: "i" + (i.id || i.name), lvl: 1, t: `Repuesto bajo: ${i.name || i.nombre} (${i.quantity})`, go: "inventory" }));
@@ -2487,71 +2490,6 @@ function RecognitionView({ tasks, accounts }) {
   );
 }
 
-/* ===== Presupuesto y costos (se llena a mano; se guarda en "budget-data") ===== */
-function BudgetView() {
-  const monthKey = new Date().toISOString().slice(0, 7);
-  const [data, setData] = useState(null);
-  const [budget, setBudget] = useState("");
-  const [cat, setCat] = useState("Repuestos");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [err, setErr] = useState("");
-  useEffect(() => { sGet("budget-data", true).then(v => setData(v && typeof v === "object" ? v : { budgets: {}, entries: [] })).catch(() => setData({ budgets: {}, entries: [] })); }, []);
-  const persist = async (next) => { setData(next); try { await sSet("budget-data", next, true); setErr(""); } catch { setErr("No se pudo guardar. Intenta otra vez."); } };
-  const CATS = ["Repuestos", "Mano de obra externa", "Materiales", "Combustible", "Otros"];
-  if (!data) return <div className="text-sm" style={{ color: C.gray }}>Cargando…</div>;
-  const entries = (data.entries || []).filter(e => String(e.fecha).startsWith(monthKey));
-  const spent = entries.reduce((a, e) => a + Number(e.monto || 0), 0);
-  const tot = Number(data.budgets?.[monthKey] || 0);
-  const day = new Date().getDate(); const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const proj = spent / Math.max(1, day) * dim;
-  const money = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
-  const byCat = CATS.map(c => [c, entries.filter(e => e.cat === c).reduce((a, e) => a + Number(e.monto || 0), 0)]).filter(x => x[1] > 0);
-  const addEntry = () => { const a = Number(String(amount).replace(/[^\d.]/g, "")); if (!a) { setErr("Escribe el valor en pesos."); return; } persist({ ...data, entries: [{ id: "e" + Date.now(), fecha: new Date().toISOString(), cat, monto: a, nota: note.trim() }, ...(data.entries || [])].slice(0, 2000) }); setAmount(""); setNote(""); };
-  const inp = { minHeight: 44, borderColor: C.line, background: C.panel, color: C.ink };
-  return (
-    <div>
-      <div className="mb-3">
-        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Presupuesto y costos</h2>
-        <p className="text-sm" style={{ color: C.inkSoft }}>Escribe el presupuesto del mes y ve registrando los gastos. La app calcula el ritmo y avisa si te vas a pasar.</p>
-      </div>
-      <div className="rounded-xl border p-4 mb-3" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="text-[11px] font-semibold uppercase" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Gasto del mes</div>
-        <div className="text-2xl font-extrabold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{money(spent)} {tot ? <span className="text-sm font-medium" style={{ color: C.inkSoft }}>de {money(tot)}</span> : null}</div>
-        {tot > 0 && <><div style={{ height: 8, borderRadius: 4, background: C.bg, margin: "8px 0" }}><div style={{ width: `${Math.min(100, spent / tot * 100)}%`, height: 8, borderRadius: 4, background: spent > tot ? C.red : spent / tot > day / dim + 0.15 ? C.amber : C.green }} /></div>
-          <div className="text-xs" style={{ color: proj > tot ? C.red : C.inkSoft }}>{Math.round(spent / tot * 100)} % usado al día {day} de {dim}. Al ritmo actual cerrarías el mes en {money(proj)}{proj > tot ? ", por encima del presupuesto." : "."}</div></>}
-        <div className="flex gap-2 mt-3 items-center">
-          <input value={budget} onChange={e => setBudget(e.target.value)} inputMode="numeric" placeholder={tot ? "Cambiar presupuesto" : "Presupuesto del mes en pesos"} aria-label="Presupuesto del mes" className="flex-1 text-sm border rounded-md px-3 outline-none" style={inp} />
-          <button onClick={() => { const n = Number(String(budget).replace(/[^\d.]/g, "")); if (n > 0) { persist({ ...data, budgets: { ...(data.budgets || {}), [monthKey]: n } }); setBudget(""); } }} className="text-sm font-semibold rounded-xl px-4" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>Guardar</button>
-        </div>
-      </div>
-      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Registrar un gasto</div>
-        <div className="grid grid-cols-2 gap-2">
-          <select value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoría" className="text-sm border rounded-md px-2 outline-none" style={inp}>{CATS.map(c => <option key={c}>{c}</option>)}</select>
-          <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder="Valor en pesos" aria-label="Valor" className="text-sm border rounded-md px-3 outline-none" style={inp} />
-          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Detalle (opcional)" aria-label="Detalle" className="col-span-2 text-sm border rounded-md px-3 outline-none" style={inp} />
-        </div>
-        <button onClick={addEntry} className="mt-2 text-sm font-semibold rounded-xl px-4" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>Agregar gasto</button>
-        {err && <div className="text-xs mt-2" style={{ color: C.red }} role="alert">{err}</div>}
-      </div>
-      {byCat.length > 0 && <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Por categoría</div>
-        {byCat.map(([c, v]) => <div key={c} className="flex justify-between py-1.5 text-sm border-t" style={{ borderColor: C.line, color: C.ink }}><span>{c}</span><b>{money(v)}</b></div>)}
-      </div>}
-      {entries.length > 0 && <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
-        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Gastos del mes</div>
-        {entries.slice(0, 30).map(e => (
-          <div key={e.id} className="flex items-center justify-between gap-2 py-1.5 border-t text-xs" style={{ borderColor: C.line, color: C.ink }}>
-            <span className="min-w-0 truncate">{new Date(e.fecha).toLocaleDateString("es-CO", { day: "numeric", month: "short" })} · {e.cat}{e.nota ? ` · ${e.nota}` : ""}</span>
-            <span className="flex items-center gap-2 shrink-0"><b>{money(e.monto)}</b><button onClick={() => persist({ ...data, entries: data.entries.filter(x => x.id !== e.id) })} aria-label="Quitar gasto" className="px-2 rounded" style={{ minHeight: 32, color: C.red }}>Quitar</button></span>
-          </div>
-        ))}
-      </div>}
-    </div>
-  );
-}
-
 /* ===== Vida útil y garantías: usa fecha de instalación, vida útil y garantía de la ficha de cada equipo ===== */
 function LifecycleView({ equipos, mttoLog, onNavigate }) {
   const rows = useMemo(() => (equipos || []).map(e => {
@@ -2613,7 +2551,7 @@ function GuestRequestsView({ tasks, accounts, onNavigate }) {
         const room = roomOfTask(t);
         return (
           <div key={t.id} className="rounded-xl border p-3 mb-2" style={{ borderColor: hot ? C.red : C.line, background: C.panel }}>
-            <div className="flex justify-between gap-2"><div className="font-bold" style={{ color: C.ink }}>{room ? `Hab ${room}` : "Sin habitación"}</div><span className="text-xs font-semibold" style={{ color: hot ? C.red : C.inkSoft }}>hace {age(t.createdAt)}</span></div>
+            <div className="flex justify-between gap-2"><div className="font-bold" style={{ color: C.ink }}>{room ? `Hab ${room}` : (String(t.descripcion || "").split(" — ")[0] || "Sin lugar")}</div><span className="text-xs font-semibold" style={{ color: hot ? C.red : C.inkSoft }}>hace {age(t.createdAt)}</span></div>
             <div className="text-sm" style={{ color: C.ink }}>{t.titulo}</div>
             <div className="text-[11px] mt-0.5" style={{ color: C.inkSoft }}>{t.asignadoA ? `Asignada a ${accounts?.[t.asignadoA]?.display_name || t.asignadoA}` : "Sin asignar"}</div>
           </div>
@@ -7443,7 +7381,7 @@ export default function App() {
           {view === "heatmap" && isAdmin && <HeatMapView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} onNavigate={setView} />}
           {view === "energy" && isAdmin && <EnergyView meterHistory={meterHistory} />}
           {view === "lifecycle" && isAdmin && <LifecycleView equipos={mttoEquipos} mttoLog={mttoLog} onNavigate={setView} />}
-          {view === "budget" && isAdmin && <BudgetView />}
+          {view === "budget" && isAdmin && <BudgetView mttoLog={mttoLog} />}
           {view === "activity-log" && isAdmin && <ActivityLogView log={generalEditLog} accounts={profiles} />}
           {view === "recognition" && isAdmin && <RecognitionView tasks={tasks} accounts={profiles} />}
           {view === "room-history" && isAdmin && (

@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { useEffect, useRef, useState } from "react";
 import { exportFullBackup, sGet, sSet } from "../lib/storage";
+import { supabase } from "../lib/supabaseClient";
 import * as XLSX from "xlsx";
 import { Download } from "lucide-react";
 import { C, DRIVE_KEEP_DAYS, archivedPlaceholder, buildActivityReport, driveFolder, driveHasFile, driveUpload, monthKeyOf, requestAdminAction, scanArchivableMedia, showToast, todayStr } from "../shared/core";
@@ -14,6 +14,19 @@ export function DriveArchivePanel({ tasks, accounts }) {
   const [log, setLog] = useState([]);
   const [err, setErr] = useState(null);
   const [needReload, setNeedReload] = useState(false);
+  const [lastRun, setLastRun] = useState(null);
+  useEffect(() => { sGet("drive-archive-last", true).then(v => setLastRun(v || null)).catch(() => {}); }, []);
+  const archiveNow = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await requestAdminAction(session?.access_token, "drive-archive-now", "drive");
+      if (!r.ok) throw new Error(r.message || "No se pudo archivar.");
+      setLastRun(r.result || null);
+      showToast(r.result?.archived ? `✓ ${r.result.archived} archivos pasaron a Drive.` : "No había nada para archivar.", true);
+    } catch (e) { setErr(e.message || "No se pudo archivar."); }
+    setBusy(false);
+  };
   const [folders, setFolders] = useState(() => { try { return JSON.parse(localStorage.getItem("pm-local:drive-folders") || "{}"); } catch { return {}; } });
   const rememberFolder = (key, id) => setFolders(f => { const n = { ...f, [key]: id }; try { localStorage.setItem("pm-local:drive-folders", JSON.stringify(n)); } catch { /* noop */ } return n; });
   const driveLink = (id) => `https://drive.google.com/drive/folders/${id}`;
@@ -143,9 +156,13 @@ export function DriveArchivePanel({ tasks, accounts }) {
     <div className="rounded-xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <div className="text-sm font-bold mb-1" style={{ color: C.ink }}>Archivo en Google Drive</div>
       <p className="text-xs mb-3" style={{ color: C.inkSoft }}>
-        Las fotos y videos con más de {DRIVE_KEEP_DAYS} días se guardan en tu Drive, en una carpeta por mes, junto con el informe de ese mes. Lo escrito (tareas, seguimientos, registros) se queda en la app; en lugar de la foto vieja aparece "Archivada en Drive". Hazlo de preferencia cuando nadie más esté usando la app.
+        Cada día, de forma automática, las fotos y videos con más de 7 días pasan a tu Drive (carpeta por mes) y se borran de la app para no llenar el espacio. Abajo puedes archivar a mano los de más de {DRIVE_KEEP_DAYS} días junto con el informe de ese mes. Lo escrito (tareas, seguimientos, registros) se queda en la app; en lugar de la foto vieja aparece "Archivada en Drive". Hazlo de preferencia cuando nadie más esté usando la app.
       </p>
+      <div className="text-xs mb-3 rounded-lg p-2" style={{ background: C.bg, color: C.inkSoft }}>
+        {lastRun ? (lastRun.error ? <span style={{ color: C.red }}>Última corrida automática ({new Date(lastRun.at).toLocaleString()}): falló — {lastRun.error}</span> : <>Última corrida automática ({new Date(lastRun.at).toLocaleString()}): {lastRun.archived || 0} archivos pasaron a Drive{lastRun.failed ? `, ${lastRun.failed} fallaron` : ""}{lastRun.pending ? `, ${lastRun.pending} pendientes para la próxima` : ""}.</>) : "Todavía no hay una corrida automática registrada."}
+      </div>
       <div className="flex flex-wrap gap-2 mb-3">
+        <Button size="sm" variant="primary" disabled={busy} onClick={archiveNow}>{busy ? "Trabajando…" : "Archivar ahora (más de 7 días)"}</Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={testConn}>Probar conexión</Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={doScan}>{busy ? "Trabajando…" : "Buscar qué se puede archivar"}</Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={backupText}>Respaldar el texto a Drive</Button>

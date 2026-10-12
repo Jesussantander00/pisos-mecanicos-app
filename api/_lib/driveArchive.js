@@ -65,7 +65,16 @@ async function allRows(db) {
   return out;
 }
 
-export async function runDriveArchive(db, { budgetMs = 40000 } = {}) {
+async function recordRun(db, result) {
+  try { await db.from("app_storage").upsert({ key: "drive-archive-last", value: { at: new Date().toISOString(), ...result }, updated_at: new Date().toISOString() }, { onConflict: "key" }); } catch { /* noop */ }
+}
+
+export async function runDriveArchive(db, opts = {}) {
+  try { const r = await runDriveArchiveInner(db, opts); await recordRun(db, r); return r; }
+  catch (e) { const r = { error: e.message || "falló el archivo en Drive" }; await recordRun(db, r); throw e; }
+}
+
+async function runDriveArchiveInner(db, { budgetMs = 40000 } = {}) {
   const t0 = Date.now();
   const left = () => budgetMs - (Date.now() - t0);
   const cutoff = Date.now() - KEEP_DAYS * 86400000;

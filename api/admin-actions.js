@@ -10,6 +10,7 @@
 //                                API → "service_role" — NUNCA la de "anon"). Es secreta.
 
 import { createClient } from "@supabase/supabase-js";
+import { runDriveArchive } from "./_lib/driveArchive.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -76,6 +77,16 @@ export default async function handler(req, res) {
         return;
       }
       res.status(200).json({ ok: true, driveToken: tj.access_token, expiresIn: tj.expires_in || 3600 });
+      return;
+    }
+    if (action === "drive-archive-now") {
+      // Corre ahora mismo el archivo automático (el mismo que corre cada día).
+      try {
+        const result = await runDriveArchive(supabaseAdmin, { budgetMs: 45000 });
+        res.status(200).json({ ok: true, result: { at: new Date().toISOString(), ...result } });
+      } catch (e) {
+        res.status(200).json({ ok: false, message: e.message || "No se pudo archivar." });
+      }
       return;
     }
     if (action === "drive-delete") {

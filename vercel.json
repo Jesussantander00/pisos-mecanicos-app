@@ -10,6 +10,9 @@
     }
   ],
   "functions": {
+    "api/admin-actions.js": {
+      "maxDuration": 60
+    },
     "api/telkonet.js": {
       "maxDuration": 60
     }

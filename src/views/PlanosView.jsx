@@ -148,7 +148,7 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
         <span><b style={{ color: "#f59e0b" }}>■</b> 1–2</span>
         <span><b style={{ color: "#f97316" }}>■</b> 3 o más</span>
         <span><b style={{ color: "#ef4444" }}>■</b> con pendientes abiertos</span>
-        <span className="ml-auto">{totalFloorEvents} registro{totalFloorEvents === 1 ? "" : "s"} en {floor <= 38 ? `piso ${floor}` : `piso ${floor}`}</span>
+        <span className="ml-auto">{totalFloorEvents} registro{totalFloorEvents === 1 ? "" : "s"} en piso {floor}{(() => { const cut = Date.now() - 60 * 86400000; const n = roomsOfPlan.filter(r => PLAN_GROUPS.some(g => (eventsByRoom[r.number] || []).filter(e => e.group === g.id && new Date(e.at || 0).getTime() >= cut).length >= 2)).length; return n ? ` · ${n} con reincidencia` : ""; })()}</span>
       </div>
 
       {selRoom && (() => {
@@ -167,6 +167,16 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
                 <button onClick={() => setSel(null)} aria-label="Cerrar" className="rounded-full p-2" style={{ background: C.bg }}><X size={18} /></button>
               </div>
 
+              {(() => {
+                const cut = Date.now() - 60 * 86400000;
+                const rep = PLAN_GROUPS.map(g => ({ g, n: st.all.filter(e => e.group === g.id && new Date(e.at || 0).getTime() >= cut).length })).filter(x => x.n >= 2);
+                if (!rep.length) return null;
+                return (
+                  <div className="rounded-xl px-3 py-2 mb-3 text-xs" style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" }} role="alert">
+                    <b>Reincidencia:</b> {rep.map(x => `${x.g.id} ${x.n} veces`).join(" · ")} en los últimos 60 días. Conviene revisar el equipo o la causa, no solo el síntoma.
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-2 gap-2 mb-3">
                 {PLAN_GROUPS.map(g => {
                   const evs = st.all.filter(e => e.group === g.id);

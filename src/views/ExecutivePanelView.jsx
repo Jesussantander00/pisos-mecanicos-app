@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, ClipboardCheck, Clock, Download, X } from "lucide-react";
-import { C, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateExecutivePdf, hoursBetween, todayStr } from "../shared/core";
+import { C, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateExecutivePdf, hoursBetween, normalizeTaskState, todayStr } from "../shared/core";
 import { Button, HorizontalBarChart, MiniDonut, MiniGauge, StatCard } from "../shared/components";
 import { SystemCoverageGrid } from "./SystemCoverageGrid";
 
@@ -191,6 +191,38 @@ export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIn
         <Button icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
       </div>
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
+
+      {/* Pulso del mes: lo esencial en 4 números, calculado con las tareas reales */}
+      {(() => {
+        const all = tasks || [];
+        const y = now.getFullYear(), m = now.getMonth();
+        const inMonth = (iso, mm) => { if (!iso) return false; const d = new Date(iso); return d.getFullYear() === (mm < 0 ? y - 1 : y) && d.getMonth() === ((mm + 12) % 12); };
+        const closedNow = all.filter(t => inMonth(t.finishedAt, m));
+        const closedPrev = all.filter(t => inMonth(t.finishedAt, m - 1));
+        const avgH = (list) => { const v = list.map(t => (new Date(t.finishedAt) - new Date(t.createdAt || t.assignedAt || t.finishedAt)) / 3600000).filter(h => h >= 0 && isFinite(h)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+        const hNow = avgH(closedNow), hPrev = avgH(closedPrev);
+        const open = all.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt);
+        const stale = open.filter(t => Date.now() - new Date(t.createdAt || t.assignedAt || Date.now()).getTime() > 86400000);
+        const unassigned = open.filter(t => !t.asignadoA).length;
+        const diff = closedNow.length - closedPrev.length;
+        const tiles = [
+          { k: "Cerradas este mes", v: closedNow.length, s: closedPrev.length ? `${diff >= 0 ? "+" : ""}${diff} vs mes pasado` : "primer mes con datos", c: C.steelDark },
+          { k: "Tiempo promedio", v: hNow == null ? "—" : hNow < 48 ? `${hNow.toFixed(1)} h` : `${(hNow / 24).toFixed(1)} d`, s: hNow != null && hPrev != null ? (hNow <= hPrev ? "más rápido que el mes pasado" : "más lento que el mes pasado") : "de abrir a cerrar", c: C.steelDark },
+          { k: "Abiertas >24 h", v: stale.length, s: stale.length ? "necesitan seguimiento" : "todo al día", c: stale.length ? C.red : C.green },
+          { k: "Sin asignar", v: unassigned, s: unassigned ? "reparte para avanzar" : "todas con responsable", c: unassigned ? "#b45309" : C.green },
+        ];
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4" aria-label="Pulso del mes">
+            {tiles.map(t => (
+              <div key={t.k} className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.gray }}>{t.k}</div>
+                <div className="text-2xl font-extrabold tabular-nums" style={{ color: t.c, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{t.v}</div>
+                <div className="text-[11px]" style={{ color: C.inkSoft }}>{t.s}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Filtros globales */}
       <div className="rounded-xl border p-3 mb-4 flex items-end gap-2 flex-wrap" style={{ borderColor: C.line, background: C.panel }}>

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, RotateCcw, Users, X } from "lucide-react";
-import { C, ROOM_PREVENTIVE_STEPS, authHeaders, hvacStateTone, normalizeSearchText, normalizeTaskState } from "../shared/core";
-import { Button, HorizontalBarChart, MiniDonut } from "../shared/components";
+import { AlertTriangle, RotateCcw, X } from "lucide-react";
+import { C, ROOM_PREVENTIVE_STEPS, authHeaders, categoryOfTask, hvacStateTone, normalizeSearchText, normalizeTaskState, planColorOf, planGroupOf, roomOfTask } from "../shared/core";
+import { Button, HorizontalBarChart, MiniDonut, PcbBackground } from "../shared/components";
 
 
 
-export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasksBatch, accounts = {} }) {
+export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasksBatch, accounts = {}, onNavigate }) {
   const [rooms, setRooms] = useState([]);
   const [profileTypes, setProfileTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +124,7 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
       if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el estado de las habitaciones.");
       setRooms(data.rooms || []);
       setProfileTypes(data.profileTypes || []);
+      setUpdatedAt(Date.now());
     } catch (e) {
       setError(e.message || "No se pudo conectar con Telkonet.");
     } finally {
@@ -242,28 +243,149 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
     }
   };
 
+  // ---- Rediseño: filtros, mapa por piso y hoja de detalle ----
+  const [filter, setFilter] = useState("all"); // all | attention | range | alerts | battery | vip | in | out | occupied
+  const [mapFloor, setMapFloor] = useState("");
+  const [shown, setShown] = useState(40);
+  const [detail, setDetail] = useState(null); // { room, loading, dataLog, error }
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNowTick(Date.now()), 15000); return () => clearInterval(t); }, []);
+  const agoText = (ts) => {
+    if (!ts) return "sin datos";
+    const sec = Math.max(0, Math.round((nowTick - ts) / 1000));
+    return sec < 60 ? `hace ${sec} s` : sec < 3600 ? `hace ${Math.round(sec / 60)} min` : `hace ${Math.round(sec / 3600)} h`;
+  };
+  const isOcc = (r) => !!(r.Occupied && r.Occupied !== "0");
+  // Motivos por los que una habitación pide atención (los mismos umbrales del Resumen).
+  const reasonsOf = (r) => {
+    const out = [];
+    const delta = (r.Temperature != null && r.UserSetPoint != null) ? Math.abs(Number(r.Temperature) - Number(r.UserSetPoint)) : null;
+    if (delta != null && delta >= 6) out.push({ k: "range", label: `Δ ${delta.toFixed(0)} °F`, tone: "red", delta });
+    if (Number(r.AlertCount || 0) > 0 || Number(r.TKOAlertCount || 0) > 0) out.push({ k: "alerts", label: `${Number(r.AlertCount || 0) + Number(r.TKOAlertCount || 0)} alerta(s)`, tone: "red" });
+    if (r.BatteryPercent != null && Number(r.BatteryPercent) >= 0 && Number(r.BatteryPercent) < 30) out.push({ k: "battery", label: `Batería ${r.BatteryPercent}%`, tone: "amber" });
+    if ((r.ProfileName || "").includes("Check OUT") && r.ProfileName !== "VIP" && (isOcc(r) || (Number(r.Watts) || 0) >= 100)) out.push({ k: "checkout", label: "Check OUT con presencia/consumo", tone: "amber" });
+    return out;
+  };
+  const roomMeta = useMemo(() => {
+    const m = new Map();
+    rooms.forEach(r => m.set(r.RoomID, reasonsOf(r)));
+    return m;
+  }, [rooms]); // eslint-disable-line react-hooks/exhaustive-deps
+  const counts = useMemo(() => {
+    let range = 0, alerts = 0, battery = 0, attention = 0;
+    rooms.forEach(r => {
+      const rs = roomMeta.get(r.RoomID) || [];
+      if (rs.some(x => x.k === "range")) range++;
+      if (rs.some(x => x.k === "alerts")) alerts++;
+      if (rs.some(x => x.k === "battery")) battery++;
+      if (rs.length) attention++;
+    });
+    return { range, alerts, battery, attention };
+  }, [rooms, roomMeta]);
+  const matchesFilter = (r) => {
+    const rs = roomMeta.get(r.RoomID) || [];
+    const p = r.ProfileName || "";
+    switch (filter) {
+      case "attention": return rs.length > 0;
+      case "range": return rs.some(x => x.k === "range");
+      case "alerts": return rs.some(x => x.k === "alerts");
+      case "battery": return rs.some(x => x.k === "battery");
+      case "vip": return p === "VIP";
+      case "in": return p.includes("Check IN");
+      case "out": return p.includes("Check OUT") && p !== "VIP";
+      case "occupied": return isOcc(r);
+      default: return true;
+    }
+  };
+  const listRooms = useMemo(
+    () => filtered.filter(matchesFilter).sort((a, b) => String(a.RoomName).localeCompare(String(b.RoomName), "es", { numeric: true })),
+    [filtered, filter, roomMeta] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const attentionRooms = useMemo(
+    () => (filter === "all" && !searchNorm ? rooms.filter(r => (roomMeta.get(r.RoomID) || []).length > 0)
+      .sort((a, b) => ((roomMeta.get(b.RoomID) || []).length - (roomMeta.get(a.RoomID) || []).length) || String(a.RoomName).localeCompare(String(b.RoomName), "es", { numeric: true })) : []),
+    [rooms, roomMeta, filter, searchNorm]
+  );
+  const floorsList = dashboard.floors.filter(f => f.floor !== "otro");
+  const activeFloor = mapFloor || (floorsList[0]?.floor || "");
+  const mapRooms = useMemo(
+    () => rooms.filter(r => (String(r.RoomName || "").match(/^(\d{1,2})\d{2}/) || [])[1] === activeFloor)
+      .sort((a, b) => String(a.RoomName).localeCompare(String(b.RoomName), "es", { numeric: true })),
+    [rooms, activeFloor]
+  );
+  const mapColor = (r) => {
+    const rs = roomMeta.get(r.RoomID) || [];
+    if (rs.some(x => x.tone === "red")) return { bg: "#f4a3a3", bd: "#b42318", ink: "#4a0d0a" };
+    if (rs.length) return { bg: "#fcd9a0", bd: "#c98a1b", ink: "#4a2f00" };
+    if ((r.ProfileName || "") === "VIP") return { bg: "#d8c7f5", bd: "#8b5cf6", ink: "#2e1065" };
+    if (isOcc(r)) return { bg: "#bfe3f7", bd: "#38a1d6", ink: "#07324a" };
+    return { bg: "#e3e9f0", bd: "#c5d1de", ink: "#35506a" };
+  };
+  const openDetail = async (room) => {
+    setDetail({ room, loading: true, dataLog: [], error: null });
+    try {
+      const headers = await authHeaders();
+      const resp = await fetch(`/api/telkonet?action=history&roomId=${encodeURIComponent(room.RoomID)}`, { headers });
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar la tendencia.");
+      setDetail(d => d && d.room.RoomID === room.RoomID ? { ...d, loading: false, dataLog: (data.history && data.history.dataLog) || [] } : d);
+    } catch (e) {
+      setDetail(d => d && d.room.RoomID === room.RoomID ? { ...d, loading: false, error: e.message || "No se pudo cargar la tendencia." } : d);
+    }
+  };
+  const roomWork = (name) => {
+    const n = String(name || "").trim();
+    const by = {};
+    (tasks || []).forEach(t => {
+      if (roomOfTask(t) !== n) return;
+      const g = planGroupOf(`${t.titulo || ""} ${t.descripcion || ""}`, categoryOfTask(t));
+      by[g] = (by[g] || 0) + 1;
+    });
+    return by;
+  };
+  const pill = (tone) => tone === "red" ? { background: C.redSoft, color: C.red } : { background: C.amberSoft, color: C.amber };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>TelkHab — Clima de habitaciones (BMS)</h2>
-        <Button size="sm" variant="ghost" icon={RotateCcw} onClick={load} disabled={loading}>Actualizar</Button>
+      <div className="relative rounded-2xl p-4 mb-3 overflow-hidden" style={{ background: `linear-gradient(135deg, ${C.steel} 0%, ${C.steelDark} 100%)`, isolation: "isolate" }}>
+        <div className="absolute inset-0" style={{ zIndex: -1, pointerEvents: "none", opacity: 0.55 }}><PcbBackground variant="home" /></div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-white" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>TelkHab</h2>
+            <div className="flex items-center gap-2 mt-1 text-xs" style={{ color: "#c3d0dd" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 4, background: loading ? C.amber : "#38bdf8", display: "inline-block", boxShadow: "0 0 0 0 rgba(56,189,248,.6)", animation: loading ? "none" : "pmLive 2s ease-out infinite" }} />
+              {loading ? "Actualizando…" : `Datos ${agoText(updatedAt)}`} · {rooms.length} habitaciones
+            </div>
+          </div>
+          <button onClick={load} disabled={loading} aria-label="Actualizar ahora" className="rounded-xl flex items-center justify-center shrink-0" style={{ width: 44, height: 44, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.22)", color: "#fff" }}>
+            <RotateCcw size={18} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
+        <style>{`@keyframes pmLive{0%,100%{box-shadow:0 0 0 0 rgba(56,189,248,.6)}70%{box-shadow:0 0 0 7px rgba(56,189,248,0)}}`}</style>
       </div>
-      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
-        Temperatura y estado de los aires acondicionados de todas las habitaciones, en vivo desde Telkonet EcoCentral.
-        {canControl ? " Puedes cambiar el estado (VIP, Check IN, Check OUT) de cualquier habitación desde aquí." : " Para cambiar el estado de una habitación, pide a un administrador o a gerencia."}
-      </p>
 
-      <div className="flex gap-1.5 mb-4">
-        <button onClick={() => setViewMode("list")}
-          className="text-sm font-medium px-3 py-1.5 rounded-md"
-          style={viewMode === "list" ? { background: C.blue, color: "#fff" } : { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
-          Habitaciones
-        </button>
-        <button onClick={() => setViewMode("dashboard")}
-          className="text-sm font-medium px-3 py-1.5 rounded-md"
-          style={viewMode === "dashboard" ? { background: C.blue, color: "#fff" } : { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
-          Dashboard
-        </button>
+      {!loading && !error && rooms.length > 0 && (
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          {[
+            { k: "range", n: counts.range, label: "Fuera de rango", color: C.red, bd: "#f2c2c2" },
+            { k: "alerts", n: counts.alerts, label: "Con alertas", color: C.amber, bd: "#f1d9a8" },
+            { k: "battery", n: counts.battery, label: "Batería baja", color: C.ink, bd: C.line },
+            { k: "occupied", n: dashboard.occupiedCount, label: `Ocupadas / ${rooms.length}`, color: C.ink, bd: C.line },
+          ].map(t => (
+            <button key={t.k} onClick={() => { setViewMode("list"); setFilter(f => f === t.k ? "all" : t.k); setShown(40); }} aria-pressed={filter === t.k}
+              className="rounded-xl text-left px-2.5 py-2" style={{ background: C.panel, border: `${filter === t.k ? 2 : 1}px solid ${filter === t.k ? C.blue : t.bd}`, minHeight: 64 }}>
+              <div className="text-xl font-bold tabular-nums leading-none" style={{ color: t.n > 0 && t.k !== "occupied" ? t.color : C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{t.n}</div>
+              <div className="text-[11px] mt-1 leading-tight" style={{ color: C.inkSoft }}>{t.label}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex rounded-xl p-0.5 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        {[["list", "Lista"], ["map", "Mapa por piso"], ["dashboard", "Resumen"]].map(([id, label]) => (
+          <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-sm font-semibold rounded-[10px]" style={{ minHeight: 40, background: viewMode === id ? C.steelDark : "transparent", color: viewMode === id ? "#fff" : C.inkSoft }}>{label}</button>
+        ))}
       </div>
 
       {flash && (
@@ -275,8 +397,10 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
       {isAdmin && onCreateTasksBatch && rooms.length > 0 && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
           <button onClick={() => setShowPrev(v => !v)} className="w-full flex items-center justify-between text-sm font-semibold" style={{ color: C.ink }}>
-            <span>🗓️ Preventivo por habitación ({prevPlan.due.length} por revisar)</span><span className="text-xs" style={{ color: C.gray }}>{showPrev ? "Ocultar" : "Abrir"}</span>
+            <span>Plan preventivo de aires · {prevPlan.due.length} por revisar</span><span className="text-xs" style={{ color: C.gray }}>{showPrev ? "Ocultar" : "Abrir"}</span>
           </button>
+          <div className="mt-2 rounded" style={{ height: 8, background: C.line, overflow: "hidden" }}><div style={{ width: `${rooms.length ? Math.round(((rooms.length - prevPlan.due.length) / rooms.length) * 100) : 0}%`, height: "100%", background: "linear-gradient(90deg,#38bdf8,#2563eb)" }} /></div>
+          <div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>{rooms.length - prevPlan.due.length} de {rooms.length} al día (meta: {prevMonths} meses)</div>
           {showPrev && (
             <div className="mt-2 text-xs space-y-2" style={{ color: C.inkSoft }}>
               <p>Habitaciones sin revisión de aire en los últimos meses. Crea un lote con los pasos ya cargados (filtro, drenaje, enfriamiento). {prevPlan.openCount > 0 ? `Ya hay ${prevPlan.openCount} abiertas.` : ""}</p>
@@ -472,86 +596,218 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
 
       {!loading && !error && viewMode === "list" && (
         <>
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar habitación o estado (VIP, Check IN...)"
-            className="w-full text-sm border rounded-md px-3 py-2 outline-none mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-          <div className="text-xs mb-2" style={{ color: C.gray }}>{filtered.length} de {rooms.length} habitaciones</div>
-          <div className="pm-tab-in grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {filtered.map(r => {
+          <input type="text" value={search} onChange={e => { setSearch(e.target.value); setShown(40); }} placeholder="Habitación (3615) o estado (VIP, Check IN…)" aria-label="Buscar habitación"
+            className="w-full text-sm border rounded-xl px-3 outline-none mb-2" style={{ minHeight: 46, borderColor: C.line, background: C.panel, color: C.ink }} />
+          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-1">
+            {[["all", "Todas"], ["attention", `Necesitan atención · ${counts.attention}`], ["vip", `VIP · ${dashboard.vipCount}`], ["in", `Check IN · ${dashboard.checkInCount}`], ["out", `Check OUT · ${dashboard.checkOutCount}`], ["occupied", "Ocupadas"]].map(([id, label]) => (
+              <button key={id} onClick={() => { setFilter(id); setShown(40); }} className="shrink-0 text-xs font-semibold rounded-full px-3" style={{ minHeight: 36, background: filter === id ? C.steelDark : C.panel, color: filter === id ? "#fff" : C.inkSoft, border: `1px solid ${filter === id ? C.steelDark : C.line}` }}>{label}</button>
+            ))}
+          </div>
+
+          {attentionRooms.length > 0 && (
+            <div className="pm-tab-in mb-4">
+              <div className="flex items-baseline justify-between mb-2 mt-1">
+                <div className="text-[13px] font-bold uppercase" style={{ color: C.red, letterSpacing: "0.12em", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Necesitan atención</div>
+                <div className="text-xs" style={{ color: C.inkSoft }}>{attentionRooms.length} habitaciones</div>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {attentionRooms.slice(0, 6).map(r => {
+                  const rs = roomMeta.get(r.RoomID) || [];
+                  const rangeR = rs.find(x => x.k === "range");
+                  const tone = hvacStateTone(r.ProfileName);
+                  const sp = r.UserSetPoint != null ? Number(r.UserSetPoint) : null;
+                  const tp = r.Temperature != null ? Number(r.Temperature) : null;
+                  const pct = (v) => Math.max(2, Math.min(98, ((v - 55) / 40) * 100));
+                  return (
+                    <div key={r.RoomID} className="rounded-2xl p-3" style={{ background: C.panel, border: `1px solid ${rs.some(x => x.tone === "red") ? "#f0b4b4" : "#f0d9a6"}` }}>
+                      <button onClick={() => openDetail(r)} className="w-full text-left">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{r.RoomName}</span>
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
+                          </div>
+                          {rangeR && <span className="text-xs font-bold px-2 py-1 rounded-lg" style={pill("red")}>{rangeR.label}</span>}
+                        </div>
+                        {tp != null && sp != null && (
+                          <div className="flex items-center gap-3 mt-2">
+                            <div><div className="text-2xl font-bold leading-none tabular-nums" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{tp}°<span className="text-xs font-medium" style={{ color: C.inkSoft }}>F</span></div><div className="text-[11px]" style={{ color: C.inkSoft }}>ambiente</div></div>
+                            <div className="flex-1">
+                              <div className="relative rounded" style={{ height: 8, background: "linear-gradient(90deg,#7dd3fc,#d9e6f2 45%,#fca5a5)" }}>
+                                <div style={{ position: "absolute", left: `${pct(sp)}%`, top: -4, width: 3, height: 16, borderRadius: 2, background: "#0e2d4a" }} />
+                                <div style={{ position: "absolute", left: `calc(${pct(tp)}% - 7px)`, top: -5, width: 14, height: 18, borderRadius: 7, background: rangeR ? "#b42318" : "#2563eb", border: "2px solid #fff", boxSizing: "border-box" }} />
+                              </div>
+                              <div className="text-[11px] mt-2" style={{ color: C.inkSoft }}>objetivo {sp}°F</div>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {rs.filter(x => x.k !== "range").map(x => <span key={x.k} className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={pill(x.tone)}>{x.label}</span>)}
+                          {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length > 0 && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: C.purpleSoft, color: C.purple }}>{(hotsosByRoom[String(r.RoomName || "").trim()] || []).length} orden(es) HotSOS</span>}
+                        </div>
+                      </button>
+                      <div className="flex gap-2 mt-3">
+                        {onCreateTask && (telkTaskByRoom[String(r.RoomName || "").trim()]
+                          ? <span className="flex-1 text-center text-xs font-semibold rounded-xl flex items-center justify-center" style={{ minHeight: 44, color: C.green, border: `1px solid ${C.line}` }}>✓ Tarea abierta</span>
+                          : <button disabled={creatingRoom === r.RoomID} onClick={() => createRoomTask(r)} className="flex-1 text-sm font-semibold rounded-xl" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>{creatingRoom === r.RoomID ? "Creando…" : "Crear tarea"}</button>)}
+                        <button onClick={() => openDetail(r)} className="flex-1 text-sm font-semibold rounded-xl" style={{ minHeight: 44, background: C.panel, color: C.ink, border: `1px solid ${C.line}` }}>Ver detalle</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {attentionRooms.length > 6 && <button onClick={() => setFilter("attention")} className="w-full mt-2 text-sm font-semibold rounded-xl" style={{ minHeight: 44, color: C.blue, border: `1px dashed ${C.line}` }}>Ver las {attentionRooms.length} que necesitan atención →</button>}
+            </div>
+          )}
+
+          <div className="flex items-baseline justify-between mb-2 mt-1">
+            <div className="text-[13px] font-bold uppercase" style={{ color: C.inkSoft, letterSpacing: "0.12em", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{filter === "all" ? "Todas" : "Resultados"}</div>
+            <div className="text-xs" style={{ color: C.inkSoft }}>{listRooms.length} de {rooms.length}</div>
+          </div>
+          <div className="rounded-2xl overflow-hidden pm-tab-in" style={{ border: `1px solid ${C.line}`, background: C.panel }}>
+            {listRooms.slice(0, shown).map((r, i) => {
               const tone = hvacStateTone(r.ProfileName);
-              const hasAlert = Number(r.AlertCount || 0) > 0;
+              const rs = roomMeta.get(r.RoomID) || [];
+              const sp = r.UserSetPoint != null ? Number(r.UserSetPoint) : null;
               return (
-                <div key={r.RoomID} className="pm-card-hover rounded-lg border p-3" style={{ borderColor: hasAlert ? C.red : C.line, background: C.panel, color: C.ink }}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <div className="text-sm font-semibold" style={{ color: C.ink }}>{r.RoomName}</div>
-                      <Users size={14} color={r.Occupied && r.Occupied !== "0" ? C.blue : C.gray} title={r.Occupied && r.Occupied !== "0" ? "Ocupada" : "Desocupada"} />
-                    </div>
-                    <div className="flex items-center gap-1 flex-wrap justify-end">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
-                    {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length > 0 && (
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: C.purpleSoft, color: C.purple }}
-                        title={(hotsosByRoom[String(r.RoomName || "").trim()] || []).map(t => t.titulo).join(" · ")}>
-                        🛎️ {(hotsosByRoom[String(r.RoomName || "").trim()] || []).length} orden(es)
-                      </span>
-                    )}
-                    </div>
+                <button key={r.RoomID} onClick={() => openDetail(r)} className="w-full flex items-center gap-2.5 px-3 text-left" style={{ minHeight: 60, borderTop: i > 0 ? `1px solid ${C.line}` : "none", background: "transparent" }}>
+                  <span style={{ width: 6, alignSelf: "stretch", margin: "8px 0", borderRadius: 3, background: rs.length ? (rs.some(x => x.tone === "red") ? "#ef4444" : "#f59e0b") : isOcc(r) ? "#0ea5e9" : "#cbd5e1" }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{r.RoomName}</div>
+                    <div className="text-xs truncate" style={{ color: C.inkSoft }}>{isOcc(r) ? "Ocupada" : "Vacía"} · {r.Temperature != null ? `${r.Temperature}°` : "—"} / {sp != null ? `${sp}°` : "—"}{rs.length ? ` · ${rs[0].label}` : ""}</div>
                   </div>
-                  <div className="flex items-center gap-3 text-sm mb-1.5">
-                    <span style={{ color: C.ink }}>{r.Temperature != null ? `${r.Temperature}°F` : "—"} <span className="text-xs" style={{ color: C.gray }}>amb.</span></span>
-                    <span style={{ color: C.gray }}>·</span>
-                    <span style={{ color: C.ink }}>{r.UserSetPoint != null ? `${Number(r.UserSetPoint)}°F` : "—"} <span className="text-xs" style={{ color: C.gray }}>set</span></span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] mb-2" style={{ color: C.gray }}>
-                    <span>Batería {r.BatteryPercent != null ? `${r.BatteryPercent}%` : "—"}</span>
-                    {hasAlert && <span style={{ color: C.red }}>· {r.AlertCount} alerta(s)</span>}
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button size="sm" variant="ghost" onClick={() => openHistory(r)}>Historial</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setExpandedRoomId(id => id === r.RoomID ? null : r.RoomID)}>
-                      {expandedRoomId === r.RoomID ? "Menos datos" : "Más datos"}
-                    </Button>
-                    {onCreateTask && (telkTaskByRoom[String(r.RoomName || "").trim()]
-                      ? <span className="text-xs font-semibold px-2" style={{ color: C.green }}>✓ Tarea abierta</span>
-                      : <Button size="sm" variant="ghost" disabled={creatingRoom === r.RoomID} onClick={() => createRoomTask(r)}>Crear tarea</Button>)}
-                    {canControl && (
-                      <select
-                        value=""
-                        disabled={busyRoomId === r.RoomID}
-                        onChange={e => {
-                          const choice = profileTypes.find(p => p.id === e.target.value);
-                          if (choice) setStateRoom({ RoomID: r.RoomID, RoomName: r.RoomName, current: r.ProfileName, choice });
-                        }}
-                        className="text-xs border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                        <option value="" disabled>{busyRoomId === r.RoomID ? "Cambiando…" : "Cambiar estado a…"}</option>
-                        {profileTypes.filter(p => p.name !== r.ProfileName).map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                  {expandedRoomId === r.RoomID && (
-                    <div className="mt-2.5 pt-2.5 border-t grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]" style={{ borderColor: C.line, color: C.inkSoft }}>
-                      <span>Ocupada: <b style={{ color: C.ink }}>{r.Occupied != null ? (r.Occupied !== "0" ? "Sí" : "No") : "—"}</b></span>
-                      <span>Config. HVAC: <b style={{ color: C.ink }}>{r.HVACConfigName || "—"}</b></span>
-                      <span>Termostatos: <b style={{ color: C.ink }}>{r.NumThermostat ?? "—"}</b></span>
-                      <span>EcoGuard: <b style={{ color: C.ink }}>{r.NumEcoGuard ?? "—"}</b></span>
-                      <span>EcoSwitch: <b style={{ color: C.ink }}>{r.NumEcoSwitch ?? "—"}</b></span>
-                      <span>Alertas TKO: <b style={{ color: r.TKOAlertCount > 0 ? C.red : C.ink }}>{r.TKOAlertCount ?? "—"}</b></span>
-                      <span>Notas: <b style={{ color: C.ink }}>{r.NoteCount ?? "—"}</b></span>
-                      <span>Tickets: <b style={{ color: C.ink }}>{r.TicketCount ?? "—"}</b></span>
-                      <span>Cola de comandos: <b style={{ color: C.ink }}>{r.CommandQueueCount ?? "—"}</b></span>
-                      <span>Volts: <b style={{ color: C.ink }}>{r.Volts ?? "—"}</b></span>
-                      <span>Amps: <b style={{ color: C.ink }}>{r.Amps ?? "—"}</b></span>
-                      <span>Watts: <b style={{ color: C.ink }}>{r.Watts ?? "—"}</b></span>
-                    </div>
-                  )}
-                </div>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>
+                  <span className="text-xs tabular-nums shrink-0" style={{ color: C.inkSoft, width: 34, textAlign: "right" }}>{r.BatteryPercent != null ? `${r.BatteryPercent}%` : "—"}</span>
+                </button>
               );
             })}
           </div>
-          {filtered.length === 0 && <div className="text-sm text-center py-8" style={{ color: C.gray }}>Sin resultados para "{search}".</div>}
+          {listRooms.length > shown && <button onClick={() => setShown(n => n + 50)} className="w-full mt-2 text-sm font-semibold rounded-xl" style={{ minHeight: 44, color: C.inkSoft, border: `1px dashed ${C.line}` }}>Cargar 50 más ({listRooms.length - shown} restantes)</button>}
+          {listRooms.length === 0 && <div className="text-sm text-center py-8" style={{ color: C.gray }}>Sin resultados{search ? ` para "${search}"` : ""}.</div>}
         </>
       )}
+
+      {!loading && !error && viewMode === "map" && (
+        <div className="pm-tab-in">
+          <div className="flex gap-1.5 overflow-x-auto pb-2">
+            {floorsList.map(f => (
+              <button key={f.floor} onClick={() => setMapFloor(f.floor)} className="shrink-0 text-sm font-semibold rounded-lg px-3.5" style={{ minHeight: 40, background: f.floor === activeFloor ? C.steelDark : C.panel, color: f.floor === activeFloor ? "#fff" : C.inkSoft, border: `1px solid ${f.floor === activeFloor ? C.steelDark : C.line}` }}>Piso {f.floor}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] my-2" style={{ color: C.inkSoft }}>
+            {[["#bfe3f7", "Ocupada"], ["#e3e9f0", "Vacía"], ["#d8c7f5", "VIP"], ["#fcd9a0", "Revisar"], ["#f4a3a3", "Fuera de rango / alerta"]].map(([c, l]) => <span key={l} className="inline-flex items-center gap-1.5"><i style={{ width: 12, height: 12, borderRadius: 3, background: c, display: "inline-block" }} />{l}</span>)}
+          </div>
+          <div className="rounded-2xl p-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(62px, 1fr))" }}>
+              {mapRooms.map(r => { const c = mapColor(r); const hasRed = (roomMeta.get(r.RoomID) || []).some(x => x.tone === "red"); return (
+                <button key={r.RoomID} onClick={() => openDetail(r)} aria-label={`Habitación ${r.RoomName}`}
+                  className="rounded-lg font-bold" style={{ minHeight: 52, background: c.bg, color: c.ink, border: `${hasRed ? 2 : 1}px solid ${c.bd}`, fontFamily: "'Space Grotesk', system-ui, sans-serif", fontSize: 12 }}>
+                  {r.RoomName}
+                  <div className="text-[10px] font-medium" style={{ opacity: 0.8 }}>{r.Temperature != null ? `${r.Temperature}°` : "—"}</div>
+                </button>); })}
+            </div>
+          </div>
+          <div className="text-xs mt-2" style={{ color: C.inkSoft }}>Piso {activeFloor}: {mapRooms.length} habitaciones · {mapRooms.filter(r => (roomMeta.get(r.RoomID) || []).length).length} piden atención</div>
+        </div>
+      )}
+
+      {detail && (() => {
+        const r = rooms.find(x => x.RoomID === detail.room.RoomID) || detail.room;
+        const rs = roomMeta.get(r.RoomID) || [];
+        const tone = hvacStateTone(r.ProfileName);
+        const work = roomWork(r.RoomName);
+        const pts = (detail.dataLog || []).slice(0, 96).slice().reverse().filter(p => p.temperature != null);
+        const temps = pts.map(p => Number(p.temperature)); const sps = pts.map(p => Number(p.userSetPoint)).filter(v => !Number.isNaN(v));
+        const all = [...temps, ...sps]; const lo = all.length ? Math.min(...all) - 2 : 0; const hi = all.length ? Math.max(...all) + 2 : 1;
+        const X = (i) => pts.length > 1 ? (i / (pts.length - 1)) * 326 : 0; const Y = (v) => 110 - ((v - lo) / (hi - lo || 1)) * 100;
+        const line = temps.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
+        const spNow = r.UserSetPoint != null ? Number(r.UserSetPoint) : null;
+        const rising = temps.length > 8 && spNow != null && temps.slice(-8).every(v => v - spNow >= 5);
+        return (
+          <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center" style={{ background: "rgba(2,8,15,.55)" }} onClick={() => setDetail(null)}>
+            <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-4 overflow-y-auto" style={{ background: C.panel, color: C.ink, maxHeight: "88vh", border: `1px solid ${C.line}` }} onClick={e => e.stopPropagation()}>
+              <div className="mx-auto mb-2" style={{ width: 44, height: 5, borderRadius: 3, background: C.line }} />
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-2xl font-bold leading-none" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Habitación {r.RoomName}</div>
+                  <div className="text-xs mt-1.5 flex items-center gap-2" style={{ color: C.inkSoft }}><span className="font-semibold px-2 py-0.5 rounded-full" style={{ background: tone.bg, color: tone.color }}>{r.ProfileName || "—"}</span>{isOcc(r) ? "Ocupada" : "Vacía"} · datos {agoText(updatedAt)}</div>
+                </div>
+                <button onClick={() => setDetail(null)} aria-label="Cerrar" className="rounded-full flex items-center justify-center" style={{ width: 44, height: 44, background: C.bg }}><X size={18} /></button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="rounded-xl p-2.5" style={{ background: rs.some(x => x.k === "range") ? C.redSoft : C.bg }}><div className="text-2xl font-bold leading-none tabular-nums" style={{ color: rs.some(x => x.k === "range") ? C.red : C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{r.Temperature != null ? `${r.Temperature}°F` : "—"}</div><div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>ambiente</div></div>
+                <div className="rounded-xl p-2.5" style={{ background: C.bg }}><div className="text-2xl font-bold leading-none tabular-nums" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{spNow != null ? `${spNow}°F` : "—"}</div><div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>objetivo</div></div>
+                <div className="rounded-xl p-2.5" style={{ background: C.bg }}><div className="text-2xl font-bold leading-none tabular-nums" style={{ color: r.BatteryPercent != null && Number(r.BatteryPercent) < 30 ? C.red : C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{r.BatteryPercent != null ? `${r.BatteryPercent}%` : "—"}</div><div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>batería</div></div>
+              </div>
+
+              <div className="rounded-2xl p-3 mt-3" style={{ border: `1px solid ${C.line}` }}>
+                <div className="flex items-baseline justify-between"><div className="text-[13px] font-bold" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Tendencia reciente</div><div className="text-[11px]" style={{ color: C.inkSoft }}>línea punteada = objetivo</div></div>
+                {detail.loading && <SkeletonRows rows={2} />}
+                {detail.error && <div className="text-xs mt-2" style={{ color: C.red }}>{detail.error}</div>}
+                {!detail.loading && !detail.error && pts.length < 2 && <div className="text-xs py-4 text-center" style={{ color: C.gray }}>Todavía no hay suficientes lecturas.</div>}
+                {!detail.loading && pts.length >= 2 && (
+                  <>
+                    <svg viewBox="0 0 326 120" role="img" aria-label={`Temperatura de las últimas ${pts.length} lecturas`} style={{ width: "100%", height: "auto", marginTop: 6 }}>
+                      {spNow != null && <line x1="0" x2="326" y1={Y(spNow)} y2={Y(spNow)} stroke={C.steelDark} strokeWidth="1.5" strokeDasharray="4 4" />}
+                      <path d={line} fill="none" stroke={rising ? "#b42318" : "#2563eb"} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />
+                      <circle cx={X(temps.length - 1)} cy={Y(temps[temps.length - 1])} r="4.5" fill={rising ? "#b42318" : "#2563eb"} stroke="#fff" strokeWidth="2" />
+                    </svg>
+                    <div className="flex justify-between text-[11px]" style={{ color: C.inkSoft }}><span>{pts[0].dateTime}</span><span>ahora</span></div>
+                    {rising && <div className="mt-2 text-xs rounded-lg px-2.5 py-2" style={{ background: C.redSoft, color: C.red }}>Lleva varias lecturas 5 °F o más por encima del objetivo. Posible falla del equipo.</div>}
+                  </>
+                )}
+              </div>
+
+              {rs.length > 0 && <div className="flex flex-wrap gap-1.5 mt-3">{rs.map(x => <span key={x.k} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={pill(x.tone)}>{x.label}</span>)}</div>}
+
+              {canControl && (
+                <>
+                  <div className="text-[12px] font-bold uppercase mt-4 mb-2" style={{ color: C.inkSoft, letterSpacing: "0.1em", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Estado de la habitación</div>
+                  <div className="flex gap-2">
+                    {profileTypes.filter(p => /^(VIP|Check IN|Check OUT)/i.test(p.name)).slice(0, 4).map(p => {
+                      const on = (r.ProfileName || "") === p.name;
+                      return <button key={p.id} disabled={on || busyRoomId === r.RoomID} onClick={() => setStateRoom({ RoomID: r.RoomID, RoomName: r.RoomName, current: r.ProfileName, choice: p })}
+                        className="flex-1 text-sm font-semibold rounded-xl" style={{ minHeight: 44, background: on ? C.steelDark : C.panel, color: on ? "#fff" : C.ink, border: `1px solid ${on ? C.steelDark : C.line}` }}>{p.name}</button>;
+                    })}
+                  </div>
+                  <div className="text-[11px] mt-1" style={{ color: C.gray }}>Pide confirmación antes de cambiar: mueve el aire real de la habitación.</div>
+                </>
+              )}
+
+              <div className="text-[12px] font-bold uppercase mt-4 mb-2" style={{ color: C.inkSoft, letterSpacing: "0.1em", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Mantenimiento de esta habitación</div>
+              <div className="grid grid-cols-3 gap-2">
+                {["Aire / HVAC", "Pintura", "Hidráulico"].map(g => (
+                  <div key={g} className="rounded-xl p-2.5" style={{ border: `1px solid ${C.line}`, background: work[g] ? `${planColorOf(g)}14` : C.bg }}>
+                    <div className="text-[11px] font-semibold" style={{ color: planColorOf(g) }}>{g}</div>
+                    <div className="text-xl font-bold leading-tight tabular-nums">{work[g] || 0}</div>
+                    <div className="text-[10.5px]" style={{ color: C.inkSoft }}>{work[g] ? "registros" : "ninguno"}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                {onCreateTask && (telkTaskByRoom[String(r.RoomName || "").trim()]
+                  ? <span className="flex-1 text-center text-sm font-semibold rounded-xl flex items-center justify-center" style={{ minHeight: 48, color: C.green, border: `1px solid ${C.line}` }}>✓ Tarea abierta</span>
+                  : <button disabled={creatingRoom === r.RoomID} onClick={() => createRoomTask(r)} className="flex-1 text-sm font-semibold rounded-xl" style={{ minHeight: 48, background: C.steelDark, color: "#fff" }}>{creatingRoom === r.RoomID ? "Creando…" : "Crear tarea"}</button>)}
+                <button onClick={() => { const rr = r; setDetail(null); openHistory(rr); }} className="text-sm font-semibold rounded-xl px-4" style={{ minHeight: 48, background: C.panel, color: C.ink, border: `1px solid ${C.line}` }}>Historial</button>
+                {onNavigate && <button onClick={() => { setDetail(null); onNavigate("floorplans"); }} className="text-sm font-semibold rounded-xl px-4" style={{ minHeight: 48, background: C.panel, color: C.ink, border: `1px solid ${C.line}` }}>Plano</button>}
+              </div>
+              <button onClick={() => setExpandedRoomId(id => id === r.RoomID ? null : r.RoomID)} className="w-full text-xs font-semibold mt-3" style={{ color: C.inkSoft, minHeight: 36 }}>{expandedRoomId === r.RoomID ? "Menos datos técnicos" : "Más datos técnicos"}</button>
+              {expandedRoomId === r.RoomID && (
+                <div className="pt-2 border-t grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]" style={{ borderColor: C.line, color: C.inkSoft }}>
+                  <span>Config. HVAC: <b style={{ color: C.ink }}>{r.HVACConfigName || "—"}</b></span>
+                  <span>Termostatos: <b style={{ color: C.ink }}>{r.NumThermostat ?? "—"}</b></span>
+                  <span>EcoGuard: <b style={{ color: C.ink }}>{r.NumEcoGuard ?? "—"}</b></span>
+                  <span>EcoSwitch: <b style={{ color: C.ink }}>{r.NumEcoSwitch ?? "—"}</b></span>
+                  <span>Alertas TKO: <b style={{ color: Number(r.TKOAlertCount) > 0 ? C.red : C.ink }}>{r.TKOAlertCount ?? "—"}</b></span>
+                  <span>Cola de comandos: <b style={{ color: C.ink }}>{r.CommandQueueCount ?? "—"}</b></span>
+                  <span>Volts: <b style={{ color: C.ink }}>{r.Volts ?? "—"}</b></span><span>Amps: <b style={{ color: C.ink }}>{r.Amps ?? "—"}</b></span><span>Watts: <b style={{ color: C.ink }}>{r.Watts ?? "—"}</b></span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Confirmación antes de cambiar el estado — esto mueve equipo real del hotel. */}
       {stateRoom && (

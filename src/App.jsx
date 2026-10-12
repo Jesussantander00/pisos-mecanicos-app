@@ -6860,7 +6860,7 @@ export default function App() {
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />
           )}
           {view === "hvac" && isAdmin && (
-            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} onCreateTask={createTask} onCreateTasksBatch={createTasksBatch} accounts={profiles} />
+            <HVACView isAdmin={isAdmin} isGerencia={isGerencia} tasks={tasks} onCreateTask={createTask} onCreateTasksBatch={createTasksBatch} accounts={profiles} onNavigate={setView} />
           )}
           {view === "analytics" && (isAdmin || isGerencia) && (
             <EquipmentAnalyticsView issueHistory={issueHistory} activeIssues={activeIssues}

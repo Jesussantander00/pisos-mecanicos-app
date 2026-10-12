@@ -148,3 +148,29 @@ async function runDriveArchiveInner(db, { budgetMs = 40000 } = {}) {
   }
   return { archived: done.length, removed, failed, pending: pending.length - done.length };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Copia en Drive de cada informe (PDF o Excel) que la app envía por correo.
+// Queda en  QuinTech / Informes / AAAA-MM /  con la fecha y hora en el nombre. Si Drive falla, NO
+// afecta el envío del correo: solo se devuelve false.
+// ---------------------------------------------------------------------------------------------
+const MIME_BY_EXT = { pdf: "application/pdf", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", csv: "text/csv", png: "image/png", jpg: "image/jpeg" };
+
+export async function saveReportToDrive({ filename, base64, subject }) {
+  try {
+    if (!base64) return false;
+    const token = await getDriveToken();
+    const now = new Date(Date.now() - 5 * 3600000); // hora de Colombia (UTC-5)
+    const iso = now.toISOString();
+    const ym = iso.slice(0, 7);
+    const stamp = `${iso.slice(0, 10)} ${iso.slice(11, 16).replace(":", "-")}`;
+    const root = await driveFolder(token, "QuinTech", null);
+    const informes = await driveFolder(token, "Informes", root);
+    const month = await driveFolder(token, ym, informes);
+    const clean = String(filename || "informe.pdf").replace(/[\\/:*?"<>|]+/g, "-");
+    const ext = (clean.split(".").pop() || "pdf").toLowerCase();
+    const buf = Buffer.from(base64, "base64");
+    const size = await driveUpload(token, buf, `${stamp} · ${clean}`, month, MIME_BY_EXT[ext] || "application/octet-stream");
+    return size === buf.length;
+  } catch (e) { return false; }
+}

@@ -10,6 +10,9 @@
     }
   ],
   "functions": {
+    "api/send-report.js": {
+      "maxDuration": 30
+    },
     "api/admin-actions.js": {
       "maxDuration": 60
     },

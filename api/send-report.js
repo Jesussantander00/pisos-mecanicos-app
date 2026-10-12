@@ -14,6 +14,7 @@ import {
   getSupabaseAdmin, requireApprovedUser, checkRateLimit, sendRateLimited,
   isValidEmail, isAllowedReportDomain, base64SizeBytes,
 } from "./_lib/security.js";
+import { saveReportToDrive } from "./_lib/driveArchive.js";
 
 // Tope de tamaño del archivo adjunto — Resend acepta hasta 40 MB, pero para un informe de
 // mantenimiento (PDF o Excel) 15 MB es más que generoso y evita que un pedido gigante (por error
@@ -122,7 +123,10 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(200).json({ ok: true, message: `Correo enviado a ${toClean} con el archivo adjunto.`, id: data.id });
+    // Copia del informe en Google Drive (QuinTech / Informes / mes). Si falla, el correo ya salió igual.
+    const savedInDrive = await saveReportToDrive({ filename, base64: fileBase64, subject });
+
+    res.status(200).json({ ok: true, message: `Correo enviado a ${toClean} con el archivo adjunto.`, id: data.id, savedInDrive });
   } catch (e) {
     res.status(500).json({ ok: false, message: "No se pudo conectar con el servicio de correo (Resend)." });
   }

@@ -4510,6 +4510,10 @@ export default function App() {
     (async () => { try { setAiUsageStats((await sGet("ai-usage-stats", true)) || {}); } catch { /* noop */ } })();
   }, [view]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Barra de iconos (solo computador/tablet ancha): el menú se recoge a una columna delgada. Se recuerda la elección.
+  const [navCollapsed, setNavCollapsedRaw] = useState(() => { try { return localStorage.getItem("pm-local:nav-collapsed") !== "0"; } catch { return true; } });
+  const setNavCollapsed = (v) => { setNavCollapsedRaw(v); try { localStorage.setItem("pm-local:nav-collapsed", v ? "1" : "0"); } catch { /* noop */ } };
+  const [quickOpen, setQuickOpen] = useState(false);
   // El menú lateral en celular/tablet no tenía fondo oscuro ni se cerraba con "atrás" — quedaba
   // abierto sobre el contenido sin que se notara bien, dando la sensación de que "no pasa nada".
   useBackCloseModal(sidebarOpen, () => setSidebarOpen(false));
@@ -6959,7 +6963,7 @@ export default function App() {
         <div className="lg:hidden fixed inset-0 z-20 transition-opacity duration-200" style={{ background: "rgba(10,14,20,0.5)" }} onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
       {/* SIDEBAR */}
-      <aside className={`fixed lg:static z-20 top-0 left-0 w-64 shrink-0 transition-transform duration-200 flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+      <aside className={`fixed lg:static z-20 top-0 left-0 w-64 ${navCollapsed ? "lg:w-[84px]" : ""} shrink-0 transition-transform duration-200 flex flex-col ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{ transitionTimingFunction: "var(--ease-out)", background: C.steel, height: "100vh" }}>
         <style>{`
           .floor-scroll::-webkit-scrollbar { width: 8px; }
@@ -6967,6 +6971,49 @@ export default function App() {
           .floor-scroll::-webkit-scrollbar-thumb { background: #3d5674; border-radius: 8px; }
           .floor-scroll::-webkit-scrollbar-thumb:hover { background: #4d6a8a; }
         `}</style>
+        {navCollapsed && (() => {
+          const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
+          const RAIL = isAdmin
+            ? [["home", "Inicio", Home], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
+            : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
+          const railItems = RAIL.filter(([id]) => id === "home" || badgeOf[id] || (isAdmin && HUBS.some(h => h.id === id)));
+          const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => !q[2] || isAdmin);
+          return (
+            <div className="hidden lg:flex flex-col flex-1 min-h-0 pt-3" style={{ position: "relative" }}>
+              <div className="px-2 pb-2">
+                <button onClick={() => setQuickOpen(o => !o)} aria-label="Acciones rápidas" aria-expanded={quickOpen} className="w-full rounded-xl text-xl font-extrabold" style={{ height: 44, background: C.amber, color: "#0b2238" }}>+</button>
+              </div>
+              {quickOpen && (
+                <div className="absolute z-30 rounded-xl p-2" style={{ left: 90, top: 12, width: 240, background: C.panel, border: `1px solid ${C.line}`, boxShadow: "0 12px 30px rgba(0,0,0,.25)" }}>
+                  <div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Acciones rápidas</div>
+                  {QUICK.map(([id, l]) => <button key={id} onClick={() => { setQuickOpen(false); if (id === "scan") setShowQrScanner(true); else setView(id); }} className="w-full text-left text-sm font-semibold rounded-lg px-3" style={{ minHeight: 40, color: C.ink }}>{l}</button>)}
+                </div>
+              )}
+              <div className="floor-scroll flex-1 min-h-0 overflow-y-auto px-1.5">
+                {railItems.map(([id, label, Icon]) => {
+                  const hub = HUBS.find(h => h.members.some(m => m[0] === id));
+                  const on = navView === id || (id === "executive" && navView === "executive");
+                  const b = badgeOf[id]?.badge;
+                  return (
+                    <button key={id} onClick={() => setView(id)} title={label} aria-label={label} aria-current={on ? "page" : undefined}
+                      className="relative w-full flex flex-col items-center justify-center rounded-xl mb-1 transition hover:bg-white/5"
+                      style={{ height: 58, background: on ? "#2a3f56" : "transparent", color: on ? "#fff" : "#c3d0dd" }}>
+                      <Icon size={19} />
+                      <span className="text-[10px] font-medium mt-0.5">{label}</span>
+                      {b ? <span className="absolute font-bold rounded-full text-white" style={{ top: 3, right: 6, minWidth: 16, height: 16, fontSize: 10, lineHeight: "16px", textAlign: "center", padding: "0 4px", background: id === "issues" ? C.red : C.amber }}>{typeof b === "string" ? b : b > 99 ? "99+" : b}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="px-1.5 pb-3 pt-2 border-t shrink-0" style={{ borderColor: "#2a3f56" }}>
+                <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} aria-label="Cambiar tema" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 50, color: "#c3d0dd" }}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}<span className="text-[10px] mt-0.5">{darkMode ? "Claro" : "Oscuro"}</span></button>
+                <button onClick={() => setView("profile")} title="Mi perfil" aria-label="Mi perfil" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 50, color: "#c3d0dd" }}><User size={17} /><span className="text-[10px] mt-0.5">Perfil</span></button>
+                <button onClick={() => setNavCollapsed(false)} title="Mostrar todo el menú" aria-label="Expandir menú" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 50, color: "#c3d0dd" }}><ChevronRight size={17} /><span className="text-[10px] mt-0.5">Todo</span></button>
+              </div>
+            </div>
+          );
+        })()}
+        <div className={`flex flex-col flex-1 min-h-0 ${navCollapsed ? "lg:hidden" : ""}`}>
         <div className="pm-safe-top p-4 border-b shrink-0" style={{ borderColor: "#2a3f56" }}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -6980,6 +7027,7 @@ export default function App() {
               onClick={() => setSidebarOpen(false)} style={{ color: "#c3d0dd", background: "#2a3f56" }}>
               <ChevronRight size={14} /> Volver
             </button>
+            <button className="hidden lg:flex shrink-0 items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium" onClick={() => setNavCollapsed(true)} title="Recoger el menú" style={{ color: "#c3d0dd", background: "#2a3f56" }}>«</button>
           </div>
         </div>
         <div className="floor-scroll p-3 space-y-1" style={{ overflowY: "auto", flex: "1 1 auto", minHeight: 0 }}>
@@ -7037,6 +7085,7 @@ export default function App() {
             </div>
           </div>
         )}
+        </div>
       </aside>
 
       {/* MAIN */}

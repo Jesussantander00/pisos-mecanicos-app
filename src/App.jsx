@@ -6988,19 +6988,8 @@ export default function App() {
           const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => !q[2] || isAdmin);
           return (
             <div className="hidden lg:flex flex-col flex-1 min-h-0 pt-3" style={{ position: "relative" }}>
-              <div className="px-2 pb-2">
-                <button onClick={() => { setFlyout(null); setQuickOpen(o => !o); }} aria-label="Acciones rápidas" aria-expanded={quickOpen} className="w-full rounded-xl text-xl font-extrabold" style={{ height: 44, background: C.amber, color: "#0b2238" }}>+</button>
-              </div>
-              {isAdmin && (
-                <div className="px-1.5 pb-2">
-                  <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "operario" ? null : "operario"); }} aria-label="Vista del operario" aria-expanded={flyout === "operario"} title="Todo lo que ve el operario"
-                    className="w-full flex flex-col items-center justify-center rounded-xl" style={{ height: 58, background: flyout === "operario" ? C.amber : "#12304a", color: flyout === "operario" ? "#0b2238" : "#fff", border: `1px solid ${flyout === "operario" ? C.amber : "#2b4a68"}` }}>
-                    <Users size={19} /><span className="text-[10px] font-bold mt-0.5">Operario</span>
-                  </button>
-                </div>
-              )}
               {quickOpen && (
-                <div className="absolute z-30 rounded-xl p-2" style={{ left: 90, top: 12, width: 240, background: C.panel, border: `1px solid ${C.line}`, boxShadow: "0 12px 30px rgba(0,0,0,.25)" }}>
+                <div className="absolute z-30 rounded-xl p-2" style={{ left: 90, bottom: 12, width: 240, background: C.panel, border: `1px solid ${C.line}`, boxShadow: "0 12px 30px rgba(0,0,0,.25)" }}>
                   <div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Acciones rápidas</div>
                   {QUICK.map(([id, l]) => <button key={id} onClick={() => { setQuickOpen(false); if (id === "scan") setShowQrScanner(true); else setView(id); }} className="w-full text-left text-sm font-semibold rounded-lg px-3" style={{ minHeight: 40, color: C.ink }}>{l}</button>)}
                 </div>
@@ -7020,8 +7009,20 @@ export default function App() {
                     </button>
                   );
                 })}
+              {isAdmin && (
+                <div className="pt-1">
+                  <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "operario" ? null : "operario"); }} aria-label="Vista del operario" aria-expanded={flyout === "operario"} title="Todo lo que ve el operario"
+                    className="w-full flex flex-col items-center justify-center rounded-xl" style={{ height: 58, background: flyout === "operario" ? C.amber : "#12304a", color: flyout === "operario" ? "#0b2238" : "#fff", border: `1px solid ${flyout === "operario" ? C.amber : "#2b4a68"}` }}>
+                    <Users size={19} /><span className="text-[10px] font-bold mt-0.5">Operario</span>
+                  </button>
+                </div>
+              )}
               </div>
               <div className="px-1.5 pb-3 pt-2 border-t shrink-0" style={{ borderColor: "#2a3f56" }}>
+              <div className="pb-1">
+                <button onClick={() => { setFlyout(null); setQuickOpen(o => !o); }} aria-label="Acciones rápidas" aria-expanded={quickOpen} className="w-full rounded-xl text-xl font-extrabold" style={{ height: 44, background: C.amber, color: "#0b2238" }}>+</button>
+              </div>
+
                 <button onClick={focusSearch} title="Buscar (Ctrl K)" aria-label="Buscar" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><Search size={17} /><span className="text-[10px] mt-0.5">Buscar</span></button>
                 {isAdmin && <button onClick={() => { const b = document.querySelector('button[aria-label="Notificaciones"]'); if (b) b.click(); }} title="Avisos" aria-label="Avisos" className="relative w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><Bell size={17} /><span className="text-[10px] mt-0.5">Avisos</span>{avisosCount > 0 && <span className="absolute font-bold rounded-full text-white" style={{ top: 3, right: 10, minWidth: 16, height: 16, fontSize: 10, lineHeight: "16px", textAlign: "center", padding: "0 4px", background: C.red }}>{avisosCount}</span>}</button>}
                 <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} aria-label="Cambiar tema" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}<span className="text-[10px] mt-0.5">{darkMode ? "Claro" : "Oscuro"}</span></button>

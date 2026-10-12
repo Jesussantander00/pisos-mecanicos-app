@@ -1,122 +1,127 @@
-# Pisos Mecánicos — Ronda de Equipos
+# QuinTech — Mantenimiento hotelero (Hyatt Cartagena)
 
-App real (ya no un artifact de Claude) para que se pueda abrir desde cualquier teléfono con un
-link normal, y que el correo con el PDF adjunto salga solo, sin que nadie tenga que darle
-"Enviar" a mano.
+App web instalable (PWA) para el equipo de mantenimiento del hotel: rondas de equipos, tareas,
+equipos fuera de servicio, cuartos fríos, medidores, inventario, mantenimiento preventivo,
+entrega de turno, planos por piso, horarios, análisis y panel ejecutivo. Funciona en celular y
+computador, con o sin señal (los cambios se guardan en el teléfono y se suben al volver la red).
 
-## Qué cambia respecto a la versión anterior
+- **Sitio en producción:** https://pisosmecanicos-hcc.com
+- **Hecha con:** React + Vite + Tailwind
+- **Base de datos y archivos:** Supabase (tabla `app_storage`, Storage y Auth)
+- **Servidor:** funciones de Vercel en la carpeta `api/`
+- **Correo:** Resend · **Respaldo y archivo:** Google Drive
 
-- **Antes**: corría solo dentro de Claude (usaba `window.storage`, que no existe fuera de
-  claude.ai). Por eso el link no cargaba en el teléfono.
-- **Ahora**: es un proyecto React normal + una base de datos real (Supabase) + un backend
-  pequeño (una función en Vercel) que sí puede mandar correos de verdad, con el PDF adjunto,
-  usando una clave secreta que nunca toca el navegador.
-- **WhatsApp**: sigue sin poder adjuntar el PDF por enlace. Eso no lo decide esta app — lo
-  decide WhatsApp/Meta, y solo se puede saltar con su API de negocios oficial (aprobación de
-  Meta, número de teléfono verificado, plantillas de mensaje aprobadas: un trámite aparte,
-  no una función que se pueda simplemente "agregar"). Por ahora WhatsApp manda el resumen en
-  texto y el PDF se adjunta a mano.
+## Cómo se ve la app
 
-## 1. Crear la base de datos (Supabase) — gratis
+- **Computador:** barra lateral de iconos (Inicio, Operario, Tareas, Fuera, Cuartos, Planta,
+  Mtto, Inventario, Análisis), con «Todo» para ver todas las pantallas. Los administradores ven
+  menos pestañas porque varias pantallas están agrupadas en centros con pestañas (Tareas,
+  Cuartos, Estado de la planta, Panel ejecutivo y Mantenimiento).
+- **Celular:** el menú abre la misma cuadrícula de iconos. «Operario» abre todo lo que ve un
+  técnico (Ronda, Fríos, Medidores, Turno, Fuera de servicio, Mi trabajo, Fichas, Procedimientos,
+  Tanques, Combustibles, Wiki y Mi horario).
+- **Roles:** administrador, almacenista, gerencia, encargado de horarios y «solo ver».
 
-1. Entra a [supabase.com](https://supabase.com) y crea una cuenta y un proyecto nuevo (elige
-   una región cercana, ej. `sa-east-1`).
-2. Cuando el proyecto esté listo, ve a **SQL Editor → New query**, pega todo el contenido del
-   archivo [`supabase/schema.sql`](./supabase/schema.sql) de este proyecto, y dale **Run**.
-   Esto crea la tabla donde vive toda la información de la app (cuentas, rondas, equipos
-   dañados, tanques, entregas de turno, etc.).
-3. Ve a **Settings → API** y copia dos valores:
-   - **Project URL** → lo vas a usar como `VITE_SUPABASE_URL`
-   - **anon public key** → lo vas a usar como `VITE_SUPABASE_ANON_KEY`
+## Qué hace el servidor (carpeta `api/`)
 
-## 2. Crear la cuenta de correo (Resend) — gratis para empezar
+| Archivo | Para qué sirve |
+|---|---|
+| `send-report.js` | Envía por correo los PDF y Excel (entrega de turno, cuartos fríos, informes…) y **guarda una copia en Drive** (QuinTech / Informes / mes). |
+| `admin-actions.js` | Acciones solo de administrador: aprobar cuentas, roles, contraseñas, permisos de Drive, y «Archivar ahora». |
+| `telkonet.js` | Conexión con Telkonet EcoCentral (termostatos). También corre el resumen diario (cron `digest`) y, justo después, el **archivo automático a Drive**. |
+| `send-push.js` | Notificaciones push. |
+| `ai-assistant.js`, `generate-*.js`, `read-meter.js` | Asistente, resúmenes y lectura de medidores con IA. |
+| `register-profile.js`, `log-failed-login.js` | Alta de perfiles y registro de ingresos fallidos. |
+| `_lib/` | Funciones compartidas: seguridad, resumen diario y archivo en Drive (`driveArchive.js`). |
 
-1. Entra a [resend.com](https://resend.com) y crea una cuenta.
-2. Ve a **API Keys → Create API Key** y copia la clave (empieza con `re_...`). La vas a usar
-   como `RESEND_API_KEY`. **Nunca la pongas en el frontend ni la subas a un repositorio
-   público** — solo va en las variables de entorno del servidor (Vercel).
-3. Mientras no verifiques un dominio propio, Resend solo te deja enviar correos a la
-   dirección con la que creaste la cuenta (modo de pruebas). Para mandar a cualquier
-   destinatario (por ejemplo el correo del hotel), ve a **Domains → Add Domain**, agrega el
-   dominio del hotel y sigue las instrucciones para poner los registros DNS. Una vez
-   verificado, usa un remitente de ese dominio, ej. `pisos-mecanicos@tudominio.com`, como
-   `REPORT_FROM_EMAIL`.
+### Tareas programadas (Vercel Cron, hora UTC)
 
-## 3. Subir el proyecto y desplegarlo (Vercel) — gratis
+| Hora | Qué corre |
+|---|---|
+| 09:00 | `/api/telkonet?action=scan` — revisa los termostatos |
+| 12:00 | `/api/telkonet?action=digest` — resumen diario por push y archivo automático a Drive |
 
-1. Sube esta carpeta a un repositorio de GitHub (puedes arrastrarla directamente en
-   github.com → "Add file → Upload files" si no usas git desde la terminal).
-2. Entra a [vercel.com](https://vercel.com), conecta tu cuenta de GitHub, y elige
-   **Add New → Project**, seleccionando ese repositorio. Vercel detecta que es un proyecto
-   Vite automáticamente.
-3. Antes de darle a "Deploy", abre **Environment Variables** y agrega:
+El plan gratuito de Vercel permite 2 tareas programadas; por eso el archivo a Drive va dentro de
+la del resumen diario y no tiene la suya.
 
-   | Nombre | Valor |
-   |---|---|
-   | `VITE_SUPABASE_URL` | el Project URL que copiaste de Supabase |
-   | `VITE_SUPABASE_ANON_KEY` | el anon key que copiaste de Supabase |
-   | `RESEND_API_KEY` | la clave de Resend |
-   | `REPORT_FROM_EMAIL` | tu remitente verificado (o déjalo vacío mientras pruebas, usa `onboarding@resend.dev`) |
+## Fotos, videos e informes: dónde quedan
 
-4. Dale **Deploy**. En 1-2 minutos te da un link tipo `https://tu-proyecto.vercel.app` — ese
-   es el que sí funciona en cualquier teléfono, sin necesidad de estar en Claude.
+1. Las fotos (comprimidas) y los videos nuevos se suben a Supabase Storage
+   (`maintenance-photos` y `maintenance-videos`).
+2. **Cada día** el servidor pasa a Google Drive las fotos y videos de **más de 7 días**
+   (`QuinTech / AAAA-MM / Fotos | Videos`). Solo después de confirmar que quedaron en Drive con el
+   mismo tamaño, cambia el enlace en la app por la tarjeta «Archivada en Drive» y borra el
+   original de Supabase. Así Supabase no se llena. No toca fotos de equipos.
+3. En **Uso y respaldo → Archivo en Google Drive** se ve cuándo corrió por última vez, hay un
+   botón **«Archivar ahora»** y se puede respaldar el texto (tareas, registros) a
+   `QuinTech / Respaldos`.
+4. Cada PDF o Excel enviado por correo se guarda también en `QuinTech / Informes / AAAA-MM`.
 
-## 4. Primer uso
+## Variables de entorno (Vercel → Settings → Environment Variables)
 
-1. Abre el link de Vercel desde cualquier teléfono o computador.
-2. Crea una cuenta con usuario y contraseña — **la primera cuenta que se crea queda como
-   administrador automáticamente.**
-3. Entra al **Panel de administrador** y configura el correo al que quieres que se manden las
-   entregas de turno automáticamente (y, si quieres, un número de WhatsApp por defecto).
-4. Haz un recorrido de prueba: revisa un piso, guarda, sigue al siguiente, hasta el último.
-   Al guardar el último piso, la app arma el PDF y lo manda sola al correo configurado — revisa
-   la pestaña **Entrega de turno** para ver si el envío automático funcionó o si hubo algún
-   error (por ejemplo, si el correo de Resend aún está en modo de pruebas y el destino no
-   coincide con tu cuenta).
+| Nombre | Para qué |
+|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Conexión de la app con Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Clave secreta del servidor (nunca en el navegador) |
+| `RESEND_API_KEY`, `REPORT_FROM_EMAIL` | Envío de correos |
+| `ALLOWED_REPORT_DOMAINS` | (opcional) limita a qué dominios se puede enviar |
+| `APP_SHARED_SECRET` | (opcional) barrera extra para las funciones |
+| `CRON_SECRET` | Autoriza a las tareas programadas de Vercel |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Permiso permanente para escribir en Drive |
+| `TELKONET_USERNAME`, `TELKONET_PASSWORD` | Termostatos (TelkHab) |
+| `GEMINI_API_KEY` | Funciones con IA |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Notificaciones push |
 
-## Desarrollo local (opcional, para probar cambios antes de subirlos)
+## Base de datos (Supabase)
+
+1. **SQL Editor → New query** y corre `supabase/schema.sql` (tabla principal).
+2. Corre los archivos `.sql` de la raíz y de `supabase/` en orden numérico (permisos, columnas de
+   perfiles, seguridad de subida de fotos y videos, salud de habitaciones de Telkonet).
+3. Crea los espacios de Storage `maintenance-photos` y `maintenance-videos`.
+
+## Puesta en marcha
+
+1. Sube el proyecto a GitHub y conéctalo a Vercel (detecta Vite solo; despliega en cada push).
+2. Agrega las variables de entorno de arriba y despliega.
+3. Abre el sitio y crea la primera cuenta: **queda como administrador** automáticamente.
+4. En el Panel de administrador aprueba cuentas y configura el correo de las entregas de turno.
+
+### Desarrollo local
 
 ```bash
 npm install
-cp .env.example .env   # y pon ahí tus claves de Supabase
-npm run dev -- --host  # el --host permite abrirlo desde el teléfono en la misma red WiFi
+cp .env.example .env   # pon ahí las claves de Supabase
+npm run dev -- --host  # --host permite abrirlo desde el teléfono en la misma red
 ```
 
-Nota: en desarrollo local, `/api/send-report` no corre a menos que uses `vercel dev` en vez de
-`npm run dev` (necesita el CLI de Vercel: `npm i -g vercel`, luego `vercel dev`).
+`/api/*` solo corre con `vercel dev` (necesita `npm i -g vercel`).
 
 ## Estructura del proyecto
 
 ```
-├── api/
-│   └── send-report.js      ← backend real: manda el correo con PDF adjunto (usa RESEND_API_KEY)
+├── api/                       ← funciones del servidor (ver tabla de arriba)
+│   └── _lib/                  ← seguridad, resumen diario, archivo en Drive
 ├── src/
-│   ├── App.jsx              ← toda la app (rondas, tanques, entrega de turno, reportes, admin)
-│   ├── lib/
-│   │   ├── supabaseClient.js
-│   │   └── storage.js       ← sGet/sSet, ahora respaldados por Supabase en vez de window.storage
+│   ├── App.jsx                ← navegación, menús y pantallas principales
+│   ├── shared/                ← núcleo (core.jsx), componentes y datos base (seeds.js)
+│   ├── views/                 ← una pantalla por archivo (Tareas, Ronda, Planta, Panel…)
 │   └── main.jsx
-├── supabase/
-│   └── schema.sql           ← corre esto una vez en el SQL Editor de tu proyecto de Supabase
-├── .env.example
+├── supabase/                  ← SQL de la base de datos
+├── public/                    ← iconos, manifest y service worker (PWA)
+├── vercel.json                ← tareas programadas y tiempos máximos de las funciones
 └── package.json
 ```
 
 ## Preguntas frecuentes
 
-**¿Por qué WhatsApp no manda el PDF adjunto también?**
-Porque el enlace `wa.me` (lo único que un sitio web puede usar para abrir WhatsApp) solo admite
-texto. Adjuntar un archivo automáticamente requiere la API de WhatsApp Business de Meta, que
-implica verificación de la empresa, un número de teléfono dedicado y aprobación de plantillas
-de mensaje — un proceso de negocio, no algo que se resuelva con más código en esta app. Si en
-algún momento quieres ese camino, puedo ayudarte a evaluarlo, pero es un proyecto aparte.
+**¿Por qué WhatsApp no manda el PDF adjunto?**
+El enlace `wa.me` solo admite texto. Adjuntar archivos automáticamente requiere la API oficial de
+WhatsApp Business (verificación de empresa, número dedicado y plantillas aprobadas por Meta).
+Por ahora se manda el resumen en texto y el PDF se adjunta a mano.
 
-**¿Esto tiene algún costo?**
-Con volúmenes de un hotel normal, los planes gratuitos de Supabase, Vercel y Resend alcanzan
-sin problema. Si más adelante creces mucho, cada uno tiene planes pagos, pero no es necesario
-para empezar.
+**¿Esto tiene costo?**
+Con el volumen de un hotel, los planes gratuitos de Supabase, Vercel y Resend alcanzan. Drive
+guarda las fotos, videos e informes viejos para que Supabase no se llene.
 
-**¿Puedo seguir usando la versión de Claude (artifact) en paralelo?**
-Sí, pero ojo: son dos bases de datos distintas (una vive en Claude, la otra en Supabase). No se
-sincronizan entre sí. Lo recomendable es que, una vez tengas esta versión desplegada y
-funcionando, la uses como la única oficial.
+**¿Qué no se importa ni se hace solo?**
+Los permisos finos por rol y la importación automática de HotSOS no están construidos.

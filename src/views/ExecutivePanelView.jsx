@@ -192,6 +192,7 @@ export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIn
       </div>
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
 
+      <WeeklyTrendCard tasks={tasks} />
       {/* Pulso del mes: lo esencial en 4 números, calculado con las tareas reales */}
       {(() => {
         const all = tasks || [];
@@ -475,6 +476,37 @@ function StackedBarChart({ data, labelKey, series }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ===== Tableros de análisis (Comparar periodos · Fallas · Carga de trabajo) =====
+function Spark({ vals, color = "#0e2d4a", w = 84, h = 26 }) {
+  const v = vals && vals.length > 1 ? vals : [0, 0];
+  const max = Math.max(...v, 1), min = Math.min(...v, 0);
+  const pts = v.map((x, i) => `${(i / (v.length - 1)) * (w - 4) + 2},${h - 3 - ((x - min) / (max - min || 1)) * (h - 6)}`).join(" ");
+  return <svg width={w} height={h} role="img" aria-label="Tendencia"><polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+// ===== Tendencia semanal (se muestra en el Panel Ejecutivo) =====
+function WeeklyTrendCard({ tasks }) {
+  const weeks = useMemo(() => {
+    const out = []; const end = new Date(); end.setHours(23, 59, 59, 999);
+    for (let i = 7; i >= 0; i--) { const to = end.getTime() - i * 7 * 86400000, from = to - 7 * 86400000; out.push({ from, to, closed: 0, created: 0 }); }
+    (tasks || []).forEach(t => { const f = t.finishedAt && new Date(t.finishedAt).getTime(); const c = t.createdAt && new Date(t.createdAt).getTime(); out.forEach(w => { if (f && f > w.from && f <= w.to) w.closed++; if (c && c > w.from && c <= w.to) w.created++; }); });
+    return out;
+  }, [tasks]);
+  const mx = Math.max(1, ...weeks.map(w => w.closed));
+  const last = weeks[weeks.length - 1], prev = weeks[weeks.length - 2];
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="flex items-start justify-between mb-2">
+        <div><div className="text-sm font-semibold" style={{ color: C.ink }}>Casos cerrados por semana</div><div className="text-[11px]" style={{ color: C.inkSoft }}>Últimas 8 semanas. Esta semana {last.closed} · la anterior {prev.closed}.</div></div>
+        <div className="text-right"><Spark vals={weeks.map(w => w.created)} color="#9db3c7" /><div className="text-[10px]" style={{ color: C.inkSoft }}>casos nuevos</div></div>
+      </div>
+      <div className="flex items-end gap-1.5" style={{ height: 70 }}>
+        {weeks.map((w, i) => <div key={i} className="flex-1 flex flex-col items-center justify-end" style={{ height: "100%" }}><span className="text-[10px]" style={{ color: C.inkSoft }}>{w.closed}</span><div style={{ width: "100%", height: `${Math.max(3, w.closed / mx * 48)}px`, background: i === weeks.length - 1 ? C.steelDark : "#9db3c7", borderRadius: "4px 4px 0 0" }} /></div>)}
       </div>
     </div>
   );

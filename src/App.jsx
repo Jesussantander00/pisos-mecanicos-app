@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, ONBOARDING_STEPS, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -38,6 +38,7 @@ import { TasksView } from "./views/TasksView";
 import { PlanosView } from "./views/PlanosView";
 import { BlockedRoomsView } from "./views/BlockedRoomsView";
 import { BudgetView } from "./views/BudgetView";
+import { AnalysisBoardsView } from "./views/AnalysisBoardsView";
 import { RoomHistoryView } from "./views/RoomHistoryView";
 import { TodayBoardView } from "./views/TodayBoardView";
 import { AdminView } from "./views/AdminView";
@@ -2607,6 +2608,50 @@ function ActivityLogView({ log, accounts }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+function MyBoardCard({ tasks, equipos, mttoLog, lowStockCount, currentUser, onNavigate }) {
+  const key = `pm-local:myboard:${currentUser}`;
+  const [cfg, setCfg] = useState(() => { try { const v = JSON.parse(localStorage.getItem(key) || "null"); if (v && Array.isArray(v.order)) return v; } catch { /* noop */ } return { order: MYBOARD_WIDGETS.map(w => w.id), off: ["stock"] }; });
+  const [edit, setEdit] = useState(false);
+  const save = (n) => { setCfg(n); try { localStorage.setItem(key, JSON.stringify(n)); } catch { /* noop */ } };
+  const open = useMemo(() => (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt), [tasks]);
+  const val = {
+    urgent: open.filter(t => t.prioridad === "alta").length,
+    mine: open.filter(t => t.asignadoA === currentUser).length,
+    unassigned: open.filter(t => !t.asignadoA).length,
+    oos: (() => { const last = {}; (mttoLog || []).forEach(r => { if (!last[r.equipoId] || new Date(r.fecha) > new Date(last[r.equipoId].fecha)) last[r.equipoId] = r; }); return Object.values(last).filter(r => r.estado === "fuera-de-servicio").length; })(),
+    stock: lowStockCount || 0,
+    closed: (tasks || []).filter(t => t.finishedAt && Date.now() - new Date(t.finishedAt).getTime() < 7 * 86400000).length,
+  };
+  const target = { urgent: "tasks", mine: "tasks", unassigned: "tasks", oos: "plant-status", stock: "inventory", closed: "tasks" };
+  const move = (id, dir) => { const o = [...cfg.order]; const i = o.indexOf(id); const j = i + dir; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; save({ ...cfg, order: o }); };
+  const toggle = (id) => save({ ...cfg, off: cfg.off.includes(id) ? cfg.off.filter(x => x !== id) : [...cfg.off, id] });
+  const shown = cfg.order.filter(id => !cfg.off.includes(id));
+  const W = (id) => MYBOARD_WIDGETS.find(w => w.id === id);
+  return (
+    <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-semibold" style={{ color: C.ink }}>Mi tablero</div>
+        <button onClick={() => setEdit(e => !e)} className="text-xs font-semibold rounded-full px-3" style={{ minHeight: 32, border: `1px solid ${C.line}`, color: C.inkSoft }}>{edit ? "Listo" : "Personalizar"}</button>
+      </div>
+      {!edit && <div className="grid grid-cols-2 gap-2">
+        {shown.length === 0 && <div className="col-span-2 text-sm" style={{ color: C.inkSoft }}>Todo está apagado. Toca Personalizar y elige qué ver.</div>}
+        {shown.map(id => <button key={id} onClick={() => onNavigate && onNavigate(target[id])} className="text-left rounded-xl p-3" style={{ background: C.bg, border: `1px solid ${C.line}` }}>
+          <div className="text-2xl font-extrabold" style={{ color: id === "urgent" && val[id] > 0 ? C.red : C.steelDark, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{val[id]}</div>
+          <div className="text-[11px]" style={{ color: C.inkSoft }}>{W(id).label}</div></button>)}
+      </div>}
+      {edit && <div>
+        <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>Usa las flechas para ordenar y el interruptor para mostrar u ocultar. Se guarda en este celular.</div>
+        {cfg.order.map((id, i) => <div key={id} className="flex items-center gap-2 py-2" style={{ borderTop: `1px solid ${C.line}` }}>
+          <div className="flex flex-col"><button aria-label="Subir" onClick={() => move(id, -1)} disabled={i === 0} className="text-xs" style={{ minHeight: 22, minWidth: 28, opacity: i === 0 ? 0.3 : 1, color: C.ink }}>▲</button><button aria-label="Bajar" onClick={() => move(id, 1)} disabled={i === cfg.order.length - 1} className="text-xs" style={{ minHeight: 22, minWidth: 28, opacity: i === cfg.order.length - 1 ? 0.3 : 1, color: C.ink }}>▼</button></div>
+          <div className="flex-1"><div className="text-sm font-semibold" style={{ color: C.ink }}>{W(id).label}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>{W(id).sub}</div></div>
+          <span className="text-sm font-bold" style={{ color: C.steelDark }}>{val[id]}</span>
+          <button role="switch" aria-checked={!cfg.off.includes(id)} aria-label={`Mostrar ${W(id).label}`} onClick={() => toggle(id)} style={{ width: 44, height: 24, borderRadius: 12, background: cfg.off.includes(id) ? "#cddbe8" : C.steelDark, position: "relative" }}><span style={{ position: "absolute", top: 3, [cfg.off.includes(id) ? "left" : "right"]: 3, width: 18, height: 18, borderRadius: 9, background: "#fff" }} /></button>
+        </div>)}
+        <button onClick={() => save({ order: MYBOARD_WIDGETS.map(w => w.id), off: ["stock"] })} className="mt-2 text-xs font-semibold rounded-xl border px-3" style={{ minHeight: 36, borderColor: C.line, color: C.inkSoft }}>Restablecer</button>
+      </div>}
     </div>
   );
 }
@@ -6782,7 +6827,7 @@ export default function App() {
       id: "historial", label: "Historial y reportes", items: [
         ...(isAdmin ? [{ id: "maintenance-log", label: "Historial de mantenimientos", icon: History, badge: pendingReviewCount, urgentBadge: pendingReviewCount > 0, pulse: pendingReviewCount > 0 }] : []),
         ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays }] : []),
-        ...(isAdmin ? [{ id: "heatmap", label: "Mapa de calor", icon: Thermometer }, { id: "energy", label: "Energía", icon: Zap }, { id: "lifecycle", label: "Vida útil y garantías", icon: History }, { id: "budget", label: "Presupuesto y costos", icon: TrendingUp }, { id: "activity-log", label: "Actividad y permisos", icon: ShieldCheck }, { id: "recognition", label: "Reconocimientos", icon: ShieldCheck }] : []),
+        ...(isAdmin ? [{ id: "heatmap", label: "Mapa de calor", icon: Thermometer }, { id: "energy", label: "Energía", icon: Zap }, { id: "lifecycle", label: "Vida útil y garantías", icon: History }, { id: "budget", label: "Presupuesto y costos", icon: TrendingUp }, { id: "boards", label: "Tableros de análisis", icon: TrendingUp }, { id: "activity-log", label: "Actividad y permisos", icon: ShieldCheck }, { id: "recognition", label: "Reconocimientos", icon: ShieldCheck }] : []),
         { id: "reports", label: "Reportes", icon: History },
         { id: "tanks", label: "Tanques de agua potable", icon: Droplets },
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
@@ -7223,6 +7268,7 @@ export default function App() {
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
                   ] : null} />
                 {!isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
+                <MyBoardCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} lowStockCount={lowStockItems.length} currentUser={currentUser} onNavigate={setView} />
               </>
             );
             const homeBottom = (
@@ -7382,6 +7428,7 @@ export default function App() {
           {view === "energy" && isAdmin && <EnergyView meterHistory={meterHistory} />}
           {view === "lifecycle" && isAdmin && <LifecycleView equipos={mttoEquipos} mttoLog={mttoLog} onNavigate={setView} />}
           {view === "budget" && isAdmin && <BudgetView mttoLog={mttoLog} />}
+          {view === "boards" && (isAdmin || isGerencia) && <AnalysisBoardsView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} onNavigate={setView} />}
           {view === "activity-log" && isAdmin && <ActivityLogView log={generalEditLog} accounts={profiles} />}
           {view === "recognition" && isAdmin && <RecognitionView tasks={tasks} accounts={profiles} />}
           {view === "room-history" && isAdmin && (

@@ -7267,7 +7267,7 @@ export default function App() {
                     <WarrantyAlert key="wa" equipos={mttoEquipos} onOpenEquipo={goEq} />,
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
                   ] : null} />
-                {!isAdmin && !isGerencia && <MyWeekCard tasks={tasks} currentUser={currentUser} />}
+                <MyWeekCard tasks={tasks} currentUser={currentUser} />
                 <MyBoardCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} lowStockCount={lowStockItems.length} currentUser={currentUser} onNavigate={setView} />
               </>
             );

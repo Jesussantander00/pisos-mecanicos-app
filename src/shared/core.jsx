@@ -2318,6 +2318,23 @@ export function planGroupOf(text, label) {
   return "Otros";
 }
 export const planColorOf = (g) => (PLAN_GROUPS.find(x => x.id === g) || PLAN_GROUPS[PLAN_GROUPS.length - 1]).color;
+export function periodRanges(kind, now = new Date()) {
+  const y = now.getFullYear(), m = now.getMonth();
+  if (kind === "semana") { const e = now.getTime(); return { cur: [e - 7 * 86400000, e], prev: [e - 14 * 86400000, e - 7 * 86400000], label: ["Últimos 7 días", "7 días anteriores"] }; }
+  if (kind === "trimestre") { const q = Math.floor(m / 3) * 3; return { cur: [new Date(y, q, 1).getTime(), new Date(y, q + 3, 1).getTime()], prev: [new Date(y, q - 3, 1).getTime(), new Date(y, q, 1).getTime()], label: ["Este trimestre", "Trimestre anterior"] }; }
+  if (kind === "año") return { cur: [new Date(y, 0, 1).getTime(), new Date(y + 1, 0, 1).getTime()], prev: [new Date(y - 1, 0, 1).getTime(), new Date(y, 0, 1).getTime()], label: ["Este año", "Año anterior"] };
+  return { cur: [new Date(y, m, 1).getTime(), new Date(y, m + 1, 1).getTime()], prev: [new Date(y, m - 1, 1).getTime(), new Date(y, m, 1).getTime()], label: ["Este mes", "Mes anterior"] };
+}
+
+// ===== Mi tablero (Inicio personalizable) =====
+export const MYBOARD_WIDGETS = [
+  { id: "urgent", label: "Tareas urgentes", sub: "Abiertas con prioridad alta" },
+  { id: "mine", label: "Mis tareas abiertas", sub: "Asignadas a mí" },
+  { id: "unassigned", label: "Sin responsable", sub: "Abiertas sin asignar" },
+  { id: "oos", label: "Equipos fuera de servicio", sub: "Ahora mismo" },
+  { id: "stock", label: "Repuestos por reponer", sub: "Bajo el mínimo" },
+  { id: "closed", label: "Cerradas esta semana", sub: "Últimos 7 días" },
+];
 
 /**
  * Inventario de herramientas — distinto al de repuestos: las herramientas no se consumen, se

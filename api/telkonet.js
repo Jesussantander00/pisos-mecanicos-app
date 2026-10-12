@@ -23,9 +23,9 @@
 // llama a los mismos endpoints internos que usa su propia interfaz). Si Telkonet cambia su sitio
 // internamente esto podría dejar de funcionar y haría falta revisar/actualizar las rutas de abajo.
 
+import { runDriveArchive } from "./_lib/driveArchive.js";
 import { getSupabaseAdmin, requireApprovedUser } from "./_lib/security.js";
-import { runDailyDigest, notifyAdmins } from "./_lib/dailyDigest.js";
-import { runDriveBackup } from "./_lib/driveBackup.js";
+import { runDailyDigest } from "./_lib/dailyDigest.js";
 
 const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
@@ -454,19 +454,15 @@ export default async function handler(req, res) {
       res.status(500).json({ ok: false, message: "Falta configurar Supabase en el servidor." });
       return;
     }
-    // Respaldo diario a Drive: va PRIMERO y por separado, para que se haga aunque el resumen falle.
-    let backup;
-    try { backup = await runDriveBackup(supabaseAdmin); } catch (e) { backup = { ok: false, message: e.message || "Falló el respaldo." }; console.error("Respaldo automático falló:", backup.message); }
-    console.log("Respaldo automático:", JSON.stringify(backup));
-    if (!backup || (!backup.ok && !backup.skipped)) {
-      try { await notifyAdmins(supabaseAdmin, "⚠️ Falló el respaldo automático", String(backup?.message || "No se pudo guardar el respaldo en Drive.").slice(0, 150)); }
-      catch (e) { console.error("No se pudo avisar del fallo del respaldo:", e.message); }
-    }
     try {
       const result = await runDailyDigest(supabaseAdmin);
-      res.status(200).json({ ok: true, ...result, backup });
+      // Archivo automático de fotos y videos viejos a Google Drive (para no llenar Supabase).
+      let drive = null;
+      try { drive = await runDriveArchive(supabaseAdmin, { budgetMs: 40000 }); }
+      catch (e) { drive = { error: e.message || "falló el archivo en Drive" }; }
+      res.status(200).json({ ok: true, ...result, drive });
     } catch (e) {
-      res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario.", backup });
+      res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario." });
     }
     return;
   }

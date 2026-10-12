@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -1983,6 +1983,19 @@ function OnboardingTour({ onClose }) {
             <Button size="sm" onClick={() => isLast ? onClose() : setStep(step + 1)}>{isLast ? "Entendido" : "Siguiente"}</Button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+function HubTabs({ view, onNavigate }) {
+  const hub = HUBS.find(h => h.members.some(m => m[0] === view));
+  if (!hub) return null;
+  return (
+    <div className="mb-3 -mx-1 px-1 overflow-x-auto" role="tablist" aria-label={hub.label} style={{ position: "sticky", top: 0, zIndex: 5, background: C.bg, paddingTop: 4, paddingBottom: 6 }}>
+      <div className="flex gap-1.5" style={{ width: "max-content" }}>
+        {hub.members.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={id === view} onClick={() => onNavigate(id)} className="shrink-0 text-xs font-semibold rounded-full px-3" style={{ minHeight: 36, background: id === view ? C.steelDark : C.panel, color: id === view ? "#fff" : C.inkSoft, border: `1px solid ${id === view ? C.steelDark : C.line}` }}>{label}</button>
+        ))}
       </div>
     </div>
   );
@@ -6865,11 +6878,12 @@ export default function App() {
         { id: "general-history", label: "Historial de cambios", icon: History },
       ],
     }] : []),
-  ].map(g => ({ ...g, items: g.items.filter(n => !gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id)) })).filter(g => g.items.length > 0);
+  ].map(g => ({ ...g, items: g.items.filter(n => (!gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id)) && !(isAdmin && HUB_HIDDEN.has(n.id))) })).filter(g => g.items.length > 0);
 
   // Un grupo se abre solo si contiene la pantalla en la que estás — así nunca hay que buscar
   // "¿en qué categoría quedó esto?" a ciegas. Además recuerda qué grupos dejaste abiertos a mano.
-  const groupContainingView = NAV_GROUPS.find(g => g.items.some(n => n.id === view))?.id;
+  const navView = (isAdmin && HUB_HIDDEN.has(view)) ? HUBS.find(h => h.members.some(m => m[0] === view)).id : view;
+  const groupContainingView = NAV_GROUPS.find(g => g.items.some(n => n.id === navView))?.id;
   const toggleGroup = (gid) => {
     const next = { ...manuallyToggled, [gid]: !isGroupOpen(gid) };
     setManuallyToggled(next);
@@ -6990,8 +7004,8 @@ export default function App() {
                   <div className="space-y-0.5 mt-0.5 mb-1">
                     {group.items.map(n => (
                       <button key={n.id} onClick={() => { setView(n.id); setSidebarOpen(false); }}
-                        className={`w-full flex items-center gap-2 pl-6 pr-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] ${view === n.id ? "" : "hover:bg-white/5 active:bg-white/10"}`}
-                        style={{ background: view === n.id ? "#2a3f56" : undefined, color: view === n.id ? "#fff" : "#c3d0dd" }}>
+                        className={`w-full flex items-center gap-2 pl-6 pr-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-out active:scale-[0.98] ${navView === n.id ? "" : "hover:bg-white/5 active:bg-white/10"}`}
+                        style={{ background: navView === n.id ? "#2a3f56" : undefined, color: navView === n.id ? "#fff" : "#c3d0dd" }}>
                         <n.icon size={15} />
                         <span className="flex-1 text-left">{n.label}</span>
                         <NavBadge count={n.badge} urgent={n.urgentBadge !== false} pulse={n.pulse} />
@@ -7242,6 +7256,7 @@ export default function App() {
         </nav>
         <main className="flex-1 p-4 pb-24 sm:pb-8 max-w-5xl w-full mx-auto overflow-x-hidden">
           <div key={view} className="pm-view-in">
+          {isAdmin && <HubTabs view={view} onNavigate={setView} />}
           {viewerLocked && (
             <div className="rounded-lg p-2.5 mb-3 flex items-center gap-2 text-xs font-medium" style={{ background: C.bg, border: `1px solid ${C.line}`, color: C.inkSoft }}>
               <Eye size={14} /> Modo solo ver — puedes navegar y consultar todo, pero no vas a ver botones para crear, editar o cerrar nada.

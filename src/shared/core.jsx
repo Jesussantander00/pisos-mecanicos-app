@@ -2234,6 +2234,16 @@ export function normalizeSearchText(s) {
 
 export const MAX_FAVORITES = 5;
 
+// ===== Secciones agrupadas: cada una tiene pestañas arriba y UNA sola entrada en el menú (solo administrador) =====
+export const HUBS = [
+  { id: "tasks", label: "Tareas", members: [["tasks", "Tareas"], ["today", "Hoy"], ["guest-requests", "Huéspedes"], ["calendar", "Calendario"], ["templates", "Plantillas"], ["hotsos-import", "Importar HotSOS"]] },
+  { id: "floorplans", label: "Habitaciones", members: [["floorplans", "Planos"], ["blocked-rooms", "Bloqueadas"], ["heatmap", "Mapa de calor"], ["room-history", "Historial"], ["rooms", "Tipos"]] },
+  { id: "plant-status", label: "Planta", members: [["plant-status", "Estado"], ["tanks", "Agua"], ["fuel", "Combustibles"], ["energy", "Energía"]] },
+  { id: "executive", label: "Análisis", members: [["executive", "Ejecutivo"], ["boards", "Tableros"], ["maintenance-analytics", "Mantenimiento"], ["analytics", "Fallas"], ["budget", "Presupuesto"], ["reports", "Reportes"], ["share-summary", "Compartir"]] },
+  { id: "maintenance", label: "Mantenimiento", members: [["maintenance", "Registrar"], ["maintenance-log", "Historial"], ["maintenance-schedule", "Cronograma"], ["fichas-tecnicas", "Fichas"], ["lifecycle", "Vida útil"]] },
+];
+export const HUB_HIDDEN = new Set(HUBS.flatMap(h => h.members.slice(1).map(m => m[0])));
+
 const FUEL_TANK_TYPES = ["Diesel (ACPM)", "Gas propano", "Gasolina"];
 
 /** Nombre a mostrar + color según el estado activo de una habitación en Telkonet. */

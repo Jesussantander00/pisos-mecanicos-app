@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, Layers, MessageCircle, Package, Send, ShieldCheck, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
-import { C, GERENCIA_ALLOWED_VIEWS, MAX_FAVORITES, elapsed, hoursBetween, normalizeSearchText, normalizeTaskState, nowIso } from "../shared/core";
+import { C, GERENCIA_ALLOWED_VIEWS, HUB_HIDDEN, MAX_FAVORITES, elapsed, hoursBetween, normalizeSearchText, normalizeTaskState, nowIso } from "../shared/core";
 import { Button, MiniGauge, PcbBackground } from "../shared/components";
 import { __pmState } from "../shared/core";
 
@@ -126,10 +126,11 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
       return next;
     });
   };
-  const favModules = useMemo(() => modules.filter(m => favorites.includes(m.id) && m.access), [modules, favorites]);
-  const recentModules = useMemo(() => recent.map(id => modules.find(m => m.id === id)).filter(m => m && m.access && !favorites.includes(m.id)).slice(0, 4), [recent, modules, favorites]);
+  const modulesShown = useMemo(() => modules.map(m => (isAdmin && HUB_HIDDEN.has(m.id)) ? { ...m, access: false } : m), [modules, isAdmin]);
+  const favModules = useMemo(() => modulesShown.filter(m => favorites.includes(m.id) && m.access), [modulesShown, favorites]);
+  const recentModules = useMemo(() => recent.map(id => modulesShown.find(m => m.id === id)).filter(m => m && m.access && !favorites.includes(m.id)).slice(0, 4), [recent, modulesShown, favorites]);
   const searchNorm = normalizeSearchText(search.trim());
-  const visibleModules = useMemo(() => (searchNorm ? modules.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modules).filter(m => m.access), [modules, searchNorm]);
+  const visibleModules = useMemo(() => (searchNorm ? modulesShown.filter(m => normalizeSearchText(m.label).includes(searchNorm) || normalizeSearchText(m.desc).includes(searchNorm)) : modulesShown).filter(m => m.access), [modulesShown, searchNorm]);
   const GROUP_COLORS = { "Operación en Campo": C.amber, "Gestión e Inventario": "#0ea5e9", "Reportes y Análisis": "#2563eb", "Administración": "#64748b" };
   const groupOrder = ["Operación en Campo", "Gestión e Inventario", "Reportes y Análisis", "Administración"];
   const groupedModules = useMemo(() => groupOrder.map(g => ({ group: g, items: visibleModules.filter(m => m.group === g) })).filter(g => g.items.length > 0),

@@ -4514,6 +4514,12 @@ export default function App() {
   const [navCollapsed, setNavCollapsedRaw] = useState(() => { try { return localStorage.getItem("pm-local:nav-collapsed") !== "0"; } catch { return true; } });
   const setNavCollapsed = (v) => { setNavCollapsedRaw(v); try { localStorage.setItem("pm-local:nav-collapsed", v ? "1" : "0"); } catch { /* noop */ } };
   const [quickOpen, setQuickOpen] = useState(false);
+  const focusSearch = () => { const el = document.querySelector('header input[placeholder*="Buscar"], input[placeholder*="Buscar cualquier"]'); if (el) { el.focus(); el.select && el.select(); } else { setSidebarOpen(true); } };
+  useEffect(() => {
+    const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "k") { e.preventDefault(); focusSearch(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // El menú lateral en celular/tablet no tenía fondo oscuro ni se cerraba con "atrás" — quedaba
   // abierto sobre el contenido sin que se notara bien, dando la sensación de que "no pasa nada".
   useBackCloseModal(sidebarOpen, () => setSidebarOpen(false));
@@ -6977,6 +6983,7 @@ export default function App() {
             ? [["home", "Inicio", Home], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
             : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
           const railItems = RAIL.filter(([id]) => id === "home" || badgeOf[id] || (isAdmin && HUBS.some(h => h.id === id)));
+          const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
           const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => !q[2] || isAdmin);
           return (
             <div className="hidden lg:flex flex-col flex-1 min-h-0 pt-3" style={{ position: "relative" }}>
@@ -7006,9 +7013,11 @@ export default function App() {
                 })}
               </div>
               <div className="px-1.5 pb-3 pt-2 border-t shrink-0" style={{ borderColor: "#2a3f56" }}>
-                <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} aria-label="Cambiar tema" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 50, color: "#c3d0dd" }}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}<span className="text-[10px] mt-0.5">{darkMode ? "Claro" : "Oscuro"}</span></button>
-                <button onClick={() => setView("profile")} title="Mi perfil" aria-label="Mi perfil" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 50, color: "#c3d0dd" }}><User size={17} /><span className="text-[10px] mt-0.5">Perfil</span></button>
-                <button onClick={() => setNavCollapsed(false)} title="Mostrar todo el menú" aria-label="Expandir menú" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 50, color: "#c3d0dd" }}><ChevronRight size={17} /><span className="text-[10px] mt-0.5">Todo</span></button>
+                <button onClick={focusSearch} title="Buscar (Ctrl K)" aria-label="Buscar" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><Search size={17} /><span className="text-[10px] mt-0.5">Buscar</span></button>
+                {isAdmin && <button onClick={() => { const b = document.querySelector('button[aria-label="Notificaciones"]'); if (b) b.click(); }} title="Avisos" aria-label="Avisos" className="relative w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><Bell size={17} /><span className="text-[10px] mt-0.5">Avisos</span>{avisosCount > 0 && <span className="absolute font-bold rounded-full text-white" style={{ top: 3, right: 10, minWidth: 16, height: 16, fontSize: 10, lineHeight: "16px", textAlign: "center", padding: "0 4px", background: C.red }}>{avisosCount}</span>}</button>}
+                <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} aria-label="Cambiar tema" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}<span className="text-[10px] mt-0.5">{darkMode ? "Claro" : "Oscuro"}</span></button>
+                <button onClick={() => setView("profile")} title="Mi perfil" aria-label="Mi perfil" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><User size={17} /><span className="text-[10px] mt-0.5">Perfil</span></button>
+                <button onClick={() => setNavCollapsed(false)} title="Mostrar todo el menú" aria-label="Expandir menú" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><ChevronRight size={17} /><span className="text-[10px] mt-0.5">Todo</span></button>
               </div>
             </div>
           );

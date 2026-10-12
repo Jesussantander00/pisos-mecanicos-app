@@ -151,7 +151,7 @@ export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, issueHis
           {fallas.eqs.map(x => (
             <div key={x.id} className="flex items-center gap-2 py-2" style={{ borderTop: `1px solid ${C.line}` }}>
               <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate" style={{ color: C.ink }}>{x.e?.nombre || "(equipo eliminado)"}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>{x.e?.sistema || "Otros"}{x.mtbf ? ` · falla cada ${x.mtbf} días` : ""}</div></div>
-              <span className="text-sm font-bold rounded-full px-2.5 py-0.5" style={{ background: x.n >= 4 ? "#fee2e2" : "#fef3c7", color: x.n >= 4 ? "#991b1b" : "#92400e" }}>{x.n} fallas</span>
+              <span className="text-sm font-bold rounded-full px-2.5 py-0.5" style={{ background: x.n >= 4 ? "#fee2e2" : "#fef3c7", color: x.n >= 4 ? "#991b1b" : "#92400e" }}>{x.n} {x.n === 1 ? "falla" : "fallas"}</span>
             </div>
           ))}
         </div>

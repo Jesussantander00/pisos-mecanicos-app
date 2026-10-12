@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { C, TASK_PRIORITY_COLORS, normalizeTaskState, periodRanges, roomOfTask } from "../shared/core";
 
 
-export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
+export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, issueHistory, activeIssues, onNavigate }) {
   const [tab, setTab] = useState("comparar");
   const [period, setPeriod] = useState("mes");
   const [sistema, setSistema] = useState("");
@@ -51,7 +51,7 @@ export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, onNaviga
   const quick = () => {
     const parts = [];
     const dc = cmp.a.cerrados - cmp.b.cerrados;
-    if (cmp.a.cerrados || cmp.b.cerrados) parts.push(dc === 0 ? "Se cerraron los mismos casos que el periodo anterior." : `Se cerraron ${Math.abs(dc)} casos ${dc > 0 ? "más" : "menos"} que el periodo anterior.`);
+    if (cmp.a.cerrados || cmp.b.cerrados) parts.push(dc === 0 ? "Se cerraron los mismos casos que el periodo anterior." : `Se ${Math.abs(dc) === 1 ? "cerró 1 caso" : "cerraron " + Math.abs(dc) + " casos"} ${dc > 0 ? "más" : "menos"} que el periodo anterior.`);
     if (cmp.a.horas && cmp.b.horas && cmp.a.horas !== cmp.b.horas) parts.push(`El tiempo medio ${cmp.a.horas < cmp.b.horas ? "bajó" : "subió"} ${Math.abs(cmp.b.horas - cmp.a.horas)} horas.`);
     if (cmp.b.costo && cmp.a.costo > cmp.b.costo * 1.15) parts.push("Sube el costo: revisa en qué sistema se está yendo.");
     return parts.join(" ") || "Todavía no hay suficientes datos para comparar estos periodos.";
@@ -61,18 +61,19 @@ export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, onNaviga
   // ---------- Fallas ----------
   const fallas = useMemo(() => {
     const since = Date.now() - days * 86400000;
-    const logs = (mttoLog || []).filter(l => l.tipo === "correctivo" && new Date(l.fecha).getTime() >= since);
     const bySis = {}; const byEq = {};
-    logs.forEach(l => { const e = eqById[l.equipoId]; const s = e?.sistema || "Otros"; bySis[s] = (bySis[s] || 0) + 1; byEq[l.equipoId] = (byEq[l.equipoId] || 0) + 1; });
-    const sis = Object.entries(bySis).sort((a, b) => b[1] - a[1]);
-    const total = sis.reduce((a, x) => a + x[1], 0);
-    const eqs = Object.entries(byEq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, n]) => {
-      const fechas = (mttoLog || []).filter(l => l.equipoId === id && l.tipo === "correctivo").map(l => new Date(l.fecha).getTime()).sort((a, b) => a - b);
-      let mtbf = null; if (fechas.length >= 2) mtbf = Math.round((fechas[fechas.length - 1] - fechas[0]) / (fechas.length - 1) / 86400000);
-      return { id, n, mtbf, e: eqById[id] };
+    const bump = (sis, key, name, sub, at) => { bySis[sis] = (bySis[sis] || 0) + 1; const o = (byEq[key] ||= { key, name, sub, n: 0, dates: [] }); o.n++; o.dates.push(new Date(at).getTime()); };
+    // Equipos que se declararon "fuera de servicio" (pisos mecánicos) y mantenimientos correctivos
+    [...(issueHistory || []), ...Object.values(activeIssues || {})].forEach(h => { if (new Date(h.openedAt).getTime() >= since) bump(h.floorName || "Otros", "i" + h.equipmentId, h.name || h.code || "(equipo eliminado)", h.floorName || "Otros", h.openedAt); });
+    (mttoLog || []).filter(l => l.tipo === "correctivo" && new Date(l.fecha).getTime() >= since).forEach(l => { const e = eqById[l.equipoId]; bump(e?.sistema || "Otros", "m" + l.equipoId, e?.nombre || "(equipo eliminado)", e?.sistema || "Otros", l.fecha); });
+    const sis = Object.entries(bySis).sort((x, y) => y[1] - x[1]);
+    const total = sis.reduce((s, x) => s + x[1], 0);
+    const eqs = Object.values(byEq).sort((x, y) => y.n - x.n).slice(0, 8).map(o => {
+      const f = o.dates.sort((x, y) => x - y); const mtbf = f.length >= 2 ? Math.round((f[f.length - 1] - f[0]) / (f.length - 1) / 86400000) : null;
+      return { id: o.key, n: o.n, mtbf, e: { nombre: o.name, sistema: o.sub } };
     });
     return { sis, total, eqs };
-  }, [mttoLog, days, eqById]);
+  }, [mttoLog, issueHistory, activeIssues, days, eqById]);
 
   // ---------- Carga ----------
   const carga = useMemo(() => {
@@ -108,14 +109,14 @@ export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, onNaviga
           <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>{cmp.label[0]} contra {cmp.label[1].toLowerCase()}. El piso filtra las tareas; el sistema filtra los mantenimientos.</div>
           {rows.map(r => {
             const a = cmp.a[r.k], b = cmp.b[r.k], d = diffOf(a, b), mx = Math.max(a, b, 1);
-            const noBase = b === 0 && a > 0;
+            const noBase = (b === 0 && a > 0) || (r.k === "horas" && (a === 0 || b === 0));
             const good = r.up === null || d === 0 || noBase ? null : (d > 0) === r.up;
             const col = good === null ? C.inkSoft : good ? C.green : C.red;
             const f = (x) => r.money ? money(x) : x;
             return (
               <div key={r.k} className="py-2.5" style={{ borderTop: `1px solid ${C.line}` }}>
                 <div className="flex justify-between items-baseline"><span className="text-sm font-semibold" style={{ color: C.ink }}>{r.n}</span>
-                  <span className="text-xs font-semibold" style={{ color: col }}>{noBase ? "Sin datos antes" : d === 0 ? "Igual" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d)} %${good === null ? "" : good ? " mejor" : " peor"}`}</span></div>
+                  <span className="text-xs font-semibold" style={{ color: col }}>{noBase ? (a === 0 && r.k === "horas" ? "Sin cierres" : "Sin datos antes") : d === 0 ? "Igual" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d)} %${good === null ? "" : good ? " mejor" : " peor"}`}</span></div>
                 <div className="flex items-center gap-2 mt-1.5"><span className="text-[11px] w-16 shrink-0" style={{ color: C.inkSoft }}>Ahora</span><div style={{ height: 8, borderRadius: 4, background: C.steelDark, width: `${a / mx * 60}%`, minWidth: a ? 4 : 0 }} /><span className="text-xs font-semibold" style={{ color: C.ink }}>{f(a)}</span></div>
                 <div className="flex items-center gap-2 mt-1"><span className="text-[11px] w-16 shrink-0" style={{ color: C.inkSoft }}>Antes</span><div style={{ height: 8, borderRadius: 4, background: "#9db3c7", width: `${b / mx * 60}%`, minWidth: b ? 4 : 0 }} /><span className="text-xs" style={{ color: C.inkSoft }}>{f(b)}</span></div>
               </div>
@@ -132,9 +133,9 @@ export function AnalysisBoardsView({ tasks, mttoLog, equipos, accounts, onNaviga
       {tab === "fallas" && <>
         <div className="flex gap-1.5 mb-3">{[[30, "30 días"], [90, "90 días"], [365, "12 meses"]].map(([d, l]) => <button key={d} onClick={() => setDays(d)} className="flex-1 text-xs font-semibold rounded-full px-3" style={pill(days === d)}>{l}</button>)}</div>
         <div className="rounded-xl border p-3 mb-3" style={card}>
-          <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Fallas por sistema</div>
-          <div className="text-[11px] mb-2" style={{ color: C.inkSoft }}>{fallas.total} correctivos registrados. Los primeros sistemas concentran la mayoría de los problemas.</div>
-          {fallas.sis.length === 0 && <div className="text-sm" style={{ color: C.inkSoft }}>No hay correctivos en este periodo.</div>}
+          <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Fallas por área o sistema</div>
+          <div className="text-[11px] mb-2" style={{ color: C.inkSoft }}>{fallas.total} fallas registradas (equipos fuera de servicio y correctivos). Arriba están las áreas con más problemas.</div>
+          {fallas.sis.length === 0 && <div className="text-sm" style={{ color: C.inkSoft }}>No hay fallas en este periodo.</div>}
           {(() => { let acc = 0; return fallas.sis.slice(0, 8).map(([s, n]) => { acc += n; return (
             <div key={s} className="flex items-center gap-2 mb-1.5">
               <span className="text-xs w-24 shrink-0 truncate" style={{ color: C.ink }}>{s}</span>

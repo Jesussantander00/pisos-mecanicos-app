@@ -2611,7 +2611,7 @@ function ActivityLogView({ log, accounts }) {
     </div>
   );
 }
-function MyBoardCard({ tasks, equipos, mttoLog, lowStockCount, currentUser, onNavigate }) {
+function MyBoardCard({ tasks, equipos, mttoLog, oosCount, lowStockCount, currentUser, onNavigate }) {
   const key = `pm-local:myboard:${currentUser}`;
   const [cfg, setCfg] = useState(() => { try { const v = JSON.parse(localStorage.getItem(key) || "null"); if (v && Array.isArray(v.order)) return v; } catch { /* noop */ } return { order: MYBOARD_WIDGETS.map(w => w.id), off: ["stock"] }; });
   const [edit, setEdit] = useState(false);
@@ -2621,11 +2621,11 @@ function MyBoardCard({ tasks, equipos, mttoLog, lowStockCount, currentUser, onNa
     urgent: open.filter(t => t.prioridad === "alta").length,
     mine: open.filter(t => t.asignadoA === currentUser).length,
     unassigned: open.filter(t => !t.asignadoA).length,
-    oos: (() => { const last = {}; (mttoLog || []).forEach(r => { if (!last[r.equipoId] || new Date(r.fecha) > new Date(last[r.equipoId].fecha)) last[r.equipoId] = r; }); return Object.values(last).filter(r => r.estado === "fuera-de-servicio").length; })(),
+    oos: oosCount || 0,
     stock: lowStockCount || 0,
     closed: (tasks || []).filter(t => t.finishedAt && Date.now() - new Date(t.finishedAt).getTime() < 7 * 86400000).length,
   };
-  const target = { urgent: "tasks", mine: "tasks", unassigned: "tasks", oos: "plant-status", stock: "inventory", closed: "tasks" };
+  const target = { urgent: "tasks", mine: "tasks", unassigned: "tasks", oos: "issues", stock: "inventory", closed: "tasks" };
   const move = (id, dir) => { const o = [...cfg.order]; const i = o.indexOf(id); const j = i + dir; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; save({ ...cfg, order: o }); };
   const toggle = (id) => save({ ...cfg, off: cfg.off.includes(id) ? cfg.off.filter(x => x !== id) : [...cfg.off, id] });
   const shown = cfg.order.filter(id => !cfg.off.includes(id));
@@ -7268,7 +7268,7 @@ export default function App() {
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
                   ] : null} />
                 <MyWeekCard tasks={tasks} currentUser={currentUser} />
-                <MyBoardCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} lowStockCount={lowStockItems.length} currentUser={currentUser} onNavigate={setView} />
+                <MyBoardCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} oosCount={Object.keys(activeIssues || {}).length} lowStockCount={lowStockItems.length} currentUser={currentUser} onNavigate={setView} />
               </>
             );
             const homeBottom = (
@@ -7428,7 +7428,7 @@ export default function App() {
           {view === "energy" && isAdmin && <EnergyView meterHistory={meterHistory} />}
           {view === "lifecycle" && isAdmin && <LifecycleView equipos={mttoEquipos} mttoLog={mttoLog} onNavigate={setView} />}
           {view === "budget" && isAdmin && <BudgetView mttoLog={mttoLog} />}
-          {view === "boards" && (isAdmin || isGerencia) && <AnalysisBoardsView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} onNavigate={setView} />}
+          {view === "boards" && (isAdmin || isGerencia) && <AnalysisBoardsView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} issueHistory={issueHistory} activeIssues={activeIssues} onNavigate={setView} />}
           {view === "activity-log" && isAdmin && <ActivityLogView log={generalEditLog} accounts={profiles} />}
           {view === "recognition" && isAdmin && <RecognitionView tasks={tasks} accounts={profiles} />}
           {view === "room-history" && isAdmin && (

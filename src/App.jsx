@@ -6991,6 +6991,14 @@ export default function App() {
               <div className="px-2 pb-2">
                 <button onClick={() => { setFlyout(null); setQuickOpen(o => !o); }} aria-label="Acciones rápidas" aria-expanded={quickOpen} className="w-full rounded-xl text-xl font-extrabold" style={{ height: 44, background: C.amber, color: "#0b2238" }}>+</button>
               </div>
+              {isAdmin && (
+                <div className="px-1.5 pb-2">
+                  <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "operario" ? null : "operario"); }} aria-label="Vista del operario" aria-expanded={flyout === "operario"} title="Todo lo que ve el operario"
+                    className="w-full flex flex-col items-center justify-center rounded-xl" style={{ height: 58, background: flyout === "operario" ? C.amber : "#12304a", color: flyout === "operario" ? "#0b2238" : "#fff", border: `1px solid ${flyout === "operario" ? C.amber : "#2b4a68"}` }}>
+                    <Users size={19} /><span className="text-[10px] font-bold mt-0.5">Operario</span>
+                  </button>
+                </div>
+              )}
               {quickOpen && (
                 <div className="absolute z-30 rounded-xl p-2" style={{ left: 90, top: 12, width: 240, background: C.panel, border: `1px solid ${C.line}`, boxShadow: "0 12px 30px rgba(0,0,0,.25)" }}>
                   <div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Acciones rápidas</div>
@@ -7003,7 +7011,7 @@ export default function App() {
                   const on = navView === id || (id === "executive" && navView === "executive");
                   const b = badgeOf[id]?.badge;
                   return (
-                    <button key={id} onClick={() => { setQuickOpen(false); setView(id); const hasFly = hub || id === "ronda" || id === "issues" || (id === "tasks" && !isAdmin); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
+                    <button key={id} onClick={() => { setQuickOpen(false); setView(id); const hasFly = !isAdmin && (id === "ronda" || id === "issues" || id === "tasks"); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
                       className="relative w-full flex flex-col items-center justify-center rounded-xl mb-1 transition hover:bg-white/5"
                       style={{ height: 58, background: on ? "#2a3f56" : "transparent", color: on ? "#fff" : "#c3d0dd" }}>
                       <Icon size={19} />
@@ -7035,6 +7043,11 @@ export default function App() {
                   const mine = (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada"); title = "Mis tareas"; sub = `${mine.length} abiertas`;
                   body = mine.slice(0, 25).map(t => <button key={t.id} onClick={() => { setView("tasks"); close(); }} className={rowCls} style={{ minHeight: 44, background: C.bg, color: C.ink }}><span style={{ width: 9, height: 9, borderRadius: 5, background: t.prioridad === "alta" ? C.red : t.prioridad === "baja" ? C.gray : C.amber, flexShrink: 0 }} /><span className="flex-1 truncate">{t.titulo}</span></button>);
                   if (!mine.length) body = <div className="text-sm px-1" style={{ color: C.inkSoft }}>No tienes tareas abiertas.</div>;
+                } else if (flyout === "operario") {
+                  title = "Vista del operario"; sub = "Lo mismo que ve un técnico";
+                  const SEC = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["tasks", "Mi trabajo"], ["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
+                  const cnt = { tasks: (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length, issues: Object.keys(activeIssues || {}).length };
+                  body = SEC.map(([sec, items]) => <div key={sec} className="mb-2"><div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>{sec}</div>{items.map(([id, label]) => { const b = id in cnt ? cnt[id] : badgeOf[id]?.badge; return <button key={id} onClick={() => { setView(id); setFlyout(id === "ronda" ? "ronda" : null); }} className={rowCls} style={{ minHeight: 42, background: view === id ? C.steelDark : C.bg, color: view === id ? "#fff" : C.ink }}><span className="flex-1">{label}</span><NavBadge count={b} urgent={id === "issues"} /></button>; })}</div>);
                 } else if (flyout === "all") {
                   title = "Todo"; sub = "Todo lo que puedes ver";
                   body = (<>{NAV_GROUPS.map(g => <div key={g.id} className="mb-2"><div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>{g.label}</div>{g.items.map(n => <button key={n.id} onClick={() => { setView(n.id); close(); }} className={rowCls} style={{ minHeight: 42, background: navView === n.id ? C.steelDark : C.bg, color: navView === n.id ? "#fff" : C.ink }}><n.icon size={15} /><span className="flex-1">{n.label}</span><NavBadge count={n.badge} urgent={n.urgentBadge !== false} pulse={n.pulse} /></button>)}</div>)}<button onClick={() => { setNavCollapsed(false); close(); }} className="text-xs font-semibold rounded-lg border px-3 mt-1" style={{ minHeight: 38, borderColor: C.line, color: C.inkSoft }}>Dejar el menú siempre abierto</button></>);

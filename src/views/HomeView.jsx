@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, Layers, Package, Send, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, BookOpen, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ClipboardList, Download, Droplets, Gauge, History, Layers, MessageCircle, Package, Send, ShieldCheck, Snowflake, Sparkles, Thermometer, TrendingUp, Upload, Users, Wrench, X, Zap } from "lucide-react";
 import { C, GERENCIA_ALLOWED_VIEWS, MAX_FAVORITES, elapsed, hoursBetween, normalizeSearchText, normalizeTaskState, nowIso } from "../shared/core";
 import { Button, MiniGauge, PcbBackground } from "../shared/components";
 import { __pmState } from "../shared/core";
@@ -96,6 +96,13 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
     { id: "floorplans", label: "Planos por piso", icon: Layers, desc: "Plano de cada piso: toca una habitación y ve su historial de pintura, aire y más", access: isAdmin, group: "Operación en Campo" },
     { id: "blocked-rooms", label: "Habitaciones bloqueadas", icon: Layers, desc: "Qué habitaciones no se pueden vender y cuándo se liberan", access: isAdmin, group: "Operación en Campo" },
     { id: "share-summary", label: "Resumen para compartir", icon: Send, desc: "Mensaje del día listo para WhatsApp", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "plant-status", label: "Estado de la planta", icon: Gauge, desc: "Combustible, cuartos fríos, medidores y avisos en una pantalla", access: isAdmin, group: "Operación en Campo" },
+    { id: "guest-requests", label: "Solicitudes de huéspedes", icon: MessageCircle, desc: "Órdenes de HotSOS y cuánto llevan esperando", access: isAdmin, group: "Operación en Campo" },
+    { id: "heatmap", label: "Mapa de calor del edificio", icon: Thermometer, desc: "Dónde se concentran las fallas, piso por piso", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "energy", label: "Energía", icon: Zap, desc: "Consumo diario y por medidor", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "lifecycle", label: "Vida útil y garantías", icon: History, desc: "Equipos al final de su vida útil, garantías por vencer y fallas repetidas", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "budget", label: "Presupuesto y costos", icon: TrendingUp, desc: "Presupuesto del mes, gastos y ritmo", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "recognition", label: "Reconocimientos", icon: ShieldCheck, desc: "Técnico del mes y ranking que solo suma", access: isAdmin, group: "Reportes y Análisis" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);

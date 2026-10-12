@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, CloudOff, Download, Droplets, Eye, Gauge, History, Home, Layers, LogOut, Mail, Menu as MenuIcon, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, CloudOff, Download, Droplets, Eye, Gauge, History, Home, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import * as XLSX from "xlsx";
 import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingCount, getPendingPhotoQueue, getPendingPhotoRecordsCount, sGet, sSet, uploadPhoto } from "./lib/storage";
+import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, ONBOARDING_STEPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, ONBOARDING_STEPS, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -2254,6 +2255,407 @@ function ShareSummaryView({ tasks, accounts, lowStockItems }) {
         <button onClick={wa} className="flex-[2] text-sm font-semibold rounded-xl" style={{ minHeight: 48, background: C.steelDark, color: "#fff" }}>Compartir por WhatsApp</button>
       </div>
       {msg && <div className="text-xs mt-2" style={{ color: C.inkSoft }} role="status">{msg}</div>}
+    </div>
+  );
+}
+
+/* ===== Mapa de calor del edificio: dónde se concentran las fallas ===== */
+function HeatMapView({ tasks, mttoLog, equipos, onNavigate }) {
+  const [group, setGroup] = useState("Todo");
+  const [sel, setSel] = useState(null);
+  const events = useMemo(() => {
+    const map = {};
+    const cut = Date.now() - 365 * 86400000;
+    const add = (room, g, at) => { if (new Date(at || 0).getTime() < cut) return; (map[room] ||= []).push(g); };
+    (tasks || []).forEach(t => { const r = roomOfTask(t); if (r) add(r, planGroupOf(`${t.titulo || ""} ${t.descripcion || ""}`, categoryOfTask(t)), t.finishedAt || t.createdAt); });
+    const roomsOfEq = {};
+    (equipos || []).forEach(e => { const m = String(e.nombre || "").match(/\b[34]\d{3}\b/g); if (m) roomsOfEq[e.id] = [...new Set(m)]; });
+    (mttoLog || []).forEach(r => { const rs = roomsOfEq[r.equipoId]; if (!rs) return; const eq = (equipos || []).find(e => e.id === r.equipoId); rs.forEach(room => add(room, planGroupOf(`${r.descripcion || ""} ${eq?.sistema || ""} ${eq?.nombre || ""}`, ""), r.fecha)); });
+    return map;
+  }, [tasks, mttoLog, equipos]);
+  const floors = [42, 41, 40, 39, 38, 37, 36, 35, 34];
+  const roomsOf = (f) => { const k = Object.keys(PLANOS).find(key => PLANOS[key].floors.includes(f)); return k ? PLANOS[k].rooms.map(r => r.n || String(f * 100 + Number(r.s))) : []; };
+  const count = (room) => (events[room] || []).filter(g => group === "Todo" || g === group).length;
+  const colorOf = (n) => n === 0 ? "#e3ecf4" : n <= 2 ? "#fde68a" : n <= 4 ? "#fdba74" : "#f87171";
+  const ranking = useMemo(() => {
+    const all = []; floors.forEach(f => roomsOf(f).forEach(r => { const n = count(r); if (n > 0) all.push([r, n]); }));
+    return all.sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [events, group]); // eslint-disable-line react-hooks/exhaustive-deps
+  const floorTotals = floors.map(f => [f, roomsOf(f).reduce((a, r) => a + count(r), 0)]);
+  const topFloor = [...floorTotals].sort((a, b) => b[1] - a[1])[0];
+  const total = floorTotals.reduce((a, x) => a + x[1], 0);
+  const selGroups = sel ? PLAN_GROUPS.map(g => [g.id, (events[sel] || []).filter(x => x === g.id).length]).filter(x => x[1] > 0) : [];
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Mapa de calor del edificio</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Fallas y mantenimientos por habitación en los últimos 12 meses. Más oscuro = más registros.</p>
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
+        {["Todo", ...PLAN_GROUPS.map(g => g.id)].map(g => (
+          <button key={g} onClick={() => setGroup(g)} className="shrink-0 text-xs font-semibold rounded-full px-3" style={{ minHeight: 36, background: g === group ? C.steelDark : C.panel, color: g === group ? "#fff" : C.inkSoft, border: `1px solid ${g === group ? C.steelDark : C.line}` }}>{g}</button>
+        ))}
+      </div>
+      <div className="rounded-xl border p-3 mb-3 overflow-x-auto" style={{ borderColor: C.line, background: C.panel }}>
+        {floors.map(f => (
+          <div key={f} className="flex items-center gap-1 mb-1">
+            <span className="text-[11px] font-semibold w-6 shrink-0" style={{ color: C.inkSoft }}>{f}</span>
+            <div className="flex gap-[3px] flex-wrap">
+              {roomsOf(f).map(r => { const n = count(r); return (
+                <button key={r} onClick={() => setSel(r)} aria-label={`Habitación ${r}, ${n} registros`} title={`${r} · ${n}`} style={{ width: 22, height: 22, borderRadius: 5, background: colorOf(n), border: sel === r ? "2px solid #0ea5e9" : "none", padding: 0 }} />
+              ); })}
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center gap-2 mt-2 text-[11px]" style={{ color: C.inkSoft }}>
+          {[["#e3ecf4", "0"], ["#fde68a", "1–2"], ["#fdba74", "3–4"], ["#f87171", "5+"]].map(([c, l]) => <span key={l} className="flex items-center gap-1"><span style={{ width: 12, height: 12, borderRadius: 3, background: c, display: "inline-block" }} />{l}</span>)}
+        </div>
+      </div>
+      {sel && (
+        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="font-bold" style={{ color: C.ink }}>Habitación {sel} · {(events[sel] || []).length} registro(s)</div>
+          <div className="text-xs mt-1" style={{ color: C.inkSoft }}>{selGroups.length ? selGroups.map(([g, n]) => `${g}: ${n}`).join(" · ") : "Sin registros en 12 meses"}</div>
+          {onNavigate && <button onClick={() => onNavigate("floorplans")} className="mt-2 text-sm font-semibold rounded-xl px-4" style={{ minHeight: 44, background: C.bg, border: `1px solid ${C.line}`, color: C.ink }}>Ver en el plano</button>}
+        </div>
+      )}
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Lo que se ve</div>
+        <div className="text-sm" style={{ color: C.inkSoft }}>{total === 0 ? "Todavía no hay registros con número de habitación para dibujar el mapa." : `El piso ${topFloor[0]} concentra el ${Math.round(topFloor[1] / total * 100)} % de los registros${group === "Todo" ? "" : ` de ${group.toLowerCase()}`}.`}</div>
+      </div>
+      {ranking.length > 0 && (
+        <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+          <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Habitaciones con más registros</div>
+          {ranking.map(([r, n]) => <button key={r} onClick={() => setSel(r)} className="w-full flex justify-between py-2 border-t text-sm text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 44 }}><span>Hab {r}</span><b>{n}</b></button>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== Estado de la planta + avisos: todo lo crítico en una sola pantalla ===== */
+function PlantStatusView({ tasks, activeIssues, coldOutOfRange, meterAnomalies, criticalFuelTanks, lowStockItems, maintenanceDue, staleIssues, onNavigate }) {
+  const [blocked, setBlocked] = useState([]);
+  useEffect(() => { sGet("blocked-rooms", true).then(v => setBlocked(Array.isArray(v) ? v.filter(b => !b.releasedAt) : [])).catch(() => {}); }, []);
+  const open = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt);
+  const urgent = open.filter(t => t.prioridad === "alta");
+  const issues = Object.keys(activeIssues || {});
+  const lateBlocked = blocked.filter(b => b.eta && new Date(b.eta + "T23:59:59").getTime() < Date.now());
+  const alerts = [];
+  criticalFuelTanks.forEach(t => alerts.push({ k: "f" + t.nombre, lvl: 3, t: `Combustible bajo: ${t.nombre} al ${t.pct} %`, go: "fuel" }));
+  coldOutOfRange.forEach(c => alerts.push({ k: "c" + c.id, lvl: 3, t: `Cuarto frío fuera de rango: ${c.n || c.id}`, go: "coldrooms" }));
+  meterAnomalies.forEach(a => alerts.push({ k: "m" + a.meter.id + a.sub, lvl: 2, t: `Lectura rara en medidor: ${a.meter.n}`, go: "meters" }));
+  urgent.forEach(t => alerts.push({ k: "u" + t.id, lvl: 3, t: `Urgente abierta: ${t.titulo || "Tarea"}`, go: "tasks" }));
+  (staleIssues || []).slice(0, 5).forEach((s, i) => alerts.push({ k: "s" + i, lvl: 2, t: "Equipo fuera de servicio hace mucho tiempo", go: "issues" }));
+  lateBlocked.forEach(b => alerts.push({ k: "b" + b.id, lvl: 2, t: `Habitación ${b.room} pasó la fecha de liberación`, go: "blocked-rooms" }));
+  (lowStockItems || []).slice(0, 4).forEach(i => alerts.push({ k: "i" + (i.id || i.name), lvl: 1, t: `Repuesto bajo: ${i.name || i.nombre} (${i.quantity})`, go: "inventory" }));
+  alerts.sort((a, b) => b.lvl - a.lvl);
+  const tile = (v, l, c, go) => (
+    <button onClick={() => go && onNavigate(go)} className="rounded-xl border p-3 text-left" style={{ borderColor: C.line, background: C.panel, minHeight: 64 }}>
+      <div className="text-xl font-extrabold tabular-nums" style={{ color: c, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{v}</div>
+      <div className="text-[11px]" style={{ color: C.inkSoft }}>{l}</div>
+    </button>
+  );
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Estado de la planta</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Lo crítico del hotel en un vistazo, con lo último que se ha registrado.</p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+        {tile(criticalFuelTanks.length, "tanques de combustible bajos", criticalFuelTanks.length ? C.red : C.green, "fuel")}
+        {tile(coldOutOfRange.length, "cuartos fríos fuera de rango", coldOutOfRange.length ? C.red : C.green, "coldrooms")}
+        {tile(meterAnomalies.length, "lecturas de medidor raras", meterAnomalies.length ? "#b45309" : C.green, "meters")}
+        {tile(issues.length, "equipos fuera de servicio", issues.length ? "#b45309" : C.green, "issues")}
+        {tile(urgent.length, "tareas urgentes abiertas", urgent.length ? C.red : C.green, "tasks")}
+        {tile(blocked.length, "habitaciones bloqueadas", C.ink, "blocked-rooms")}
+      </div>
+      <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Avisos ({alerts.length})</div>
+        {alerts.length === 0 ? <div className="text-sm py-3 text-center" style={{ color: C.green }}>Todo en orden.</div> : alerts.slice(0, 25).map(a => (
+          <button key={a.k} onClick={() => onNavigate(a.go)} className="w-full flex items-center gap-2 py-2 border-t text-left text-sm" style={{ borderColor: C.line, color: C.ink, minHeight: 44 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 4, flex: "none", background: a.lvl === 3 ? C.red : a.lvl === 2 ? C.amber : C.gray }} />
+            <span className="flex-1">{a.t}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ===== Energía: consumo diario sumando los medidores de kWh ===== */
+function EnergyView({ meterHistory }) {
+  const [days, setDays] = useState(14);
+  const data = useMemo(() => {
+    const byDay = {}; const byMeter = {};
+    ALL_METERS.filter(m => m.u === "kWh").forEach(m => {
+      (meterHistory?.[m.id] || []).forEach(h => {
+        const subs = m.subs || ["value"];
+        const c = subs.reduce((a, s) => a + (h.consumos && Number(h.consumos[s]) > 0 ? Number(h.consumos[s]) : 0), 0);
+        if (!c || !h.at) return;
+        const d = new Date(h.at).toISOString().slice(0, 10);
+        byDay[d] = (byDay[d] || 0) + c;
+        byMeter[m.n] = (byMeter[m.n] || 0) + c;
+      });
+    });
+    return { byDay, byMeter };
+  }, [meterHistory]);
+  const keys = Object.keys(data.byDay).sort().slice(-days);
+  const vals = keys.map(k => data.byDay[k]);
+  const max = Math.max(1, ...vals);
+  const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  const meters = Object.entries(data.byMeter).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const mt = meters.reduce((a, x) => a + x[1], 0) || 1;
+  const fmt = (n) => Math.round(n).toLocaleString("es-CO");
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Energía</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Consumo calculado con las lecturas de los medidores de kWh (suma de todos los medidores).</p>
+      </div>
+      <div className="flex gap-2 mb-2">{[7, 14, 30].map(d => <button key={d} onClick={() => setDays(d)} className="text-xs font-semibold rounded-full px-3" style={{ minHeight: 36, background: d === days ? C.steelDark : C.panel, color: d === days ? "#fff" : C.inkSoft, border: `1px solid ${C.line}` }}>{d} días</button>)}</div>
+      {keys.length === 0 ? <div className="text-sm text-center py-6 rounded-xl border" style={{ borderColor: C.line, color: C.gray }}>Todavía no hay lecturas suficientes para calcular consumo.</div> : (
+        <>
+          <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-sm font-semibold" style={{ color: C.ink }}>Consumo por lectura-día</div>
+            <div className="flex gap-1 items-end mt-2" style={{ height: 120 }} role="img" aria-label="Gráfica de consumo diario">
+              {vals.map((v, i) => <div key={keys[i]} title={`${keys[i]}: ${fmt(v)} kWh`} style={{ flex: 1, height: `${Math.max(3, v / max * 100)}%`, background: "#38bdf8", borderRadius: "4px 4px 0 0" }} />)}
+            </div>
+            <div className="text-xs mt-2" style={{ color: C.inkSoft }}>Promedio: <b>{fmt(avg)} kWh</b> por día con lectura · Máximo {fmt(max)} kWh</div>
+          </div>
+          <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Dónde se va (por medidor)</div>
+            {meters.map(([n, v]) => (
+              <div key={n} className="py-1.5"><div className="flex justify-between text-xs" style={{ color: C.ink }}><span className="truncate pr-2">{n}</span><b>{Math.round(v / mt * 100)} %</b></div>
+                <div style={{ height: 6, borderRadius: 3, background: C.bg }}><div style={{ width: `${v / mt * 100}%`, height: 6, borderRadius: 3, background: "#0ea5e9" }} /></div></div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ===== Reconocimientos: solo suma, sin castigos ===== */
+function RecognitionView({ tasks, accounts }) {
+  const now = new Date(); const y = now.getFullYear(), m = now.getMonth();
+  const rows = useMemo(() => {
+    const by = {};
+    (tasks || []).forEach(t => {
+      if (!t.finishedAt || !t.asignadoA) return;
+      const d = new Date(t.finishedAt);
+      if (d.getFullYear() !== y || d.getMonth() !== m) return;
+      const r = (by[t.asignadoA] ||= { u: t.asignadoA, n: 0, foto: 0, rapido: 0 });
+      r.n += 1;
+      if ((t.fotosDespues || []).length) r.foto += 1;
+      const h = (d - new Date(t.createdAt || t.assignedAt || t.finishedAt)) / 3600000;
+      if (h >= 0 && h <= 24) r.rapido += 1;
+    });
+    return Object.values(by).map(r => ({ ...r, pts: r.n * 10 + r.foto * 4 + r.rapido * 4 })).sort((a, b) => b.pts - a.pts);
+  }, [tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nameOf = (u) => accounts?.[u]?.display_name || u;
+  const mes = now.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+  const top = rows[0];
+  const badges = [];
+  if (rows.length) { const f = [...rows].sort((a, b) => b.foto - a.foto)[0]; if (f.foto > 0) badges.push(`★ Más cierres con foto: ${nameOf(f.u)} (${f.foto})`); const q = [...rows].sort((a, b) => b.rapido - a.rapido)[0]; if (q.rapido > 0) badges.push(`★ Más resueltas en menos de 24 h: ${nameOf(q.u)} (${q.rapido})`); }
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Reconocimientos del equipo</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>{mes}. Solo suma: tareas cerradas, cierres con foto y las resueltas en menos de 24 horas.</p>
+      </div>
+      {!top ? <div className="text-sm text-center py-6 rounded-xl border" style={{ borderColor: C.line, color: C.gray }}>Aún no hay tareas cerradas este mes.</div> : (
+        <>
+          <div className="rounded-xl border p-4 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="text-[11px] font-semibold uppercase" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Técnico del mes</div>
+            <div className="text-xl font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{nameOf(top.u)}</div>
+            <div className="text-sm" style={{ color: C.inkSoft }}>{top.n} tareas cerradas · {top.foto} con foto · {top.rapido} en menos de 24 h</div>
+          </div>
+          <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+            {rows.map((r, i) => (
+              <div key={r.u} className="flex items-center gap-3 py-2 border-t first:border-t-0" style={{ borderColor: C.line }}>
+                <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: i === 0 ? C.amber : i === 1 ? "#94a3b8" : i === 2 ? "#b45309" : "#64748b" }}>{i + 1}</span>
+                <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate" style={{ color: C.ink }}>{nameOf(r.u)}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>{r.n} tareas cerradas</div></div>
+                <b className="tabular-nums" style={{ color: C.ink }}>{r.pts}</b>
+              </div>
+            ))}
+          </div>
+          {badges.length > 0 && <div className="rounded-xl border p-3 text-sm" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>{badges.map(b => <div key={b} className="py-0.5">{b}</div>)}</div>}
+          <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>Cómo se calcula: 10 puntos por tarea cerrada, +4 si tiene foto de cierre, +4 si se resolvió en menos de 24 h.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ===== Presupuesto y costos (se llena a mano; se guarda en "budget-data") ===== */
+function BudgetView() {
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const [data, setData] = useState(null);
+  const [budget, setBudget] = useState("");
+  const [cat, setCat] = useState("Repuestos");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => { sGet("budget-data", true).then(v => setData(v && typeof v === "object" ? v : { budgets: {}, entries: [] })).catch(() => setData({ budgets: {}, entries: [] })); }, []);
+  const persist = async (next) => { setData(next); try { await sSet("budget-data", next, true); setErr(""); } catch { setErr("No se pudo guardar. Intenta otra vez."); } };
+  const CATS = ["Repuestos", "Mano de obra externa", "Materiales", "Combustible", "Otros"];
+  if (!data) return <div className="text-sm" style={{ color: C.gray }}>Cargando…</div>;
+  const entries = (data.entries || []).filter(e => String(e.fecha).startsWith(monthKey));
+  const spent = entries.reduce((a, e) => a + Number(e.monto || 0), 0);
+  const tot = Number(data.budgets?.[monthKey] || 0);
+  const day = new Date().getDate(); const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const proj = spent / Math.max(1, day) * dim;
+  const money = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
+  const byCat = CATS.map(c => [c, entries.filter(e => e.cat === c).reduce((a, e) => a + Number(e.monto || 0), 0)]).filter(x => x[1] > 0);
+  const addEntry = () => { const a = Number(String(amount).replace(/[^\d.]/g, "")); if (!a) { setErr("Escribe el valor en pesos."); return; } persist({ ...data, entries: [{ id: "e" + Date.now(), fecha: new Date().toISOString(), cat, monto: a, nota: note.trim() }, ...(data.entries || [])].slice(0, 2000) }); setAmount(""); setNote(""); };
+  const inp = { minHeight: 44, borderColor: C.line, background: C.panel, color: C.ink };
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Presupuesto y costos</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Escribe el presupuesto del mes y ve registrando los gastos. La app calcula el ritmo y avisa si te vas a pasar.</p>
+      </div>
+      <div className="rounded-xl border p-4 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-[11px] font-semibold uppercase" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Gasto del mes</div>
+        <div className="text-2xl font-extrabold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{money(spent)} {tot ? <span className="text-sm font-medium" style={{ color: C.inkSoft }}>de {money(tot)}</span> : null}</div>
+        {tot > 0 && <><div style={{ height: 8, borderRadius: 4, background: C.bg, margin: "8px 0" }}><div style={{ width: `${Math.min(100, spent / tot * 100)}%`, height: 8, borderRadius: 4, background: spent > tot ? C.red : spent / tot > day / dim + 0.15 ? C.amber : C.green }} /></div>
+          <div className="text-xs" style={{ color: proj > tot ? C.red : C.inkSoft }}>{Math.round(spent / tot * 100)} % usado al día {day} de {dim}. Al ritmo actual cerrarías el mes en {money(proj)}{proj > tot ? ", por encima del presupuesto." : "."}</div></>}
+        <div className="flex gap-2 mt-3 items-center">
+          <input value={budget} onChange={e => setBudget(e.target.value)} inputMode="numeric" placeholder={tot ? "Cambiar presupuesto" : "Presupuesto del mes en pesos"} aria-label="Presupuesto del mes" className="flex-1 text-sm border rounded-md px-3 outline-none" style={inp} />
+          <button onClick={() => { const n = Number(String(budget).replace(/[^\d.]/g, "")); if (n > 0) { persist({ ...data, budgets: { ...(data.budgets || {}), [monthKey]: n } }); setBudget(""); } }} className="text-sm font-semibold rounded-xl px-4" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>Guardar</button>
+        </div>
+      </div>
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Registrar un gasto</div>
+        <div className="grid grid-cols-2 gap-2">
+          <select value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoría" className="text-sm border rounded-md px-2 outline-none" style={inp}>{CATS.map(c => <option key={c}>{c}</option>)}</select>
+          <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder="Valor en pesos" aria-label="Valor" className="text-sm border rounded-md px-3 outline-none" style={inp} />
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Detalle (opcional)" aria-label="Detalle" className="col-span-2 text-sm border rounded-md px-3 outline-none" style={inp} />
+        </div>
+        <button onClick={addEntry} className="mt-2 text-sm font-semibold rounded-xl px-4" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>Agregar gasto</button>
+        {err && <div className="text-xs mt-2" style={{ color: C.red }} role="alert">{err}</div>}
+      </div>
+      {byCat.length > 0 && <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Por categoría</div>
+        {byCat.map(([c, v]) => <div key={c} className="flex justify-between py-1.5 text-sm border-t" style={{ borderColor: C.line, color: C.ink }}><span>{c}</span><b>{money(v)}</b></div>)}
+      </div>}
+      {entries.length > 0 && <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Gastos del mes</div>
+        {entries.slice(0, 30).map(e => (
+          <div key={e.id} className="flex items-center justify-between gap-2 py-1.5 border-t text-xs" style={{ borderColor: C.line, color: C.ink }}>
+            <span className="min-w-0 truncate">{new Date(e.fecha).toLocaleDateString("es-CO", { day: "numeric", month: "short" })} · {e.cat}{e.nota ? ` · ${e.nota}` : ""}</span>
+            <span className="flex items-center gap-2 shrink-0"><b>{money(e.monto)}</b><button onClick={() => persist({ ...data, entries: data.entries.filter(x => x.id !== e.id) })} aria-label="Quitar gasto" className="px-2 rounded" style={{ minHeight: 32, color: C.red }}>Quitar</button></span>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
+/* ===== Vida útil y garantías: usa fecha de instalación, vida útil y garantía de la ficha de cada equipo ===== */
+function LifecycleView({ equipos, mttoLog, onNavigate }) {
+  const rows = useMemo(() => (equipos || []).map(e => {
+    const years = e.fechaInstalacion ? (Date.now() - new Date(e.fechaInstalacion).getTime()) / (365.25 * 86400000) : null;
+    const life = Number(e.vidaUtilAnios) || 0;
+    const pct = years != null && life ? Math.round(years / life * 100) : null;
+    const gDays = e.garantiaHasta ? Math.ceil((new Date(e.garantiaHasta + "T23:59:59").getTime() - Date.now()) / 86400000) : null;
+    const cut = Date.now() - 90 * 86400000;
+    const fails = (mttoLog || []).filter(r => r.equipoId === e.id && r.tipo === "correctivo" && new Date(r.fecha).getTime() >= cut).length;
+    return { e, years, life, pct, gDays, fails };
+  }), [equipos, mttoLog]);
+  const near = rows.filter(r => r.pct != null && r.pct >= 80).sort((a, b) => b.pct - a.pct);
+  const warr = rows.filter(r => r.gDays != null && r.gDays >= 0 && r.gDays <= 90).sort((a, b) => a.gDays - b.gDays);
+  const repeat = rows.filter(r => r.fails >= 3).sort((a, b) => b.fails - a.fails);
+  const missing = rows.filter(r => r.pct == null).length;
+  const sec = (title, list, render) => list.length ? (
+    <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>{title}</div>
+      {list.slice(0, 12).map(r => <button key={r.e.id} onClick={() => onNavigate && onNavigate("maintenance")} className="w-full text-left py-2 border-t" style={{ borderColor: C.line, minHeight: 48 }}>{render(r)}</button>)}
+    </div>
+  ) : null;
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Vida útil y garantías</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Para planear antes de que falle. Usa los datos de la ficha de cada equipo (instalación, vida útil y garantía).</p>
+      </div>
+      {sec("Cerca del final de su vida útil", near, r => (<><div className="flex justify-between text-sm" style={{ color: C.ink }}><span className="truncate pr-2">{r.e.nombre}</span><b style={{ color: r.pct >= 100 ? C.red : C.amber }}>{r.pct} %</b></div><div className="text-[11px]" style={{ color: C.inkSoft }}>{r.years.toFixed(1)} de {r.life} años</div></>))}
+      {sec("Garantías por vencer (90 días)", warr, r => (<div className="flex justify-between text-sm" style={{ color: C.ink }}><span className="truncate pr-2">{r.e.nombre}</span><b style={{ color: r.gDays <= 30 ? C.red : C.amber }}>{r.gDays} d</b></div>))}
+      {sec("Fallas repetidas (3 o más correctivos en 90 días)", repeat, r => (<div className="flex justify-between text-sm" style={{ color: C.ink }}><span className="truncate pr-2">{r.e.nombre}</span><b style={{ color: C.red }}>{r.fails} veces</b></div>))}
+      {!near.length && !warr.length && !repeat.length && <div className="text-sm text-center py-6 rounded-xl border" style={{ borderColor: C.line, color: C.gray }}>Nada urgente por ahora.</div>}
+      {missing > 0 && <p className="text-xs" style={{ color: C.inkSoft }}>{missing} equipos todavía no tienen fecha de instalación y vida útil en su ficha; ahí se completan para que aparezcan aquí.</p>}
+    </div>
+  );
+}
+
+/* ===== Solicitudes de huéspedes (las que entran de HotSOS) ===== */
+function GuestRequestsView({ tasks, accounts, onNavigate }) {
+  const all = (tasks || []).filter(t => t.origen === "hotsos");
+  const open = all.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt).sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  const closed = all.filter(t => t.finishedAt);
+  const hrs = closed.map(t => (new Date(t.finishedAt) - new Date(t.createdAt || t.assignedAt || t.finishedAt)) / 3600000).filter(h => h >= 0 && isFinite(h));
+  const avg = hrs.length ? hrs.reduce((a, b) => a + b, 0) / hrs.length : null;
+  const inGoal = hrs.length ? Math.round(hrs.filter(h => h <= 24).length / hrs.length * 100) : null;
+  const age = (iso) => { const m = Math.floor((Date.now() - new Date(iso || Date.now()).getTime()) / 60000); return m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h` : `${Math.floor(m / 1440)} d`; };
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Solicitudes de huéspedes</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Las órdenes que entran por la importación de HotSOS, con cuánto llevan esperando.</p>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {[[open.length, "sin cerrar"], [avg == null ? "—" : avg < 48 ? `${avg.toFixed(1)} h` : `${(avg / 24).toFixed(1)} d`, "tiempo medio"], [inGoal == null ? "—" : inGoal + " %", "cerradas en 24 h"]].map(([v, l]) => (
+          <div key={l} className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.panel }}><div className="text-xl font-extrabold tabular-nums" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{v}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>{l}</div></div>
+        ))}
+      </div>
+      {open.length === 0 ? <div className="text-sm text-center py-6 rounded-xl border" style={{ borderColor: C.line, color: C.gray }}>No hay solicitudes de HotSOS abiertas.</div> : open.slice(0, 30).map(t => {
+        const hot = Date.now() - new Date(t.createdAt || Date.now()).getTime() > 86400000;
+        const room = roomOfTask(t);
+        return (
+          <div key={t.id} className="rounded-xl border p-3 mb-2" style={{ borderColor: hot ? C.red : C.line, background: C.panel }}>
+            <div className="flex justify-between gap-2"><div className="font-bold" style={{ color: C.ink }}>{room ? `Hab ${room}` : "Sin habitación"}</div><span className="text-xs font-semibold" style={{ color: hot ? C.red : C.inkSoft }}>hace {age(t.createdAt)}</span></div>
+            <div className="text-sm" style={{ color: C.ink }}>{t.titulo}</div>
+            <div className="text-[11px] mt-0.5" style={{ color: C.inkSoft }}>{t.asignadoA ? `Asignada a ${accounts?.[t.asignadoA]?.display_name || t.asignadoA}` : "Sin asignar"}</div>
+          </div>
+        );
+      })}
+      <button onClick={() => onNavigate("tasks")} className="w-full mt-2 text-sm font-semibold rounded-xl" style={{ minHeight: 48, background: C.steelDark, color: "#fff" }}>Ir a Tareas</button>
+    </div>
+  );
+}
+
+/**
+ * Panel "Hoy" para el supervisor: por cada técnico, sus órdenes en tres columnas (pendientes,
+ * en proceso, hechas hoy), lo que queda programado para mañana en adelante, y alertas de lo que
+ * lleva demasiado tiempo abierto o sigue sin asignar. Puede verse solo con lo de HotSOS.
+ * Todo sale de las tareas que ya existen (incluidas las importadas de HotSOS) — no guarda nada nuevo.
+ */
+/* ===== "Decide ahora": lo que hoy necesita una decisión del administrador ===== */
+function DecideNowCard({ tasks, equipos, mttoLog, lowStockItems, onNavigate }) {
+  const [blocked, setBlocked] = useState([]);
+  useEffect(() => { sGet("blocked-rooms", true).then(v => setBlocked(Array.isArray(v) ? v.filter(b => !b.releasedAt) : [])).catch(() => {}); }, []);
+  const open = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt);
+  const unassigned = open.filter(t => !t.asignadoA);
+  const stale = open.filter(t => Date.now() - new Date(t.createdAt || t.assignedAt || Date.now()).getTime() > 86400000);
+  const cut = Date.now() - 60 * 86400000;
+  const repeat = (equipos || []).map(e => ({ e, n: (mttoLog || []).filter(r => r.equipoId === e.id && r.tipo === "correctivo" && new Date(r.fecha).getTime() >= cut).length })).filter(x => x.n >= 3).sort((a, b) => b.n - a.n);
+  const lateBlocked = blocked.filter(b => b.eta && new Date(b.eta + "T23:59:59").getTime() < Date.now());
+  const items = [];
+  repeat.slice(0, 3).forEach(x => items.push({ k: "r" + x.e.id, c: C.red, t: `${x.e.nombre} falló ${x.n} veces en 60 días`, d: "Evalúa cambiar el equipo o la pieza, no solo repararlo.", b: "Ver equipos", go: "maintenance" }));
+  if (unassigned.length) items.push({ k: "u", c: C.amber, t: `${unassigned.length} tarea${unassigned.length === 1 ? "" : "s"} sin responsable`, d: "Asígnalas para que avancen.", b: "Asignar", go: "tasks" });
+  if (stale.length) items.push({ k: "s", c: C.amber, t: `${stale.length} abierta${stale.length === 1 ? "" : "s"} hace más de 24 horas`, d: "Revisa si están bloqueadas o esperando repuesto.", b: "Ver tareas", go: "tasks" });
+  lateBlocked.forEach(b => items.push({ k: "b" + b.id, c: C.amber, t: `Habitación ${b.room} pasó su fecha de liberación`, d: b.reason, b: "Actualizar", go: "blocked-rooms" }));
+  if ((lowStockItems || []).length) items.push({ k: "i", c: "#0ea5e9", t: `${lowStockItems.length} repuesto${lowStockItems.length === 1 ? "" : "s"} por reponer`, d: lowStockItems.slice(0, 3).map(i => i.name || i.nombre).filter(Boolean).join(", "), b: "Ver inventario", go: "inventory" });
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-[11px] font-semibold uppercase mb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>Decide ahora</div>
+      {items.length === 0 ? <div className="text-sm py-2" style={{ color: C.green }}>Nada urgente por decidir hoy.</div> : items.map(i => (
+        <div key={i.k} className="flex items-center gap-3 py-2 border-t first:border-t-0" style={{ borderColor: C.line }}>
+          <span style={{ width: 6, alignSelf: "stretch", borderRadius: 3, background: i.c, flex: "none" }} />
+          <div className="flex-1 min-w-0"><div className="text-sm font-semibold" style={{ color: C.ink }}>{i.t}</div>{i.d ? <div className="text-xs" style={{ color: C.inkSoft }}>{i.d}</div> : null}</div>
+          <button onClick={() => onNavigate(i.go)} className="text-xs font-semibold rounded-xl px-3 shrink-0" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>{i.b}</button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -6386,12 +6788,14 @@ export default function App() {
         ...(isAdmin ? [{ id: "floorplans", label: "Planos por piso", icon: Layers }] : []),
         ...(isAdmin ? [{ id: "blocked-rooms", label: "Habitaciones bloqueadas", icon: Layers }] : []),
         ...(isAdmin ? [{ id: "share-summary", label: "Resumen para compartir", icon: Send }] : []),
+        ...(isAdmin ? [{ id: "plant-status", label: "Estado de la planta", icon: Gauge }, { id: "guest-requests", label: "Solicitudes de huéspedes", icon: MessageCircle }] : []),
       ],
     },
     {
       id: "historial", label: "Historial y reportes", items: [
         ...(isAdmin ? [{ id: "maintenance-log", label: "Historial de mantenimientos", icon: History, badge: pendingReviewCount, urgentBadge: pendingReviewCount > 0, pulse: pendingReviewCount > 0 }] : []),
         ...(isAdmin ? [{ id: "maintenance-schedule", label: "Cronograma anual", icon: CalendarDays }] : []),
+        ...(isAdmin ? [{ id: "heatmap", label: "Mapa de calor", icon: Thermometer }, { id: "energy", label: "Energía", icon: Zap }, { id: "lifecycle", label: "Vida útil y garantías", icon: History }, { id: "budget", label: "Presupuesto y costos", icon: TrendingUp }, { id: "recognition", label: "Reconocimientos", icon: ShieldCheck }] : []),
         { id: "reports", label: "Reportes", icon: History },
         { id: "tanks", label: "Tanques de agua potable", icon: Droplets },
         { id: "fuel", label: "Combustibles y gas", icon: Gauge },
@@ -6985,11 +7389,21 @@ export default function App() {
           )}
           {view === "blocked-rooms" && isAdmin && <BlockedRoomsView accounts={profiles} currentUser={currentUser} onNavigate={setView} />}
           {view === "share-summary" && isAdmin && <ShareSummaryView tasks={tasks} accounts={profiles} lowStockItems={lowStockItems} />}
+          {view === "plant-status" && isAdmin && <PlantStatusView tasks={tasks} activeIssues={activeIssues} coldOutOfRange={coldOutOfRange} meterAnomalies={meterAnomalies} criticalFuelTanks={criticalFuelTanks} lowStockItems={lowStockItems} staleIssues={staleIssues} onNavigate={setView} />}
+          {view === "guest-requests" && isAdmin && <GuestRequestsView tasks={tasks} accounts={profiles} onNavigate={setView} />}
+          {view === "heatmap" && isAdmin && <HeatMapView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} onNavigate={setView} />}
+          {view === "energy" && isAdmin && <EnergyView meterHistory={meterHistory} />}
+          {view === "lifecycle" && isAdmin && <LifecycleView equipos={mttoEquipos} mttoLog={mttoLog} onNavigate={setView} />}
+          {view === "budget" && isAdmin && <BudgetView />}
+          {view === "recognition" && isAdmin && <RecognitionView tasks={tasks} accounts={profiles} />}
           {view === "room-history" && isAdmin && (
             <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />
           )}
           {view === "today" && isAdmin && (
+            <>
+            <DecideNowCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} lowStockItems={lowStockItems} onNavigate={setView} />
             <TodayBoardView tasks={tasks} accounts={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} onAssign={(id, username) => updateTask(id, { asignadoA: username, assignedAt: nowIso() })} onReview={updateTask} pushSubscriptions={pushSubscriptions} />
+            </>
           )}
           {((view === "inventory" && !(isAdmin || isAlmacenista)) || (view === "maintenance" && !isAdmin) || (view === "hvac" && !isAdmin)) && (
             <div className="rounded-lg border p-6 text-center text-sm" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>

@@ -3,12 +3,6 @@ import { C, TASK_PRIORITY_COLORS, employeesWorkingNow, hoursBetween, isTaskSnooz
 
 
 
-/**
- * Panel "Hoy" para el supervisor: por cada técnico, sus órdenes en tres columnas (pendientes,
- * en proceso, hechas hoy), lo que queda programado para mañana en adelante, y alertas de lo que
- * lleva demasiado tiempo abierto o sigue sin asignar. Puede verse solo con lo de HotSOS.
- * Todo sale de las tareas que ya existen (incluidas las importadas de HotSOS) — no guarda nada nuevo.
- */
 export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigate, onAssign, onReview, pushSubscriptions = [] }) {
   const [onlyHotsos, setOnlyHotsos] = useState(false);
   const [staleHours, setStaleHours] = useState(24);

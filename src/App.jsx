@@ -4511,6 +4511,7 @@ export default function App() {
   }, [view]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Barra de iconos (solo computador/tablet ancha): el menú se recoge a una columna delgada. Se recuerda la elección.
+  const [mobPanel, setMobPanel] = useState(null);
   const [navCollapsed, setNavCollapsedRaw] = useState(() => { try { return localStorage.getItem("pm-local:nav-collapsed") !== "0"; } catch { return true; } });
   const setNavCollapsed = (v) => { setNavCollapsedRaw(v); try { localStorage.setItem("pm-local:nav-collapsed", v ? "1" : "0"); } catch { /* noop */ } };
   const [quickOpen, setQuickOpen] = useState(false);
@@ -7000,23 +7001,25 @@ export default function App() {
                   const on = navView === id || (id === "executive" && navView === "executive");
                   const b = badgeOf[id]?.badge;
                   return (
-                    <button key={id} onClick={() => { setQuickOpen(false); setView(id); const hasFly = !isAdmin && (id === "ronda" || id === "issues" || id === "tasks"); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
+                    <React.Fragment key={id}>
+                    <button onClick={() => { setQuickOpen(false); setView(id); const hasFly = !isAdmin && (id === "ronda" || id === "issues" || id === "tasks"); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
                       className="relative w-full flex flex-col items-center justify-center rounded-xl mb-1 transition hover:bg-white/5"
                       style={{ height: 58, background: on ? "#2a3f56" : "transparent", color: on ? "#fff" : "#c3d0dd" }}>
                       <Icon size={19} />
                       <span className="text-[10px] font-medium mt-0.5">{label}</span>
                       {b ? <span className="absolute font-bold rounded-full text-white" style={{ top: 3, right: 6, minWidth: 16, height: 16, fontSize: 10, lineHeight: "16px", textAlign: "center", padding: "0 4px", background: id === "issues" ? C.red : C.amber }}>{typeof b === "string" ? b : b > 99 ? "99+" : b}</span> : null}
                     </button>
-                  );
-                })}
-              {isAdmin && (
-                <div className="pt-1">
+{isAdmin && id === "home" && (
+                <div className="mb-1">
                   <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "operario" ? null : "operario"); }} aria-label="Vista del operario" aria-expanded={flyout === "operario"} title="Todo lo que ve el operario"
                     className="w-full flex flex-col items-center justify-center rounded-xl" style={{ height: 58, background: flyout === "operario" ? C.amber : "#12304a", color: flyout === "operario" ? "#0b2238" : "#fff", border: `1px solid ${flyout === "operario" ? C.amber : "#2b4a68"}` }}>
                     <Users size={19} /><span className="text-[10px] font-bold mt-0.5">Operario</span>
                   </button>
                 </div>
               )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
               <div className="px-1.5 pb-3 pt-2 border-t shrink-0" style={{ borderColor: "#2a3f56" }}>
               <div className="pb-1">
@@ -7070,7 +7073,62 @@ export default function App() {
             </div>
           );
         })()}
-        <div className={`flex flex-col flex-1 min-h-0 ${navCollapsed ? "lg:hidden" : ""}`}>
+        {(() => {
+          const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
+          const TILES = isAdmin
+            ? [["home", "Inicio", Home], ["__op", "Operario", Users], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
+            : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
+          const tiles = TILES.filter(([id]) => id === "home" || id.startsWith("__") || badgeOf[id] || (isAdmin && HUBS.some(h => h.id === id)));
+          const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
+          const go = (id) => { setView(id); setSidebarOpen(false); setMobPanel(null); };
+          const cnt = { tasks: (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length, issues: Object.keys(activeIssues || {}).length };
+          const Tile = ({ icon: Icon, label, onClick, on, badge, urgent, amber }) => (
+            <button onClick={onClick} aria-label={label} className="relative flex flex-col items-center justify-center rounded-2xl" style={{ height: 78, background: amber ? "#3a2e12" : on ? "#2a3f56" : "#12304a", color: amber ? C.amber : on ? "#fff" : "#c3d0dd", border: `1px solid ${amber ? C.amber : "#1f3a56"}` }}>
+              <Icon size={22} /><span className="text-[11px] font-semibold mt-1">{label}</span>
+              {badge ? <span className="absolute font-bold rounded-full text-white" style={{ top: 5, right: 8, minWidth: 18, height: 18, fontSize: 10, lineHeight: "18px", textAlign: "center", padding: "0 4px", background: urgent ? C.red : C.amber }}>{typeof badge === "string" ? badge : badge > 99 ? "99+" : badge}</span> : null}
+            </button>
+          );
+          const Lbl = ({ children }) => <div className="text-[11px] font-semibold uppercase px-1 pt-3 pb-1.5" style={{ color: "#7d92a8", letterSpacing: "0.08em" }}>{children}</div>;
+          const OPSEC = [["Mi turno", [["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["issues", "Fuera", Wrench], ["tasks", "Mi trabajo", ClipboardCheck]]], ["Consultar", [["fichas-tecnicas", "Fichas", ClipboardList], ["procedures", "Procedim.", ClipboardList], ["tanks", "Tanques", Gauge], ["fuel", "Combust.", Zap], ["wiki", "Wiki", Search], ["my-schedule", "Mi horario", Users]]]];
+          const tapTile = (id) => { if (id === "__op") setMobPanel("operario"); else if (id === "__ronda") setMobPanel("ronda"); else go(id); };
+          return (
+            <div className="lg:hidden flex flex-col flex-1 min-h-0">
+              <div className="pm-safe-top px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2"><img src="/icon-192.png" alt="QuinTech" className="w-8 h-8 rounded-md object-cover" /><div className="text-white text-sm font-semibold leading-tight">QuinTech</div></div>
+                <button onClick={() => { setSidebarOpen(false); setMobPanel(null); }} className="flex items-center gap-1 px-3 rounded-md text-xs font-medium" style={{ color: "#c3d0dd", background: "#2a3f56", minHeight: 36 }}><ChevronRight size={14} /> Volver</button>
+              </div>
+              <div className="floor-scroll px-3 pb-4 flex-1 min-h-0 overflow-y-auto">
+                {mobPanel === null && (<>
+                  <button onClick={() => { setSidebarOpen(false); setTimeout(focusSearch, 120); }} className="w-full flex items-center gap-2 rounded-xl px-3 text-sm" style={{ minHeight: 44, background: "#12304a", color: "#8fa3b8" }}><Search size={16} /> Buscar…</button>
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {tiles.map(([id, label, Icon]) => <Tile key={id} icon={Icon} label={label} amber={id === "__op"} on={navView === id} badge={id in cnt && !isAdmin ? cnt[id] : badgeOf[id]?.badge} urgent={id === "issues"} onClick={() => tapTile(id)} />)}
+                  </div>
+                  <Lbl>Accesos</Lbl>
+                  <div className="grid grid-cols-3 gap-2">
+                    {isAdmin && <Tile icon={Bell} label="Avisos" badge={avisosCount} urgent onClick={() => { setSidebarOpen(false); setTimeout(() => { const b = document.querySelector('button[aria-label="Notificaciones"]'); if (b) b.click(); }, 150); }} />}
+                    <Tile icon={darkMode ? Sun : Moon} label={darkMode ? "Claro" : "Oscuro"} onClick={toggleTheme} />
+                    <Tile icon={User} label="Perfil" onClick={() => go("profile")} />
+                    <Tile icon={ChevronRight} label="Todo" onClick={() => setMobPanel("all")} />
+                  </div>
+                </>)}
+                {mobPanel === "operario" && (<>
+                  <button onClick={() => setMobPanel(null)} className="text-sm font-semibold py-2" style={{ color: C.amber }}>‹ Volver al menú</button>
+                  {OPSEC.map(([sec, items]) => <div key={sec}><Lbl>{sec === "Mi turno" ? "Operario · Mi turno" : sec}</Lbl><div className="grid grid-cols-3 gap-2">{items.map(([id, label, Icon]) => <Tile key={id} icon={Icon} label={label} on={view === id} badge={id in cnt ? cnt[id] : badgeOf[id]?.badge} urgent={id === "issues"} onClick={() => tapTile(id)} />)}</div></div>)}
+                </>)}
+                {mobPanel === "ronda" && (<>
+                  <button onClick={() => setMobPanel(isAdmin ? "operario" : null)} className="text-sm font-semibold py-2" style={{ color: C.amber }}>‹ Volver</button>
+                  <Lbl>Ronda de revisión · elige piso</Lbl>
+                  <div className="space-y-1">{FLOORS.map(f => { const dmg = f.items.some(it => activeIssues[it.id]); return <button key={f.id} onClick={() => { setFloorId(f.id); go("ronda"); }} className="w-full flex items-center gap-2 px-3 rounded-lg text-sm font-semibold text-left" style={{ minHeight: 44, background: floorId === f.id && view === "ronda" ? "#2a3f56" : "#12304a", color: "#e5edf5" }}><span style={{ width: 9, height: 9, borderRadius: 5, background: dmg ? C.red : C.green }} /><span className="flex-1">{f.name}</span>{dmg && <span className="text-[11px] font-medium" style={{ color: C.amber }}>con daño</span>}</button>; })}</div>
+                </>)}
+                {mobPanel === "all" && (<>
+                  <button onClick={() => setMobPanel(null)} className="text-sm font-semibold py-2" style={{ color: C.amber }}>‹ Volver al menú</button>
+                  {NAV_GROUPS.map(g => <div key={g.id}><Lbl>{g.label}</Lbl><div className="space-y-1">{g.items.map(n => <button key={n.id} onClick={() => go(n.id)} className="w-full flex items-center gap-2 px-3 rounded-lg text-sm font-medium" style={{ minHeight: 44, background: navView === n.id ? "#2a3f56" : "#12304a", color: "#e5edf5" }}><n.icon size={15} /><span className="flex-1 text-left">{n.label}</span><NavBadge count={n.badge} urgent={n.urgentBadge !== false} pulse={n.pulse} /></button>)}</div></div>)}
+                </>)}
+              </div>
+            </div>
+          );
+        })()}
+        <div className={`${navCollapsed ? "hidden" : "hidden lg:flex"} flex-col flex-1 min-h-0`}>
         <div className="pm-safe-top p-4 border-b shrink-0" style={{ borderColor: "#2a3f56" }}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">

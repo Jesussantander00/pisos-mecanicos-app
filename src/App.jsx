@@ -4514,6 +4514,7 @@ export default function App() {
   const [navCollapsed, setNavCollapsedRaw] = useState(() => { try { return localStorage.getItem("pm-local:nav-collapsed") !== "0"; } catch { return true; } });
   const setNavCollapsed = (v) => { setNavCollapsedRaw(v); try { localStorage.setItem("pm-local:nav-collapsed", v ? "1" : "0"); } catch { /* noop */ } };
   const [quickOpen, setQuickOpen] = useState(false);
+  const [flyout, setFlyout] = useState(null); // panel que se abre a la derecha de la barra de iconos
   const focusSearch = () => { const el = document.querySelector('header input[placeholder*="Buscar"], input[placeholder*="Buscar cualquier"]'); if (el) { el.focus(); el.select && el.select(); } else { setSidebarOpen(true); } };
   useEffect(() => {
     const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "k") { e.preventDefault(); focusSearch(); } };
@@ -6988,7 +6989,7 @@ export default function App() {
           return (
             <div className="hidden lg:flex flex-col flex-1 min-h-0 pt-3" style={{ position: "relative" }}>
               <div className="px-2 pb-2">
-                <button onClick={() => setQuickOpen(o => !o)} aria-label="Acciones rápidas" aria-expanded={quickOpen} className="w-full rounded-xl text-xl font-extrabold" style={{ height: 44, background: C.amber, color: "#0b2238" }}>+</button>
+                <button onClick={() => { setFlyout(null); setQuickOpen(o => !o); }} aria-label="Acciones rápidas" aria-expanded={quickOpen} className="w-full rounded-xl text-xl font-extrabold" style={{ height: 44, background: C.amber, color: "#0b2238" }}>+</button>
               </div>
               {quickOpen && (
                 <div className="absolute z-30 rounded-xl p-2" style={{ left: 90, top: 12, width: 240, background: C.panel, border: `1px solid ${C.line}`, boxShadow: "0 12px 30px rgba(0,0,0,.25)" }}>
@@ -7002,7 +7003,7 @@ export default function App() {
                   const on = navView === id || (id === "executive" && navView === "executive");
                   const b = badgeOf[id]?.badge;
                   return (
-                    <button key={id} onClick={() => setView(id)} title={label} aria-label={label} aria-current={on ? "page" : undefined}
+                    <button key={id} onClick={() => { setQuickOpen(false); setView(id); const hasFly = hub || id === "ronda" || id === "issues" || (id === "tasks" && !isAdmin); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
                       className="relative w-full flex flex-col items-center justify-center rounded-xl mb-1 transition hover:bg-white/5"
                       style={{ height: 58, background: on ? "#2a3f56" : "transparent", color: on ? "#fff" : "#c3d0dd" }}>
                       <Icon size={19} />
@@ -7017,8 +7018,41 @@ export default function App() {
                 {isAdmin && <button onClick={() => { const b = document.querySelector('button[aria-label="Notificaciones"]'); if (b) b.click(); }} title="Avisos" aria-label="Avisos" className="relative w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><Bell size={17} /><span className="text-[10px] mt-0.5">Avisos</span>{avisosCount > 0 && <span className="absolute font-bold rounded-full text-white" style={{ top: 3, right: 10, minWidth: 16, height: 16, fontSize: 10, lineHeight: "16px", textAlign: "center", padding: "0 4px", background: C.red }}>{avisosCount}</span>}</button>}
                 <button onClick={toggleTheme} title={darkMode ? "Modo claro" : "Modo oscuro"} aria-label="Cambiar tema" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}<span className="text-[10px] mt-0.5">{darkMode ? "Claro" : "Oscuro"}</span></button>
                 <button onClick={() => setView("profile")} title="Mi perfil" aria-label="Mi perfil" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><User size={17} /><span className="text-[10px] mt-0.5">Perfil</span></button>
-                <button onClick={() => setNavCollapsed(false)} title="Mostrar todo el menú" aria-label="Expandir menú" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><ChevronRight size={17} /><span className="text-[10px] mt-0.5">Todo</span></button>
+                <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "all" ? null : "all"); }} title="Todo lo que puedes ver" aria-label="Expandir menú" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><ChevronRight size={17} /><span className="text-[10px] mt-0.5">Todo</span></button>
               </div>
+              {flyout && (() => {
+                const hubF = HUBS.find(h => h.id === flyout);
+                const rowCls = "w-full flex items-center gap-2 text-left rounded-lg px-3 mb-1 text-sm font-semibold";
+                const close = () => setFlyout(null);
+                let title = "", sub = "", body = null;
+                if (flyout === "ronda") {
+                  title = "Ronda de revisión"; const dm = FLOORS.filter(f => f.items.some(it => activeIssues[it.id])).length; sub = `${FLOORS.length} pisos · ${dm} con daños`;
+                  body = FLOORS.map(f => { const dmg = f.items.some(it => activeIssues[it.id]); return <button key={f.id} onClick={() => { setFloorId(f.id); setView("ronda"); close(); }} className={rowCls} style={{ minHeight: 44, background: floorId === f.id && view === "ronda" ? C.steelDark : C.bg, color: floorId === f.id && view === "ronda" ? "#fff" : C.ink }}><span style={{ width: 9, height: 9, borderRadius: 5, background: dmg ? C.red : C.green, flexShrink: 0 }} /><span className="flex-1">{f.name}</span>{dmg && <span className="text-[11px] font-medium">con daño</span>}</button>; });
+                } else if (flyout === "issues") {
+                  const list = Object.values(activeIssues || {}); title = "Fuera de servicio"; sub = `${list.length} equipos`;
+                  body = list.slice(0, 30).map(i => <button key={i.equipmentId} onClick={() => { setView("issues"); close(); }} className={rowCls} style={{ minHeight: 44, background: C.bg, color: C.ink }}><span style={{ width: 9, height: 9, borderRadius: 5, background: C.red, flexShrink: 0 }} /><span className="flex-1"><span className="block">{i.name || i.code}</span><span className="block text-[11px] font-normal" style={{ color: C.inkSoft }}>{i.floorName}</span></span></button>);
+                } else if (flyout === "tasks" && !isAdmin) {
+                  const mine = (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada"); title = "Mis tareas"; sub = `${mine.length} abiertas`;
+                  body = mine.slice(0, 25).map(t => <button key={t.id} onClick={() => { setView("tasks"); close(); }} className={rowCls} style={{ minHeight: 44, background: C.bg, color: C.ink }}><span style={{ width: 9, height: 9, borderRadius: 5, background: t.prioridad === "alta" ? C.red : t.prioridad === "baja" ? C.gray : C.amber, flexShrink: 0 }} /><span className="flex-1 truncate">{t.titulo}</span></button>);
+                  if (!mine.length) body = <div className="text-sm px-1" style={{ color: C.inkSoft }}>No tienes tareas abiertas.</div>;
+                } else if (flyout === "all") {
+                  title = "Todo"; sub = "Todo lo que puedes ver";
+                  body = (<>{NAV_GROUPS.map(g => <div key={g.id} className="mb-2"><div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>{g.label}</div>{g.items.map(n => <button key={n.id} onClick={() => { setView(n.id); close(); }} className={rowCls} style={{ minHeight: 42, background: navView === n.id ? C.steelDark : C.bg, color: navView === n.id ? "#fff" : C.ink }}><n.icon size={15} /><span className="flex-1">{n.label}</span><NavBadge count={n.badge} urgent={n.urgentBadge !== false} pulse={n.pulse} /></button>)}</div>)}<button onClick={() => { setNavCollapsed(false); close(); }} className="text-xs font-semibold rounded-lg border px-3 mt-1" style={{ minHeight: 38, borderColor: C.line, color: C.inkSoft }}>Dejar el menú siempre abierto</button></>);
+                } else if (hubF) {
+                  title = hubF.label; sub = "Elige una pantalla";
+                  body = hubF.members.map(([id, label]) => <button key={id} onClick={() => { setView(id); close(); }} className={rowCls} style={{ minHeight: 44, background: navView === hubF.id && view === id ? C.steelDark : C.bg, color: navView === hubF.id && view === id ? "#fff" : C.ink }}><span className="flex-1">{label}</span><NavBadge count={badgeOf[id]?.badge} urgent={badgeOf[id]?.urgentBadge !== false} /></button>);
+                }
+                if (!body) return null;
+                return (
+                  <>
+                    <div className="fixed inset-0 hidden lg:block" style={{ left: 84, zIndex: 24 }} onClick={close} aria-hidden="true" />
+                    <div role="dialog" aria-label={title} className="fixed hidden lg:flex flex-col" style={{ left: 90, top: 8, bottom: 8, width: 270, zIndex: 30, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, boxShadow: "0 12px 30px rgba(0,0,0,.28)" }}>
+                      <div className="px-4 pt-3 pb-2 shrink-0 flex items-start"><div className="flex-1"><div className="text-base font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{title}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>{sub}</div></div><button onClick={close} aria-label="Cerrar panel" className="text-lg px-2" style={{ color: C.inkSoft }}>×</button></div>
+                      <div className="floor-scroll flex-1 min-h-0 overflow-y-auto px-3 pb-3">{body}</div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           );
         })()}

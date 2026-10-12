@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { sGet } from "../lib/storage";
 import { PLANOS } from "../data/planos";
 import { Layers, X } from "lucide-react";
 import { C, PLAN_GROUPS, categoryOfTask, normalizeTaskState, planColorOf, planGroupOf, roomOfTask } from "../shared/core";
@@ -12,6 +13,8 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
   const [zoom, setZoom] = useState(() => (typeof window !== "undefined" && window.innerWidth < 640 ? 2 : 1));
   const [sel, setSel] = useState(null);
   const [find, setFind] = useState("");
+  const [blockedRooms, setBlockedRooms] = useState({});
+  useEffect(() => { sGet("blocked-rooms", true).then(v => { const m = {}; (Array.isArray(v) ? v : []).filter(b => !b.releasedAt).forEach(b => { m[b.room] = b; }); setBlockedRooms(m); }).catch(() => {}); }, []);
   const nameOf = (u) => (u ? (accounts?.[u]?.display_name || u) : "Sin asignar");
   const fmtD = (iso) => { try { return new Date(iso).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" }); } catch { return "—"; } };
   const ago = (iso) => {
@@ -129,14 +132,15 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
             const st = statsOf(r.number);
             const n = st.shown.length;
             const on = r.number === selRoom;
-            const hue = st.open > 0 ? "239,68,68" : n === 0 ? "100,116,139" : n <= 2 ? "245,158,11" : "249,115,22";
-            const a = on ? 0.45 : n === 0 ? 0.08 : st.open > 0 ? 0.32 : n <= 2 ? 0.26 : 0.38;
+            const blk = blockedRooms[r.number];
+            const hue = blk ? "124,58,237" : st.open > 0 ? "239,68,68" : n === 0 ? "100,116,139" : n <= 2 ? "245,158,11" : "249,115,22";
+            const a = on ? 0.45 : blk ? 0.5 : n === 0 ? 0.08 : st.open > 0 ? 0.32 : n <= 2 ? 0.26 : 0.38;
             return (
               <button key={r.number} onClick={() => setSel(r.number)} aria-label={`Habitación ${r.number}, ${n} registros`}
                 style={{ position: "absolute", left: `${r.rect[0] * 100}%`, top: `${r.rect[1] * 100}%`, width: `${r.rect[2] * 100}%`, height: `${r.rect[3] * 100}%`,
                   background: `rgba(${hue},${a})`, border: on ? "3px solid #0ea5e9" : `1.5px solid rgba(${hue},.7)`, borderRadius: 4, padding: 0, cursor: "pointer" }}>
                 <span style={{ position: "absolute", top: 3, left: 3, background: "rgba(8,20,32,.82)", color: "#fff", fontSize: Math.max(9, 9 + zoom * 1.5), fontWeight: 700, lineHeight: 1, padding: "3px 5px", borderRadius: 5 }}>
-                  {r.number}{n > 0 ? ` · ${n}` : ""}
+                  {r.number}{blk ? " · bloqueada" : n > 0 ? ` · ${n}` : ""}
                 </span>
               </button>
             );
@@ -148,6 +152,7 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
         <span><b style={{ color: "#f59e0b" }}>■</b> 1–2</span>
         <span><b style={{ color: "#f97316" }}>■</b> 3 o más</span>
         <span><b style={{ color: "#ef4444" }}>■</b> con pendientes abiertos</span>
+        <span><b style={{ color: "#7c3aed" }}>■</b> bloqueada</span>
         <span className="ml-auto">{totalFloorEvents} registro{totalFloorEvents === 1 ? "" : "s"} en piso {floor}{(() => { const cut = Date.now() - 60 * 86400000; const n = roomsOfPlan.filter(r => PLAN_GROUPS.some(g => (eventsByRoom[r.number] || []).filter(e => e.group === g.id && new Date(e.at || 0).getTime() >= cut).length >= 2)).length; return n ? ` · ${n} con reincidencia` : ""; })()}</span>
       </div>
 
@@ -167,6 +172,7 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
                 <button onClick={() => setSel(null)} aria-label="Cerrar" className="rounded-full p-2" style={{ background: C.bg }}><X size={18} /></button>
               </div>
 
+              {blockedRooms[selRoom] && <div className="rounded-xl px-3 py-2 mb-3 text-xs" style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", color: "#5b21b6" }}><b>Bloqueada:</b> {blockedRooms[selRoom].reason}{blockedRooms[selRoom].eta ? ` · se libera ${fmtD(blockedRooms[selRoom].eta + "T12:00:00")}` : ""}</div>}
               {(() => {
                 const cut = Date.now() - 60 * 86400000;
                 const rep = PLAN_GROUPS.map(g => ({ g, n: st.all.filter(e => e.group === g.id && new Date(e.at || 0).getTime() >= cut).length })).filter(x => x.n >= 2);

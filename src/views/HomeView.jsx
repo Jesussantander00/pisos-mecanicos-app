@@ -94,6 +94,8 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin, group: "Operación en Campo" },
     { id: "floorplans", label: "Planos por piso", icon: Layers, desc: "Plano de cada piso: toca una habitación y ve su historial de pintura, aire y más", access: isAdmin, group: "Operación en Campo" },
+    { id: "blocked-rooms", label: "Habitaciones bloqueadas", icon: Layers, desc: "Qué habitaciones no se pueden vender y cuándo se liberan", access: isAdmin, group: "Operación en Campo" },
+    { id: "share-summary", label: "Resumen para compartir", icon: Send, desc: "Mensaje del día listo para WhatsApp", access: isAdmin, group: "Reportes y Análisis" },
   ].map(m => gerenciaLocked ? { ...m, access: GERENCIA_ALLOWED_VIEWS.includes(m.id) } : m),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [isAdmin, isAlmacenista, isGerencia, gerenciaLocked, counts]);

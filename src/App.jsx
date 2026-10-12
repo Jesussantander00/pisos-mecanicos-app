@@ -35,6 +35,7 @@ import { CronogramaAnualView } from "./views/CronogramaAnualView";
 import { SchedulesView } from "./views/SchedulesView";
 import { TasksView } from "./views/TasksView";
 import { PlanosView } from "./views/PlanosView";
+import { BlockedRoomsView } from "./views/BlockedRoomsView";
 import { RoomHistoryView } from "./views/RoomHistoryView";
 import { TodayBoardView } from "./views/TodayBoardView";
 import { AdminView } from "./views/AdminView";
@@ -2201,6 +2202,58 @@ function TanksView({ latestValues, tankHistory, onSaveTankReading, currentUser }
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ===== Resumen para compartir (WhatsApp / copiar) — se arma con las tareas reales ===== */
+function ShareSummaryView({ tasks, accounts, lowStockItems }) {
+  const [blocked, setBlocked] = useState([]);
+  const [text, setText] = useState("");
+  const [msg, setMsg] = useState("");
+  const [inc, setInc] = useState({ cerradas: true, urgentes: true, vencidas: true, bloqueadas: true, repuestos: true });
+  useEffect(() => { sGet("blocked-rooms", true).then(v => setBlocked(Array.isArray(v) ? v.filter(b => !b.releasedAt) : [])).catch(() => {}); }, []);
+  const built = useMemo(() => {
+    const all = tasks || [];
+    const open = all.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt);
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    const closedToday = all.filter(t => t.finishedAt && new Date(t.finishedAt).getTime() >= d0.getTime()).length;
+    const urgent = open.filter(t => t.prioridad === "alta");
+    const stale = open.filter(t => Date.now() - new Date(t.createdAt || t.assignedAt || Date.now()).getTime() > 86400000);
+    const fecha = new Date().toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short" });
+    const L = [`*Resumen QuinTech · ${fecha}*`];
+    if (inc.cerradas) L.push(`✅ ${closedToday} tarea${closedToday === 1 ? "" : "s"} cerrada${closedToday === 1 ? "" : "s"} hoy`);
+    if (inc.urgentes) L.push(urgent.length ? `⚠️ ${urgent.length} urgente${urgent.length === 1 ? "" : "s"} abierta${urgent.length === 1 ? "" : "s"}` : "⚠️ Sin urgentes abiertas");
+    if (inc.vencidas) L.push(`⏰ ${stale.length} abierta${stale.length === 1 ? "" : "s"} hace más de 24 h`);
+    if (inc.bloqueadas) L.push(blocked.length ? `🏨 Habitaciones bloqueadas: ${blocked.map(b => b.room).join(", ")}` : "🏨 Sin habitaciones bloqueadas");
+    if (inc.repuestos) { const low = (lowStockItems || []).slice(0, 3).map(i => i.name || i.nombre).filter(Boolean); L.push(low.length ? `📦 Repuestos bajos: ${low.join(", ")}` : "📦 Repuestos al día"); }
+    return L.join("\n");
+  }, [tasks, blocked, lowStockItems, inc]);
+  useEffect(() => { setText(built); }, [built]);
+  const copy = async () => { try { await navigator.clipboard.writeText(text); setMsg("Copiado."); } catch { setMsg("No se pudo copiar. Mantén presionado el texto para copiarlo."); } };
+  const wa = () => { window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener"); };
+  const opts = [["cerradas", "Tareas cerradas hoy"], ["urgentes", "Urgentes abiertas"], ["vencidas", "Abiertas más de 24 h"], ["bloqueadas", "Habitaciones bloqueadas"], ["repuestos", "Repuestos bajos"]];
+  return (
+    <div>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Resumen para compartir</h2>
+        <p className="text-sm" style={{ color: C.inkSoft }}>Un mensaje corto con lo del día, listo para enviar por WhatsApp. Puedes editarlo antes de enviarlo.</p>
+      </div>
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Qué incluir</div>
+        {opts.map(([k, l]) => (
+          <label key={k} className="flex items-center gap-2 py-1.5 text-sm" style={{ color: C.ink, minHeight: 40 }}>
+            <input type="checkbox" checked={inc[k]} onChange={e => setInc(s => ({ ...s, [k]: e.target.checked }))} style={{ width: 20, height: 20 }} />{l}
+          </label>
+        ))}
+      </div>
+      <textarea value={text} onChange={e => setText(e.target.value)} rows={8} aria-label="Mensaje" className="w-full text-sm border rounded-xl p-3 outline-none" style={{ borderColor: C.line, background: "#dcf8c6", color: "#0f2236" }} />
+      <p className="text-[11px] mt-1" style={{ color: C.inkSoft }}>No incluye nombres de huéspedes ni datos privados.</p>
+      <div className="flex gap-2 mt-3">
+        <button onClick={copy} className="flex-1 text-sm font-semibold rounded-xl" style={{ minHeight: 48, background: C.panel, border: `1px solid ${C.line}`, color: C.ink }}>Copiar</button>
+        <button onClick={wa} className="flex-[2] text-sm font-semibold rounded-xl" style={{ minHeight: 48, background: C.steelDark, color: "#fff" }}>Compartir por WhatsApp</button>
+      </div>
+      {msg && <div className="text-xs mt-2" style={{ color: C.inkSoft }} role="status">{msg}</div>}
     </div>
   );
 }
@@ -6331,6 +6384,8 @@ export default function App() {
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
         ...(isAdmin ? [{ id: "hvac", label: "TelkHab", icon: Thermometer }] : []),
         ...(isAdmin ? [{ id: "floorplans", label: "Planos por piso", icon: Layers }] : []),
+        ...(isAdmin ? [{ id: "blocked-rooms", label: "Habitaciones bloqueadas", icon: Layers }] : []),
+        ...(isAdmin ? [{ id: "share-summary", label: "Resumen para compartir", icon: Send }] : []),
       ],
     },
     {
@@ -6928,6 +6983,8 @@ export default function App() {
           {view === "floorplans" && isAdmin && (
             <PlanosView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} onNavigate={setView} />
           )}
+          {view === "blocked-rooms" && isAdmin && <BlockedRoomsView accounts={profiles} currentUser={currentUser} onNavigate={setView} />}
+          {view === "share-summary" && isAdmin && <ShareSummaryView tasks={tasks} accounts={profiles} lowStockItems={lowStockItems} />}
           {view === "room-history" && isAdmin && (
             <RoomHistoryView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} />
           )}

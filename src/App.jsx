@@ -15,35 +15,37 @@ import { ShelfDetailView } from "./views/ShelfDetailView";
 import { EquipoDetailView } from "./views/EquipoDetailView";
 import { SistemasListView } from "./views/SistemasListView";
 import { DriveArchivePanel } from "./views/DriveArchivePanel";
-import { DiagramsView } from "./views/DiagramsView";
 import { DEFAULT_SYSTEM_DIAGRAMS_SEED, DEFAULT_SYSTEM_PROCEDURES_SEED, FLOORS } from "./shared/seeds";
 import { GlobalSearch } from "./views/GlobalSearch";
 import { HomeView } from "./views/HomeView";
 import { RoundView } from "./views/RoundView";
 import { ProfileView } from "./views/ProfileView";
 import { HandoffView } from "./views/HandoffView";
-import { ReportsView } from "./views/ReportsView";
 import { FuelTanksView } from "./views/FuelTanksView";
-import { ContractorVisitsView } from "./views/ContractorVisitsView";
 import { HabitacionesView } from "./views/HabitacionesView";
 import { HotsosOrdersView } from "./views/HotsosOrdersView";
-import { HotsosImportView } from "./views/HotsosImportView";
-import { HVACView } from "./views/HVACView";
-import { EquipmentAnalyticsView } from "./views/EquipmentAnalyticsView";
-import { MaintenanceAnalyticsView } from "./views/MaintenanceAnalyticsView";
-import { ExecutivePanelView } from "./views/ExecutivePanelView";
-import { MaintenanceLogAuditView } from "./views/MaintenanceLogAuditView";
-import { CronogramaAnualView } from "./views/CronogramaAnualView";
-import { SchedulesView } from "./views/SchedulesView";
 import { TasksView } from "./views/TasksView";
-import { PlanosView } from "./views/PlanosView";
-import { BlockedRoomsView } from "./views/BlockedRoomsView";
-import { BudgetView } from "./views/BudgetView";
-import { AnalysisBoardsView } from "./views/AnalysisBoardsView";
-import { RoomHistoryView } from "./views/RoomHistoryView";
-import { TodayBoardView } from "./views/TodayBoardView";
-import { AdminView } from "./views/AdminView";
 import { __pmState } from "./shared/core";
+// __pmLazy: pantallas pesadas, se descargan al abrirlas
+const ExecutivePanelView = React.lazy(() => import("./views/ExecutivePanelView").then(m => ({ default: m.ExecutivePanelView })));
+const AnalysisBoardsView = React.lazy(() => import("./views/AnalysisBoardsView").then(m => ({ default: m.AnalysisBoardsView })));
+const BudgetView = React.lazy(() => import("./views/BudgetView").then(m => ({ default: m.BudgetView })));
+const CronogramaAnualView = React.lazy(() => import("./views/CronogramaAnualView").then(m => ({ default: m.CronogramaAnualView })));
+const SchedulesView = React.lazy(() => import("./views/SchedulesView").then(m => ({ default: m.SchedulesView })));
+const HVACView = React.lazy(() => import("./views/HVACView").then(m => ({ default: m.HVACView })));
+const MaintenanceAnalyticsView = React.lazy(() => import("./views/MaintenanceAnalyticsView").then(m => ({ default: m.MaintenanceAnalyticsView })));
+const EquipmentAnalyticsView = React.lazy(() => import("./views/EquipmentAnalyticsView").then(m => ({ default: m.EquipmentAnalyticsView })));
+const MaintenanceLogAuditView = React.lazy(() => import("./views/MaintenanceLogAuditView").then(m => ({ default: m.MaintenanceLogAuditView })));
+const PlanosView = React.lazy(() => import("./views/PlanosView").then(m => ({ default: m.PlanosView })));
+const ReportsView = React.lazy(() => import("./views/ReportsView").then(m => ({ default: m.ReportsView })));
+const DiagramsView = React.lazy(() => import("./views/DiagramsView").then(m => ({ default: m.DiagramsView })));
+const AdminView = React.lazy(() => import("./views/AdminView").then(m => ({ default: m.AdminView })));
+const RoomHistoryView = React.lazy(() => import("./views/RoomHistoryView").then(m => ({ default: m.RoomHistoryView })));
+const BlockedRoomsView = React.lazy(() => import("./views/BlockedRoomsView").then(m => ({ default: m.BlockedRoomsView })));
+const HotsosImportView = React.lazy(() => import("./views/HotsosImportView").then(m => ({ default: m.HotsosImportView })));
+const ContractorVisitsView = React.lazy(() => import("./views/ContractorVisitsView").then(m => ({ default: m.ContractorVisitsView })));
+const TodayBoardView = React.lazy(() => import("./views/TodayBoardView").then(m => ({ default: m.TodayBoardView })));
+
 
 
 function ToastHost() {
@@ -7478,6 +7480,7 @@ export default function App() {
           ))}
         </nav>
         <main className="flex-1 p-4 pb-24 sm:pb-8 max-w-5xl w-full mx-auto overflow-x-hidden">
+          <React.Suspense fallback={<div className="p-6 text-sm" style={{ color: "#51606e" }} role="status">Cargando…</div>}>
           <div key={view} className="pm-view-in">
           {isAdmin && <HubTabs view={view} onNavigate={setView} />}
           {viewerLocked && (
@@ -7700,6 +7703,7 @@ export default function App() {
             <RoundCompletionView roundsIndex={roundsIndex} tourHistory={tourHistory} />
           )}
           </div>
+          </React.Suspense>
         </main>
       </div>
     </div>

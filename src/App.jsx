@@ -6923,7 +6923,7 @@ export default function App() {
   }
 
   // ── Menú del dueño: categorías que se despliegan (Operario = lo que ve un técnico) ──
-  const OWN_OPERARIO = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"], ["hotsos-orders", "Órdenes HotSOS"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["tasks", "Mi trabajo"], ["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
+  const OWN_OPERARIO = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
   const OWN_TITLES = { operario: "Operario", operacion: "Operación", historial: "Historial y reportes", analisis: "Análisis", personal: "Personal", administracion: "Administración" };
   const ownBadgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { ownBadgeOf[n.id] = n; }));
   const ownMine = (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length;
@@ -7023,7 +7023,7 @@ export default function App() {
           const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
           const RAIL = railAdmin
             ? [["home", "Inicio", Home], ["g:operario", "Operario", Users], ["g:operacion", "Operación", Wrench], ["g:historial", "Historial", History], ["g:analisis", "Análisis", TrendingUp], ["g:personal", "Personal", User], ["g:administracion", "Admin", ShieldCheck]]
-            : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
+            : [["home", "Inicio", Home], ["issues", "Fuera", Wrench], ["ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
           const railItems = RAIL.filter(([id]) => id === "home" || (id.startsWith("g:") ? ownGroupExists(id.slice(2)) : (badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)))));
           const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
           const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => (!q[2] || isAdmin) && (!allowedViews || q[0] === "scan" || allowedViews.includes(q[0])));
@@ -7096,7 +7096,7 @@ export default function App() {
                   if (!mine.length) body = <div className="text-sm px-1" style={{ color: C.inkSoft }}>No tienes tareas abiertas.</div>;
                 } else if (flyout === "operario") {
                   title = "Vista del operario"; sub = "Lo mismo que ve un técnico";
-                  const SEC = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"], ["hotsos-orders", "Órdenes HotSOS"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["tasks", "Mi trabajo"], ["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
+                  const SEC = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
                   const cnt = { tasks: (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length, issues: Object.keys(activeIssues || {}).length };
                   body = SEC.map(([sec, items]) => <div key={sec} className="mb-2"><div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>{sec}</div>{items.map(([id, label]) => { const b = id in cnt ? cnt[id] : badgeOf[id]?.badge; return <button key={id} onClick={() => { setView(id); setFlyout(id === "ronda" ? "ronda" : null); }} className={rowCls} style={{ minHeight: 42, background: view === id ? C.steelDark : C.bg, color: view === id ? "#fff" : C.ink }}><span className="flex-1">{label}</span><NavBadge count={b} urgent={id === "issues"} /></button>; })}</div>);
                 } else if (flyout === "all") {
@@ -7124,7 +7124,7 @@ export default function App() {
           const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
           const TILES = railAdmin
             ? [["home", "Inicio", Home], ["__op", "Operario", Users], ["hvac", "TelkHab", Thermometer], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["g:analisis", "Análisis", TrendingUp], ["g:operacion", "Operación", Wrench], ["g:historial", "Historial", History], ["g:personal", "Personal", User], ["g:administracion", "Admin", ShieldCheck]]
-            : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
+            : [["home", "Inicio", Home], ["issues", "Fuera", Wrench], ["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
           const tiles = TILES.filter(([id]) => id === "home" || id.startsWith("__") || (id.startsWith("g:") ? ownGroupExists(id.slice(2)) : (badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)))));
           const ownKey = (id) => id === "__op" ? "operario" : id.startsWith("g:") ? id.slice(2) : null;
           const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
@@ -7137,7 +7137,7 @@ export default function App() {
             </button>
           );
           const Lbl = ({ children }) => <div className="text-[11px] font-semibold uppercase px-1 pt-3 pb-1.5" style={{ color: "#7d92a8", letterSpacing: "0.08em" }}>{children}</div>;
-          const OPSEC = [["Mi turno", [["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["issues", "Fuera", Wrench], ["tasks", "Mi trabajo", ClipboardCheck], ["hotsos-orders", "HotSOS", ClipboardList]]], ["Consultar", [["fichas-tecnicas", "Fichas", ClipboardList], ["procedures", "Procedim.", ClipboardList], ["tanks", "Tanques", Gauge], ["fuel", "Combust.", Zap], ["wiki", "Wiki", Search], ["my-schedule", "Mi horario", Users]]]];
+          const OPSEC = [["Mi turno", [["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["issues", "Fuera", Wrench]]], ["Consultar", [["fichas-tecnicas", "Fichas", ClipboardList], ["procedures", "Procedim.", ClipboardList], ["tanks", "Tanques", Gauge], ["fuel", "Combust.", Zap], ["wiki", "Wiki", Search], ["my-schedule", "Mi horario", Users]]]];
           const tapTile = (id) => { if (railAdmin && ownKey(id)) setMobOpen(m => m === ownKey(id) ? null : ownKey(id)); else if (id === "__op") setMobPanel("operario"); else if (id === "__ronda") setMobPanel("ronda"); else go(id); };
           return (
             <div className="lg:hidden flex flex-col flex-1 min-h-0">
@@ -7465,10 +7465,10 @@ export default function App() {
         <nav className="pm-safe-bottom sm:hidden fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t" style={{ background: C.panel, borderColor: C.line, boxShadow: "0 -6px 24px rgba(15,34,54,.10)" }}>
           {[
             { id: "home", label: "Inicio", icon: Home, onClick: () => setView("home") },
-            { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, onClick: () => setView("tasks") },
+            { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, onClick: () => setView("tasks"), adminOnly: true },
             { id: "qr", label: "Escanear", icon: QrCode, onClick: () => setShowQrScanner(true) },
             { id: "profile", label: "Menú", icon: MenuIcon, onClick: () => setSidebarOpen(true) },
-          ].map(item => (
+          ].filter(item => !item.adminOnly || isAdmin).map(item => (
             <button key={item.id} onClick={item.onClick} className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-transform active:scale-95"
               style={{ color: (item.id === "home" ? view === "home" : item.id === "tasks" && view === "tasks") ? C.amber : C.inkSoft, minHeight: 52 }}>
               {(item.id === "home" ? view === "home" : item.id === "tasks" && view === "tasks") && <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "30%", right: "30%", height: 3, borderRadius: "0 0 3px 3px", background: C.amber, boxShadow: `0 0 10px ${C.amber}` }} />}

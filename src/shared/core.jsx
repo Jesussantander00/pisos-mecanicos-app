@@ -200,7 +200,7 @@ export const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analyti
 // los recorridos. Más adelante, aquí se conectan los accesos por usuario que dé el dueño.
 export const OWNER_EMAIL = "jesusdanielquintanasantander@gmail.com";
 // Exactamente lo que muestra la "Vista del operario": Mi turno, Consultar y Mi cuenta.
-export const LIMITED_VIEWS = ["home", "ronda", "coldrooms", "meters", "handoff", "issues", "fichas-tecnicas", "procedures", "tanks", "fuel", "wiki", "tasks", "hotsos-orders", "my-schedule", "profile"];
+export const LIMITED_VIEWS = ["home", "ronda", "coldrooms", "meters", "handoff", "issues", "fichas-tecnicas", "procedures", "tanks", "fuel", "wiki", "my-schedule", "profile"];
 
 // Aplanar con id único por equipo (piso+código) — resuelve códigos duplicados (ej. "24")
 FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorId = f.id; it.floorName = f.name; }));

@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -6528,6 +6528,11 @@ export default function App() {
   // (tareas, rondas, cuartos fríos, medidores, caldera, inventario) no aparecen los botones para
   // crear, editar o cerrar nada, solo para consultar.
   const viewerLocked = isViewer && !isAdmin && !isAlmacenista && !isGerencia;
+  const profileLoaded = !!profiles[currentUser];
+  const isOwner = String(account.email || "").toLowerCase() === OWNER_EMAIL;
+  const limitedUI = profileLoaded && !isOwner; // todos menos el dueño: solo recorridos
+  const allowedViews = limitedUI ? [...LIMITED_VIEWS, ...(isGerencia ? GERENCIA_ALLOWED_VIEWS : [])] : null;
+  const railAdmin = isAdmin && !limitedUI;
   // Si esta cuenta está vinculada a un empleado del Horario Mensual (ver Mi Perfil), se usa su
   // cargo para que la firma en los PDF diga "Nombre — Cargo", no solo el nombre suelto.
   const mySignerCargo = employees.find(e => e.id === account.linked_employee_id)?.cargo || null;
@@ -6715,6 +6720,11 @@ export default function App() {
   }, [isAdmin, currentUser, tasks, pushSubscriptions]);
 
   useEffect(() => {
+    if (allowedViews && !allowedViews.includes(view)) setView("home");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limitedUI, view]);
+
+  useEffect(() => {
     if (gerenciaLocked && !GERENCIA_ALLOWED_VIEWS.includes(view)) setView("home");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gerenciaLocked, view]);
@@ -6890,7 +6900,7 @@ export default function App() {
         { id: "general-history", label: "Historial de cambios", icon: History },
       ],
     }] : []),
-  ].map(g => ({ ...g, items: g.items.filter(n => (!gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id)) && !(isAdmin && HUB_HIDDEN.has(n.id))) })).filter(g => g.items.length > 0);
+  ].map(g => ({ ...g, items: g.items.filter(n => (!gerenciaLocked || GERENCIA_ALLOWED_VIEWS.includes(n.id)) && (!allowedViews || allowedViews.includes(n.id)) && !(isAdmin && HUB_HIDDEN.has(n.id))) })).filter(g => g.items.length > 0);
 
   // Un grupo se abre solo si contiene la pantalla en la que estás — así nunca hay que buscar
   // "¿en qué categoría quedó esto?" a ciegas. Además recuerda qué grupos dejaste abiertos a mano.
@@ -6981,12 +6991,12 @@ export default function App() {
         `}</style>
         {navCollapsed && (() => {
           const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
-          const RAIL = isAdmin
+          const RAIL = railAdmin
             ? [["home", "Inicio", Home], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
             : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
-          const railItems = RAIL.filter(([id]) => id === "home" || badgeOf[id] || (isAdmin && HUBS.some(h => h.id === id)));
+          const railItems = RAIL.filter(([id]) => id === "home" || badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)));
           const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
-          const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => !q[2] || isAdmin);
+          const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => (!q[2] || isAdmin) && (!allowedViews || q[0] === "scan" || allowedViews.includes(q[0])));
           return (
             <div className="hidden lg:flex flex-col flex-1 min-h-0 pt-3" style={{ position: "relative" }}>
               {quickOpen && (
@@ -7009,11 +7019,15 @@ export default function App() {
                       <span className="text-[10px] font-medium mt-0.5">{label}</span>
                       {b ? <span className="absolute font-bold rounded-full text-white" style={{ top: 3, right: 6, minWidth: 16, height: 16, fontSize: 10, lineHeight: "16px", textAlign: "center", padding: "0 4px", background: id === "issues" ? C.red : C.amber }}>{typeof b === "string" ? b : b > 99 ? "99+" : b}</span> : null}
                     </button>
-{isAdmin && id === "home" && (
+{railAdmin && id === "home" && (
                 <div className="mb-1">
                   <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "operario" ? null : "operario"); }} aria-label="Vista del operario" aria-expanded={flyout === "operario"} title="Todo lo que ve el operario"
                     className="w-full flex flex-col items-center justify-center rounded-xl" style={{ height: 58, background: flyout === "operario" ? C.amber : "#12304a", color: flyout === "operario" ? "#0b2238" : "#fff", border: `1px solid ${flyout === "operario" ? C.amber : "#2b4a68"}` }}>
                     <Users size={19} /><span className="text-[10px] font-bold mt-0.5">Operario</span>
+                  </button>
+                  <button onClick={() => { setQuickOpen(false); setFlyout(null); setView("hvac"); }} aria-label="TelkHab" aria-current={view === "hvac" ? "page" : undefined} title="TelkHab · solo dueño"
+                    className="w-full flex flex-col items-center justify-center rounded-xl mt-1" style={{ height: 58, background: view === "hvac" ? "#1d4f7a" : "#12304a", color: "#fff", border: `1px solid ${view === "hvac" ? "#5aa6e0" : "#2b4a68"}` }}>
+                    <Thermometer size={19} /><span className="text-[10px] font-bold mt-0.5">TelkHab</span>
                   </button>
                 </div>
               )}
@@ -7075,10 +7089,10 @@ export default function App() {
         })()}
         {(() => {
           const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
-          const TILES = isAdmin
-            ? [["home", "Inicio", Home], ["__op", "Operario", Users], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
+          const TILES = railAdmin
+            ? [["home", "Inicio", Home], ["__op", "Operario", Users], ["hvac", "TelkHab", Thermometer], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
             : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
-          const tiles = TILES.filter(([id]) => id === "home" || id.startsWith("__") || badgeOf[id] || (isAdmin && HUBS.some(h => h.id === id)));
+          const tiles = TILES.filter(([id]) => id === "home" || id.startsWith("__") || badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)));
           const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
           const go = (id) => { setView(id); setSidebarOpen(false); setMobPanel(null); };
           const cnt = { tasks: (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length, issues: Object.keys(activeIssues || {}).length };
@@ -7458,7 +7472,7 @@ export default function App() {
               </>
             );
             return (
-            <HomeView topSlot={homeTop} bottomSlot={homeBottom} currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
+            <HomeView topSlot={limitedUI ? null : homeTop} allowedViews={allowedViews} bottomSlot={homeBottom} currentUser={displayName} isAdmin={isAdmin} isAlmacenista={isAlmacenista} isGerencia={isGerencia} onNavigate={setView}
               hasSignature={!!account.signature} onGoToProfile={() => setView("profile")}
               tourProgress={{ done: tourProgressCount, total: FLOORS.length }}
               lowStockDetail={lowStockItems}

@@ -33,7 +33,7 @@ function WhatsNewBanner({ entries, currentUser }) {
   );
 }
 
-export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries, shiftAlerts, topSlot, bottomSlot }) {
+export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNavigate, hasSignature, onGoToProfile, counts, tourProgress, tasksToday, lowStockDetail, activeIssuesList, mttoWeekCount, changelogEntries, shiftAlerts, topSlot, bottomSlot, allowedViews }) {
   const [dismissedSigReminder, setDismissedSigReminder] = useState(false);
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState(() => {
@@ -126,7 +126,7 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
       return next;
     });
   };
-  const modulesShown = useMemo(() => modules.map(m => (isAdmin && HUB_HIDDEN.has(m.id)) ? { ...m, access: false } : m), [modules, isAdmin]);
+  const modulesShown = useMemo(() => modules.map(m => ((isAdmin && HUB_HIDDEN.has(m.id)) || (allowedViews && !allowedViews.includes(m.id))) ? { ...m, access: false } : m), [modules, isAdmin, allowedViews]);
   const favModules = useMemo(() => modulesShown.filter(m => favorites.includes(m.id) && m.access), [modulesShown, favorites]);
   const recentModules = useMemo(() => recent.map(id => modulesShown.find(m => m.id === id)).filter(m => m && m.access && !favorites.includes(m.id)).slice(0, 4), [recent, modulesShown, favorites]);
   const searchNorm = normalizeSearchText(search.trim());

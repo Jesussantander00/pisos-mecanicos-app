@@ -196,6 +196,10 @@ try {
 export const STATUS_OPTS = ["Automático", "Manual", "Apagado"];
 // Vistas a las que SÍ puede entrar una cuenta marcada como "Gerencia" pura (sin admin/almacenista) — todo lo demás queda bloqueado.
 export const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analytics", "analytics"];
+// Dueño de la app: ve TODO. Los demás usuarios (incluidos otros administradores) ven por ahora solo
+// los recorridos. Más adelante, aquí se conectan los accesos por usuario que dé el dueño.
+export const OWNER_EMAIL = "jesusdanielquintanasantander@gmail.com";
+export const LIMITED_VIEWS = ["home", "ronda", "handoff", "issues", "profile", "round-completion"];
 
 // Aplanar con id único por equipo (piso+código) — resuelve códigos duplicados (ej. "24")
 FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorId = f.id; it.floorName = f.name; }));

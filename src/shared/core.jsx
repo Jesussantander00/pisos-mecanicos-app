@@ -199,7 +199,8 @@ export const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analyti
 // Dueño de la app: ve TODO. Los demás usuarios (incluidos otros administradores) ven por ahora solo
 // los recorridos. Más adelante, aquí se conectan los accesos por usuario que dé el dueño.
 export const OWNER_EMAIL = "jesusdanielquintanasantander@gmail.com";
-export const LIMITED_VIEWS = ["home", "ronda", "handoff", "issues", "profile", "round-completion"];
+// Exactamente lo que muestra la "Vista del operario": Mi turno, Consultar y Mi cuenta.
+export const LIMITED_VIEWS = ["home", "ronda", "coldrooms", "meters", "handoff", "issues", "fichas-tecnicas", "procedures", "tanks", "fuel", "wiki", "tasks", "my-schedule", "profile"];
 
 // Aplanar con id único por equipo (piso+código) — resuelve códigos duplicados (ej. "24")
 FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorId = f.id; it.floorName = f.name; }));

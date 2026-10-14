@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, RotateCcw, X } from "lucide-react";
-import { C, ROOM_PREVENTIVE_STEPS, authHeaders, categoryOfTask, hvacStateTone, normalizeSearchText, normalizeTaskState, planColorOf, planGroupOf, roomOfTask } from "../shared/core";
+import { C, ROOM_PREVENTIVE_STEPS, authFetchRetry, authHeaders, categoryOfTask, hvacStateTone, normalizeSearchText, normalizeTaskState, planColorOf, planGroupOf, roomOfTask } from "../shared/core";
 import { Button, HorizontalBarChart, MiniDonut, PcbBackground } from "../shared/components";
 
 
 
 export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCreateTasksBatch, accounts = {}, onNavigate }) {
-  const [rooms, setRooms] = useState([]);
-  const [profileTypes, setProfileTypes] = useState([]);
+  // Última lectura guardada en este celular: se muestra al instante y se actualiza por detrás.
+  const telkCache = useMemo(() => { try { const c = JSON.parse(localStorage.getItem("pm-local:telk-rooms") || "null"); return c && Array.isArray(c.rooms) ? c : null; } catch { return null; } }, []);
+  const [rooms, setRooms] = useState(() => telkCache?.rooms || []);
+  const [profileTypes, setProfileTypes] = useState(() => telkCache?.profileTypes || []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
@@ -118,13 +120,13 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
     setLoading(true);
     setError(null);
     try {
-      const headers = await authHeaders();
-      const resp = await fetch("/api/telkonet?action=rooms", { headers });
+      const resp = await authFetchRetry("/api/telkonet?action=rooms");
       const data = await resp.json();
       if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el estado de las habitaciones.");
       setRooms(data.rooms || []);
       setProfileTypes(data.profileTypes || []);
       setUpdatedAt(Date.now());
+      try { localStorage.setItem("pm-local:telk-rooms", JSON.stringify({ rooms: data.rooms || [], profileTypes: data.profileTypes || [], at: Date.now() })); } catch { /* cuota llena: se sigue sin guardar */ }
     } catch (e) {
       setError(e.message || "No se pudo conectar con Telkonet.");
     } finally {
@@ -138,8 +140,7 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
   const loadMaintenanceReport = async () => {
     setMaintenanceReport(m => ({ ...m, loading: true, error: null }));
     try {
-      const headers = await authHeaders();
-      const resp = await fetch("/api/telkonet?action=maintenanceReport", { headers });
+      const resp = await authFetchRetry("/api/telkonet?action=maintenanceReport");
       const data = await resp.json();
       if (!resp.ok || data.ok === false) throw new Error(data.message || "No se pudo cargar el reporte de mantenimiento.");
       setMaintenanceReport({ rows: data.rows || [], loading: false, error: null, oldestScan: data.oldestScan || null, newestScan: data.newestScan || null });
@@ -248,7 +249,7 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
   const [mapFloor, setMapFloor] = useState("");
   const [shown, setShown] = useState(40);
   const [detail, setDetail] = useState(null); // { room, loading, dataLog, error }
-  const [updatedAt, setUpdatedAt] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(() => telkCache?.at || null);
   const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNowTick(Date.now()), 15000); return () => clearInterval(t); }, []);
   const agoText = (ts) => {

@@ -398,6 +398,17 @@ export async function authHeaders() {
   return { ...aiRequestHeaders(), ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) };
 }
 
+/** Igual que fetch con authHeaders(), pero si el servidor dice "sesión no válida" (401) renueva la
+ *  sesión una vez y vuelve a intentar, para que la persona no vea el aviso mientras sigue dentro. */
+export async function authFetchRetry(url, opts = {}) {
+  let resp = await fetch(url, { ...opts, headers: await authHeaders() });
+  if (resp.status === 401) {
+    try { await supabase.auth.refreshSession(); } catch { /* si falla, se devuelve el 401 original */ }
+    resp = await fetch(url, { ...opts, headers: await authHeaders() });
+  }
+  return resp;
+}
+
 /** Le pide al servidor que cree la fila de "perfil" (rol, aprobación) justo después de que
  *  alguien se registra con Supabase Auth — ver register-profile.js. */
 export async function requestCreateProfile(accessToken) {

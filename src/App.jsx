@@ -26,6 +26,7 @@ import { ReportsView } from "./views/ReportsView";
 import { FuelTanksView } from "./views/FuelTanksView";
 import { ContractorVisitsView } from "./views/ContractorVisitsView";
 import { HabitacionesView } from "./views/HabitacionesView";
+import { HotsosOrdersView } from "./views/HotsosOrdersView";
 import { HotsosImportView } from "./views/HotsosImportView";
 import { HVACView } from "./views/HVACView";
 import { EquipmentAnalyticsView } from "./views/EquipmentAnalyticsView";
@@ -6848,6 +6849,7 @@ export default function App() {
         ...(isAdmin ? [{ id: "maintenance", label: "Mantenimiento", icon: Wrench }] : []),
         ...((isAdmin || isAlmacenista) ? [{ id: "inventory", label: "Inventario", icon: Package, badge: lowStockItems.length, urgentBadge: false }] : []),
         { id: "tasks", label: isAdmin ? "Tareas" : "Mi trabajo", icon: ClipboardCheck, badge: tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && (isAdmin || t.asignadoA === currentUser)).length, urgentBadge: false },
+        { id: "hotsos-orders", label: "Órdenes HotSOS", icon: ClipboardList },
         ...(isAdmin ? [{ id: "today", label: "Panel de hoy", icon: Gauge }] : []),
         { id: "issues", label: "Fuera de servicio", icon: Wrench, badge: activeCount },
         { id: "handoff", label: "Entrega de turno", icon: Send, badge: justFinished ? "!" : 0 },
@@ -7063,7 +7065,7 @@ export default function App() {
                   if (!mine.length) body = <div className="text-sm px-1" style={{ color: C.inkSoft }}>No tienes tareas abiertas.</div>;
                 } else if (flyout === "operario") {
                   title = "Vista del operario"; sub = "Lo mismo que ve un técnico";
-                  const SEC = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["tasks", "Mi trabajo"], ["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
+                  const SEC = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"], ["hotsos-orders", "Órdenes HotSOS"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["tasks", "Mi trabajo"], ["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
                   const cnt = { tasks: (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length, issues: Object.keys(activeIssues || {}).length };
                   body = SEC.map(([sec, items]) => <div key={sec} className="mb-2"><div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: C.inkSoft, letterSpacing: "0.08em" }}>{sec}</div>{items.map(([id, label]) => { const b = id in cnt ? cnt[id] : badgeOf[id]?.badge; return <button key={id} onClick={() => { setView(id); setFlyout(id === "ronda" ? "ronda" : null); }} className={rowCls} style={{ minHeight: 42, background: view === id ? C.steelDark : C.bg, color: view === id ? "#fff" : C.ink }}><span className="flex-1">{label}</span><NavBadge count={b} urgent={id === "issues"} /></button>; })}</div>);
                 } else if (flyout === "all") {
@@ -7103,7 +7105,7 @@ export default function App() {
             </button>
           );
           const Lbl = ({ children }) => <div className="text-[11px] font-semibold uppercase px-1 pt-3 pb-1.5" style={{ color: "#7d92a8", letterSpacing: "0.08em" }}>{children}</div>;
-          const OPSEC = [["Mi turno", [["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["issues", "Fuera", Wrench], ["tasks", "Mi trabajo", ClipboardCheck]]], ["Consultar", [["fichas-tecnicas", "Fichas", ClipboardList], ["procedures", "Procedim.", ClipboardList], ["tanks", "Tanques", Gauge], ["fuel", "Combust.", Zap], ["wiki", "Wiki", Search], ["my-schedule", "Mi horario", Users]]]];
+          const OPSEC = [["Mi turno", [["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["issues", "Fuera", Wrench], ["tasks", "Mi trabajo", ClipboardCheck], ["hotsos-orders", "HotSOS", ClipboardList]]], ["Consultar", [["fichas-tecnicas", "Fichas", ClipboardList], ["procedures", "Procedim.", ClipboardList], ["tanks", "Tanques", Gauge], ["fuel", "Combust.", Zap], ["wiki", "Wiki", Search], ["my-schedule", "Mi horario", Users]]]];
           const tapTile = (id) => { if (id === "__op") setMobPanel("operario"); else if (id === "__ronda") setMobPanel("ronda"); else go(id); };
           return (
             <div className="lg:hidden flex flex-col flex-1 min-h-0">
@@ -7540,6 +7542,7 @@ export default function App() {
               onCreateProcedure={createSystemProcedure} onDeleteProcedure={deleteSystemProcedure}
               onSetComponentPosition={setComponentPosition} />
           )}
+          {view === "hotsos-orders" && <HotsosOrdersView profiles={profiles} currentUser={currentUser} canImpersonate={isOwner} />}
           {view === "hotsos-import" && isAdmin && (
             <HotsosImportView accounts={profiles} existingOrderIds={hotsosExistingOrderIds} currentUserDisplayName={displayName} hotsosTaskCount={hotsosTaskCount} equipos={mttoEquipos} openTasks={tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada")} recentClosed={tasks.filter(t => normalizeTaskState(t.estado) === "finalizada" && t.finishedAt && Date.now() - new Date(t.finishedAt).getTime() < 15 * 86400000)}
               onImport={importHotsosOrders} onRetryAssignments={retryHotsosAssignments} onBulkDelete={bulkDeleteHotsosTasks} />

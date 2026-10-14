@@ -90,6 +90,7 @@ export function HomeView({ currentUser, isAdmin, isAlmacenista, isGerencia, onNa
     { id: "templates", label: "Plantillas de tareas", icon: ClipboardList, desc: "Tareas que repites, listas con un toque", access: isAdmin, group: "Operación en Campo" },
     { id: "usage", label: "Uso y respaldo", icon: Download, desc: "Espacio de datos, actividad del equipo y descargas", access: isAdmin, group: "Reportes y Análisis" },
     { id: "room-history", label: "Historial por habitación", icon: History, desc: "Órdenes y mantenimientos de un cuarto, y fallas repetidas", access: isAdmin, group: "Reportes y Análisis" },
+    { id: "hotsos-orders", label: "Órdenes HotSOS", icon: ClipboardList, desc: "Órdenes que llegan de HotSOS, tomadas y cerradas por cada técnico (prototipo)", access: true, group: "Operación en Campo" },
     { id: "hotsos-import", label: "Importación HotSOS", icon: Upload, desc: "Convierte el Excel de órdenes en tareas", access: isAdmin, group: "Gestión e Inventario" },
     { id: "analytics", label: "Análisis de fallas", icon: TrendingUp, desc: "Historial de equipos dañados", access: isAdmin || isGerencia, group: "Reportes y Análisis" },
     { id: "hvac", label: "TelkHab", icon: Thermometer, desc: "Temperatura, estado e historial de aires — Telkonet", access: isAdmin, group: "Operación en Campo" },

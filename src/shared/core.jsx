@@ -200,7 +200,7 @@ export const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analyti
 // los recorridos. Más adelante, aquí se conectan los accesos por usuario que dé el dueño.
 export const OWNER_EMAIL = "jesusdanielquintanasantander@gmail.com";
 // Exactamente lo que muestra la "Vista del operario": Mi turno, Consultar y Mi cuenta.
-export const LIMITED_VIEWS = ["home", "ronda", "coldrooms", "meters", "handoff", "issues", "fichas-tecnicas", "procedures", "tanks", "fuel", "wiki", "tasks", "my-schedule", "profile"];
+export const LIMITED_VIEWS = ["home", "ronda", "coldrooms", "meters", "handoff", "issues", "fichas-tecnicas", "procedures", "tanks", "fuel", "wiki", "tasks", "hotsos-orders", "my-schedule", "profile"];
 
 // Aplanar con id único por equipo (piso+código) — resuelve códigos duplicados (ej. "24")
 FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorId = f.id; it.floorName = f.name; }));
@@ -2241,7 +2241,7 @@ export const MAX_FAVORITES = 5;
 
 // ===== Secciones agrupadas: cada una tiene pestañas arriba y UNA sola entrada en el menú (solo administrador) =====
 export const HUBS = [
-  { id: "tasks", label: "Tareas", members: [["tasks", "Tareas"], ["today", "Hoy"], ["guest-requests", "Huéspedes"], ["calendar", "Calendario"], ["templates", "Plantillas"], ["hotsos-import", "Importar HotSOS"]] },
+  { id: "tasks", label: "Tareas", members: [["tasks", "Tareas"], ["today", "Hoy"], ["guest-requests", "Huéspedes"], ["calendar", "Calendario"], ["templates", "Plantillas"], ["hotsos-orders", "Órdenes HotSOS"], ["hotsos-import", "Importar HotSOS"]] },
   { id: "floorplans", label: "Habitaciones", members: [["floorplans", "Planos"], ["blocked-rooms", "Bloqueadas"], ["heatmap", "Mapa de calor"], ["room-history", "Historial"], ["rooms", "Tipos"]] },
   { id: "plant-status", label: "Planta", members: [["plant-status", "Estado"], ["tanks", "Agua"], ["fuel", "Combustibles"], ["energy", "Energía"]] },
   { id: "executive", label: "Análisis", members: [["executive", "Ejecutivo"], ["boards", "Tableros"], ["maintenance-analytics", "Mantenimiento"], ["analytics", "Fallas"], ["budget", "Presupuesto"], ["reports", "Reportes"], ["share-summary", "Compartir"]] },
@@ -2378,6 +2378,35 @@ export function lastTaskActivityMs(t) {
 export const CONTRACTOR_MOTIVOS = ["Mantenimiento preventivo", "Reparación / correctivo", "Instalación", "Inspección / auditoría", "Entrega de material", "Otro"];
 
 export const WIKI_CATEGORIAS = ["General", "Emergencias", "Eléctrico", "Plomería / Agua", "Clima (A/C y chillers)", "Procedimientos administrativos"];
+
+
+/* ===== Órdenes HotSOS (prototipo de muestra): las órdenes llegan, el técnico las toma, las llena y las cierra con su código ===== */
+export const HSO_KEY = "hotsos-demo-orders";
+export const hsoAge = h => h < 24 ? `${h} h` : `${Math.floor(h / 24)} d ${h % 24} h`;
+export const hsoNow = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+export function hsoSeed(techs) {
+  const t = i => techs[i] || null;
+  const mk = (so, pri, place, type, ageH, x = {}) => ({ so, pri, place, type, ageH, guest: false, by: null, status: "nueva", takenAt: null, closedAt: null, closedBy: null, notes: "", mat: "", photos: 0, sync: null, log: [], ...x });
+  return [
+    mk(602733, 1, "Guestroom 1720 · KING", "Reparar/Sustituir · TV/televisión", 3),
+    mk(602731, 1, "Guestroom 2517 · 1VWK", "Reparar/reemplazar · Luces de patio", 4),
+    mk(602723, 1, "Guestroom 4008 · RS1B", "Reparar/Sustituir · Aire acondicionado, olor/mal olor", 6),
+    mk(602720, 1, "Guestroom 4102 · JN1X", "Reparar/Sustituir · Aire acondicionado, demasiado caliente", 6, t(0) ? { by: t(0), status: "proceso", takenAt: "18:40", log: [{ t: "18:40", m: "inició el trabajo" }] } : {}),
+    mk(602717, 5, "Guestroom 3905 · RS3B", "Reparar/Sustituir · Techo con filtración", 6),
+    mk(602712, 1, "Guestroom 3908 · RS1B", "Queja de huésped · Funcionamiento de habitación", 12, { guest: true }),
+    mk(602675, 1, "Guestroom 2413 · 1VWK", "Reparar/Sustituir · Ventilador eléctrico", 8, t(1) ? { by: t(1), status: "tomada", takenAt: "17:05", log: [{ t: "17:05", m: "la tomó" }] } : {}),
+    mk(602663, 1, "Guestroom 2617 · 1VWK", "Reparar/Sustituir · Cortinas/visillos para ventana", 9),
+    mk(602660, 5, "Guestroom 4001 · R2SB", "Reparar/Sustituir · Barra/tapón del drenaje del lavamanos", 9),
+    mk(602588, 5, "Guardalinos piso 34", "Reparar/Sustituir · Letrero de salida de emergencia", 21),
+    mk(602581, 5, "Pasillo de habitaciones piso 40", "Pintar/retocar · Techo", 21),
+    mk(602544, 5, "Guestroom 4105 · JN1X", "Reparar/reemplazar · Cortinas blackout", 26),
+    mk(602531, 5, "_Cabina #6, Piso 15", "Reparar/reemplazar · Ducha obstruida", 27),
+    mk(602530, 5, "_Cabina #6, Piso 15", "Reparar/reemplazar · Puerta del baño", 27),
+    mk(602519, 5, "_Cabina #1, Piso 15", "Reparar/Sustituir · Asiento de inodoro", 28),
+    ...(t(0) ? [mk(602502, 5, "Guestroom 2303 · 1VWK", "Pintar/retocar · Pared/marco", 30, { by: t(0), status: "cerrada", takenAt: "08:10", closedAt: "09:02", closedBy: t(0), notes: "Retoque de pintura en pared y marco.", sync: "enviada", photos: 2, log: [{ t: "09:02", m: "enviada a HotSOS con su código" }, { t: "09:02", m: "llenó y cerró la orden" }, { t: "08:10", m: "la tomó" }] })] : []),
+    ...(t(1) ? [mk(602498, 5, "Guestroom 3708 · C2VD", "Reparar/Sustituir · Marco de la puerta", 11, { by: t(1), status: "cerrada", takenAt: "07:30", closedAt: "08:15", closedBy: t(1), notes: "Marco ajustado y asegurado.", sync: "enviada", photos: 1, log: [{ t: "08:15", m: "enviada a HotSOS con su código" }, { t: "08:15", m: "llenó y cerró la orden" }, { t: "07:30", m: "la tomó" }] })] : []),
+  ];
+}
 
 export const ROOM_BLOCK_REASONS = ["Mantenimiento", "Limpieza profunda", "Renovación", "Otro"];
 

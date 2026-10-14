@@ -4517,6 +4517,10 @@ export default function App() {
   const setNavCollapsed = (v) => { setNavCollapsedRaw(v); try { localStorage.setItem("pm-local:nav-collapsed", v ? "1" : "0"); } catch { /* noop */ } };
   const [quickOpen, setQuickOpen] = useState(false);
   const [flyout, setFlyout] = useState(null); // panel que se abre a la derecha de la barra de iconos
+  // Menú del dueño: categoría desplegada (computador: panel fijo junto a la barra; celular: panel bajo el cuadro tocado).
+  const [ownPanel, setOwnPanel] = useState(() => { try { const v = localStorage.getItem("pm-local:own-panel"); return v === null ? "operario" : v; } catch { return "operario"; } });
+  const toggleOwnPanel = (gid) => setOwnPanel(p => { const n = p === gid ? "" : gid; try { localStorage.setItem("pm-local:own-panel", n); } catch { /* noop */ } return n; });
+  const [mobOpen, setMobOpen] = useState(null);
   const focusSearch = () => { const el = document.querySelector('header input[placeholder*="Buscar"], input[placeholder*="Buscar cualquier"]'); if (el) { el.focus(); el.select && el.select(); } else { setSidebarOpen(true); } };
   useEffect(() => {
     const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "k") { e.preventDefault(); focusSearch(); } };
@@ -6918,6 +6922,30 @@ export default function App() {
     return gid === groupContainingView || gid === "operacion"; // "Operación" abierto por defecto
   }
 
+  // ── Menú del dueño: categorías que se despliegan (Operario = lo que ve un técnico) ──
+  const OWN_OPERARIO = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"], ["hotsos-orders", "Órdenes HotSOS"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["tasks", "Mi trabajo"], ["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
+  const OWN_TITLES = { operario: "Operario", operacion: "Operación", historial: "Historial y reportes", analisis: "Análisis", personal: "Personal", administracion: "Administración" };
+  const ownBadgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { ownBadgeOf[n.id] = n; }));
+  const ownMine = (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length;
+  const ownGroupExists = (gid) => gid === "operario" || NAV_GROUPS.some(g => g.id === gid);
+  const ownSections = (gid) => {
+    if (gid === "operario") return OWN_OPERARIO.map(([t, items]) => [t, items.map(([id, label]) => ({ id, label, icon: ownBadgeOf[id]?.icon || ClipboardList, badge: id === "tasks" ? ownMine : id === "issues" ? activeCount : ownBadgeOf[id]?.badge, urgent: id === "issues" }))]);
+    const g = NAV_GROUPS.find(x => x.id === gid);
+    return g ? [[null, g.items.map(n => ({ id: n.id, label: n.label, icon: n.icon, badge: n.badge, urgent: n.urgentBadge !== false, pulse: n.pulse }))]] : [];
+  };
+  const renderOwnSections = (gid, pick, dark) => ownSections(gid).map(([t, items], i) => (
+    <div key={i} className="mb-2">
+      {t && <div className="text-[11px] font-semibold uppercase px-2 pb-1" style={{ color: dark ? "#7d92a8" : C.inkSoft, letterSpacing: "0.08em" }}>{t}</div>}
+      {items.map(n => (
+        <button key={n.id} onClick={() => pick(n.id)} className="w-full flex items-center gap-2 text-left rounded-lg px-3 mb-1 text-sm font-semibold"
+          style={{ minHeight: 42, background: navView === n.id ? (dark ? "#2a3f56" : C.steelDark) : (dark ? "transparent" : C.bg), color: navView === n.id ? "#fff" : (dark ? "#e5edf5" : C.ink) }}>
+          <n.icon size={15} /><span className="flex-1">{n.label}</span><NavBadge count={n.badge} urgent={n.urgent} pulse={n.pulse} />
+        </button>
+      ))}
+    </div>
+  ));
+  const ownerPanelPinned = railAdmin && navCollapsed && !!ownPanel && ownGroupExists(ownPanel);
+
   return (
     <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
       <ToastHost />
@@ -6994,9 +7022,9 @@ export default function App() {
         {navCollapsed && (() => {
           const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
           const RAIL = railAdmin
-            ? [["home", "Inicio", Home], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
+            ? [["home", "Inicio", Home], ["g:operario", "Operario", Users], ["g:operacion", "Operación", Wrench], ["g:historial", "Historial", History], ["g:analisis", "Análisis", TrendingUp], ["g:personal", "Personal", User], ["g:administracion", "Admin", ShieldCheck]]
             : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
-          const railItems = RAIL.filter(([id]) => id === "home" || badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)));
+          const railItems = RAIL.filter(([id]) => id === "home" || (id.startsWith("g:") ? ownGroupExists(id.slice(2)) : (badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)))));
           const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
           const QUICK = [["tasks", "Nueva tarea"], ["issues", "Reportar equipo dañado"], ["handoff", "Entregar turno"], ["blocked-rooms", "Bloquear habitación", true], ["maintenance", "Registrar mantenimiento", true], ["scan", "Escanear QR"]].filter(q => (!q[2] || isAdmin) && (!allowedViews || q[0] === "scan" || allowedViews.includes(q[0])));
           return (
@@ -7010,11 +7038,12 @@ export default function App() {
               <div className="floor-scroll flex-1 min-h-0 overflow-y-auto px-1.5">
                 {railItems.map(([id, label, Icon]) => {
                   const hub = HUBS.find(h => h.members.some(m => m[0] === id));
-                  const on = navView === id || (id === "executive" && navView === "executive");
+                  const isG = id.startsWith("g:");
+                  const on = isG ? ownPanel === id.slice(2) : (navView === id || (id === "executive" && navView === "executive"));
                   const b = badgeOf[id]?.badge;
                   return (
                     <React.Fragment key={id}>
-                    <button onClick={() => { setQuickOpen(false); setView(id); const hasFly = !isAdmin && (id === "ronda" || id === "issues" || id === "tasks"); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
+                    <button onClick={() => { setQuickOpen(false); if (isG) { setFlyout(null); toggleOwnPanel(id.slice(2)); return; } setView(id); const hasFly = !isAdmin && (id === "ronda" || id === "issues" || id === "tasks"); setFlyout(hasFly && flyout !== id ? id : null); }} title={label} aria-label={label} aria-current={on ? "page" : undefined}
                       className="relative w-full flex flex-col items-center justify-center rounded-xl mb-1 transition hover:bg-white/5"
                       style={{ height: 58, background: on ? "#2a3f56" : "transparent", color: on ? "#fff" : "#c3d0dd" }}>
                       <Icon size={19} />
@@ -7023,10 +7052,6 @@ export default function App() {
                     </button>
 {railAdmin && id === "home" && (
                 <div className="mb-1">
-                  <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "operario" ? null : "operario"); }} aria-label="Vista del operario" aria-expanded={flyout === "operario"} title="Todo lo que ve el operario"
-                    className="w-full flex flex-col items-center justify-center rounded-xl" style={{ height: 58, background: flyout === "operario" ? C.amber : "#12304a", color: flyout === "operario" ? "#0b2238" : "#fff", border: `1px solid ${flyout === "operario" ? C.amber : "#2b4a68"}` }}>
-                    <Users size={19} /><span className="text-[10px] font-bold mt-0.5">Operario</span>
-                  </button>
                   <button onClick={() => { setQuickOpen(false); setFlyout(null); setView("hvac"); }} aria-label="TelkHab" aria-current={view === "hvac" ? "page" : undefined} title="TelkHab · solo dueño"
                     className="w-full flex flex-col items-center justify-center rounded-xl mt-1" style={{ height: 58, background: view === "hvac" ? "#1d4f7a" : "#12304a", color: "#fff", border: `1px solid ${view === "hvac" ? "#5aa6e0" : "#2b4a68"}` }}>
                     <Thermometer size={19} /><span className="text-[10px] font-bold mt-0.5">TelkHab</span>
@@ -7048,6 +7073,12 @@ export default function App() {
                 <button onClick={() => setView("profile")} title="Mi perfil" aria-label="Mi perfil" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><User size={17} /><span className="text-[10px] mt-0.5">Perfil</span></button>
                 <button onClick={() => { setQuickOpen(false); setFlyout(f => f === "all" ? null : "all"); }} title="Todo lo que puedes ver" aria-label="Expandir menú" className="w-full flex flex-col items-center justify-center rounded-xl hover:bg-white/5" style={{ height: 44, color: "#c3d0dd" }}><ChevronRight size={17} /><span className="text-[10px] mt-0.5">Todo</span></button>
               </div>
+              {ownerPanelPinned && (
+                <div role="region" aria-label={OWN_TITLES[ownPanel]} className="fixed hidden lg:flex flex-col" style={{ left: 90, top: 8, bottom: 8, width: 270, zIndex: 22, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, boxShadow: "0 6px 18px rgba(0,0,0,.18)" }}>
+                  <div className="px-4 pt-3 pb-2 shrink-0 flex items-start"><div className="flex-1"><div className="text-base font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{OWN_TITLES[ownPanel]}</div>{ownPanel === "operario" && <div className="text-[11px]" style={{ color: C.inkSoft }}>Lo mismo que ve un técnico</div>}</div><button onClick={() => toggleOwnPanel(ownPanel)} aria-label="Cerrar panel" className="text-lg px-2" style={{ color: C.inkSoft }}>×</button></div>
+                  <div className="floor-scroll flex-1 min-h-0 overflow-y-auto px-3 pb-3">{renderOwnSections(ownPanel, (id) => { setView(id); setFlyout(null); }, false)}</div>
+                </div>
+              )}
               {flyout && (() => {
                 const hubF = HUBS.find(h => h.id === flyout);
                 const rowCls = "w-full flex items-center gap-2 text-left rounded-lg px-3 mb-1 text-sm font-semibold";
@@ -7092,9 +7123,10 @@ export default function App() {
         {(() => {
           const badgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { badgeOf[n.id] = n; }));
           const TILES = railAdmin
-            ? [["home", "Inicio", Home], ["__op", "Operario", Users], ["hvac", "TelkHab", Thermometer], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["executive", "Análisis", TrendingUp]]
+            ? [["home", "Inicio", Home], ["__op", "Operario", Users], ["hvac", "TelkHab", Thermometer], ["tasks", "Tareas", ClipboardCheck], ["issues", "Fuera", Wrench], ["floorplans", "Cuartos", Building2], ["plant-status", "Planta", Gauge], ["maintenance", "Mtto", Wrench], ["inventory", "Inventario", Package], ["g:analisis", "Análisis", TrendingUp], ["g:operacion", "Operación", Wrench], ["g:historial", "Historial", History], ["g:personal", "Personal", User], ["g:administracion", "Admin", ShieldCheck]]
             : [["home", "Inicio", Home], ["tasks", "Mi trabajo", ClipboardCheck], ["issues", "Fuera", Wrench], ["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["inventory", "Inventario", Package]];
-          const tiles = TILES.filter(([id]) => id === "home" || id.startsWith("__") || badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)));
+          const tiles = TILES.filter(([id]) => id === "home" || id.startsWith("__") || (id.startsWith("g:") ? ownGroupExists(id.slice(2)) : (badgeOf[id] || (railAdmin && HUBS.some(h => h.id === id)))));
+          const ownKey = (id) => id === "__op" ? "operario" : id.startsWith("g:") ? id.slice(2) : null;
           const avisosCount = (shiftAlerts?.length || 0) + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (criticalFuelTanks?.length || 0);
           const go = (id) => { setView(id); setSidebarOpen(false); setMobPanel(null); };
           const cnt = { tasks: (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length, issues: Object.keys(activeIssues || {}).length };
@@ -7106,7 +7138,7 @@ export default function App() {
           );
           const Lbl = ({ children }) => <div className="text-[11px] font-semibold uppercase px-1 pt-3 pb-1.5" style={{ color: "#7d92a8", letterSpacing: "0.08em" }}>{children}</div>;
           const OPSEC = [["Mi turno", [["__ronda", "Ronda", ClipboardList], ["coldrooms", "Fríos", Snowflake], ["meters", "Medidores", Zap], ["handoff", "Turno", Send], ["issues", "Fuera", Wrench], ["tasks", "Mi trabajo", ClipboardCheck], ["hotsos-orders", "HotSOS", ClipboardList]]], ["Consultar", [["fichas-tecnicas", "Fichas", ClipboardList], ["procedures", "Procedim.", ClipboardList], ["tanks", "Tanques", Gauge], ["fuel", "Combust.", Zap], ["wiki", "Wiki", Search], ["my-schedule", "Mi horario", Users]]]];
-          const tapTile = (id) => { if (id === "__op") setMobPanel("operario"); else if (id === "__ronda") setMobPanel("ronda"); else go(id); };
+          const tapTile = (id) => { if (railAdmin && ownKey(id)) setMobOpen(m => m === ownKey(id) ? null : ownKey(id)); else if (id === "__op") setMobPanel("operario"); else if (id === "__ronda") setMobPanel("ronda"); else go(id); };
           return (
             <div className="lg:hidden flex flex-col flex-1 min-h-0">
               <div className="pm-safe-top px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
@@ -7116,9 +7148,19 @@ export default function App() {
               <div className="floor-scroll px-3 pb-4 flex-1 min-h-0 overflow-y-auto">
                 {mobPanel === null && (<>
                   <button onClick={() => { setSidebarOpen(false); setTimeout(focusSearch, 120); }} className="w-full flex items-center gap-2 rounded-xl px-3 text-sm" style={{ minHeight: 44, background: "#12304a", color: "#8fa3b8" }}><Search size={16} /> Buscar…</button>
-                  <div className="grid grid-cols-3 gap-2 mt-3">
-                    {tiles.map(([id, label, Icon]) => <Tile key={id} icon={Icon} label={label} amber={id === "__op"} on={navView === id} badge={id in cnt && !isAdmin ? cnt[id] : badgeOf[id]?.badge} urgent={id === "issues"} onClick={() => tapTile(id)} />)}
-                  </div>
+                  {(railAdmin ? Array.from({ length: Math.ceil(tiles.length / 3) }, (_, i) => tiles.slice(i * 3, i * 3 + 3)) : [tiles]).map((rowTiles, ri) => (
+                    <React.Fragment key={ri}>
+                      <div className="grid grid-cols-3 gap-2 mt-2">
+                        {rowTiles.map(([id, label, Icon]) => <Tile key={id} icon={Icon} label={label} amber={railAdmin ? (!!ownKey(id) && ownKey(id) === mobOpen) : id === "__op"} on={navView === id} badge={id in cnt && !isAdmin ? cnt[id] : badgeOf[id]?.badge} urgent={id === "issues"} onClick={() => tapTile(id)} />)}
+                      </div>
+                      {railAdmin && mobOpen && rowTiles.some(([id]) => ownKey(id) === mobOpen) && (
+                        <div className="rounded-2xl mt-2 p-2" style={{ background: "#12304a", border: `1px solid ${C.amber}` }}>
+                          <div className="px-2 pt-1 pb-1"><div className="text-sm font-bold text-white">{OWN_TITLES[mobOpen]}</div>{mobOpen === "operario" && <div className="text-[11px]" style={{ color: "#8fa3b8" }}>Lo mismo que ve un técnico</div>}</div>
+                          {renderOwnSections(mobOpen, (id) => { setMobOpen(null); go(id); }, true)}
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
                   <Lbl>Accesos</Lbl>
                   <div className="grid grid-cols-3 gap-2">
                     {isAdmin && <Tile icon={Bell} label="Avisos" badge={avisosCount} urgent onClick={() => { setSidebarOpen(false); setTimeout(() => { const b = document.querySelector('button[aria-label="Notificaciones"]'); if (b) b.click(); }, 150); }} />}
@@ -7218,6 +7260,7 @@ export default function App() {
         )}
         </div>
       </aside>
+      {ownerPanelPinned && <div className="hidden lg:block shrink-0" style={{ width: 276 }} aria-hidden="true" />}
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">

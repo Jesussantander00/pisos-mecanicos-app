@@ -1419,34 +1419,67 @@ function SyncStatusBar({ online, pending = 0, retrying = false, onRetry }) {
 
 /** Ficha rápida al escanear el QR de un equipo cuando la persona no tiene acceso a Mantenimiento
  * (item 17): muestra el equipo y sus tareas abiertas, sin sacarla de lo suyo. */
-function ScannedEquipoSheet({ equipo, tasks, accounts, onClose, onGoTasks }) {
+function ScannedEquipoSheet({ equipo, tasks, accounts, mttoLog, onClose, onGoTasks }) {
   useBackCloseModal(true, onClose);
   const abiertas = (tasks || []).filter(t => t.equipoId === equipo?.id && normalizeTaskState(t.estado) !== "finalizada");
   const nameOf = (u) => accounts?.[u]?.display_name || "Sin asignar";
+  const history = (mttoLog || []).filter(r => r.equipoId === equipo?.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const last = history[0];
+  const daysSince = last ? Math.floor((Date.now() - new Date(last.fecha).getTime()) / 86400000) : null;
+  const ago = (iso) => { const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); return d < 1 ? "hoy" : d < 31 ? `hace ${d} d` : `hace ${Math.round(d / 30)} meses`; };
+  const dot = (tipo) => /correct/i.test(tipo || "") ? C.red : /prevent/i.test(tipo || "") ? C.green : C.blue;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
-      <div className="pm-animate-in rounded-2xl max-w-sm w-full p-5" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
+      <div className="pm-animate-in rounded-2xl max-w-sm w-full p-5 max-h-[88vh] overflow-y-auto" style={{ background: C.panel }} onClick={e => e.stopPropagation()}>
         {!equipo ? (
           <p className="text-sm" style={{ color: C.inkSoft }}>Ese código QR es de un equipo que ya no está registrado.</p>
         ) : (
           <>
-            <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.gray }}>Equipo escaneado</div>
-            <h3 className="text-lg font-bold mt-0.5" style={{ color: C.ink }}>{equipo.nombre}</h3>
-            {equipo.sistema && <div className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema}</div>}
-            <div className="mt-3 text-xs font-bold uppercase tracking-wide" style={{ color: abiertas.length ? C.red : C.green }}>
-              {abiertas.length ? `Tareas abiertas · ${abiertas.length}` : "Sin tareas abiertas"}
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl flex items-center justify-center shrink-0" style={{ width: 52, height: 52, background: C.steelDark }}><QrCode size={28} color="#f2b705" /></div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.gray }}>Equipo escaneado</div>
+                <h3 className="text-lg font-bold leading-tight" style={{ color: C.ink, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>{equipo.nombre}</h3>
+                {equipo.sistema && <div className="text-sm" style={{ color: C.inkSoft }}>{equipo.sistema}</div>}
+              </div>
             </div>
-            {abiertas.slice(0, 5).map(t => (
-              <div key={t.id} className="flex justify-between gap-2 text-sm py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <div className="rounded-xl px-3 py-2" style={{ background: C.bg }}>
+                <div className="text-lg font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>{daysSince == null ? "—" : daysSince === 0 ? "Hoy" : `${daysSince} días`}</div>
+                <div className="text-[11px]" style={{ color: C.inkSoft }}>Último mantenimiento</div>
+              </div>
+              <div className="rounded-xl px-3 py-2" style={{ background: abiertas.length ? C.redSoft : C.greenSoft }}>
+                <div className="text-lg font-bold" style={{ color: abiertas.length ? C.red : C.green, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>{abiertas.length}</div>
+                <div className="text-[11px]" style={{ color: C.inkSoft }}>Tareas abiertas</div>
+              </div>
+            </div>
+            {abiertas.slice(0, 4).map(t => (
+              <div key={t.id} className="flex justify-between gap-2 text-sm py-1.5 border-t mt-1" style={{ borderColor: C.line, color: C.ink }}>
                 <span className="truncate">{t.titulo}</span>
                 <span className="text-xs shrink-0" style={{ color: C.inkSoft }}>{nameOf(t.asignadoA)}</span>
               </div>
             ))}
+            {history.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-semibold mb-1.5" style={{ color: C.inkSoft }}>Historial reciente</div>
+                {history.slice(0, 3).map((r, i) => (
+                  <div key={r.id || i} className="flex items-center gap-2 text-sm py-1" style={{ color: C.ink }}>
+                    <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: dot(r.tipo) }} />
+                    <span className="flex-1 truncate">{r.descripcion || r.tipo || "Mantenimiento"}</span>
+                    <span className="text-xs shrink-0" style={{ color: C.gray }}>{ago(r.fecha)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
         <div className="flex gap-2 mt-4">
           <Button size="sm" variant="ghost" onClick={onClose}>Cerrar</Button>
-          <Button size="sm" onClick={onGoTasks}>Ir a mis tareas</Button>
+          {equipo && <Button size="sm" onClick={() => {
+            try { sessionStorage.setItem("pm-local:task-draft", JSON.stringify({ equipoId: equipo.id, titulo: `Revisar ${equipo.nombre}` })); } catch { /* noop */ }
+            onGoTasks();
+          }}>Crear tarea</Button>}
+          <Button size="sm" variant="ghost" onClick={onGoTasks}>Mis tareas</Button>
         </div>
       </div>
     </div>
@@ -1942,23 +1975,23 @@ function ConnectionCloud({ state = "sol", size = 28 }) {
 
 /** Saludo al entrar a la app: el avatar levanta la mano y dice hola con la hora del día y cuántas
  * tareas abiertas tiene la persona. Se cierra solo a los 7 segundos (o al tocarlo). */
-function HelloToast({ role, name, openCount, lateCount = 0, onGo, onClose }) {
+function HelloToast({ role, name, summary, cta, hasAction, onGo, onClose }) {
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => { const t = setTimeout(() => closeRef.current(), 9000); return () => clearTimeout(t); }, []);
   const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "America/Bogota" }).format(new Date())) % 24;
   const greet = hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches";
   const first = (name || "").trim().split(/\s+/)[0] || "";
-  const go = () => { if (lateCount > 0) __pmState.__pmTasksEntryFilter = "vencidas"; onGo && onGo(); onClose(); };
+  const go = () => { onGo && onGo(); onClose(); };
   return (
     <div className="pm-animate-in fixed right-3 z-[70] flex items-stretch rounded-2xl shadow-xl overflow-hidden"
       style={{ top: "calc(env(safe-area-inset-top) + 64px)", background: C.panel, border: `1px solid ${C.line}`, maxWidth: "calc(100vw - 24px)" }}>
-      <button type="button" onClick={openCount > 0 ? go : onClose} aria-label={openCount > 0 ? "Ir a mis tareas" : "Cerrar saludo"}
+      <button type="button" onClick={hasAction ? go : onClose} aria-label={hasAction ? cta : "Cerrar saludo"}
         className="flex items-center gap-3 pl-2 pr-3 py-2 text-left">
         <HardHatAvatar role={role} size={56} waving />
         <span className="block">
           <span className="block text-sm font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>¡{greet}{first ? `, ${first}` : ""}!</span>
-          <span className="block text-xs" style={{ color: C.inkSoft }}>{openCount > 0 ? `Tienes ${openCount} tarea${openCount === 1 ? "" : "s"} abierta${openCount === 1 ? "" : "s"}${lateCount > 0 ? ` · ${lateCount} atrasada${lateCount === 1 ? "" : "s"}` : ""}` : "No tienes tareas abiertas"}</span>
-          {openCount > 0 && <span className="inline-flex items-center gap-0.5 text-xs font-bold mt-0.5" style={{ color: C.amber }}>Ver mis tareas <ChevronRight size={13} /></span>}
+          <span className="block text-xs" style={{ color: C.inkSoft }}>{summary}</span>
+          {hasAction && <span className="inline-flex items-center gap-0.5 text-xs font-bold mt-0.5" style={{ color: C.amber }}>{cta} <ChevronRight size={13} /></span>}
         </span>
       </button>
       <button type="button" onClick={onClose} aria-label="Cerrar saludo" className="px-2.5 flex items-start pt-2" style={{ color: C.gray }}><X size={14} /></button>
@@ -7271,9 +7304,24 @@ export default function App() {
       <ToastHost />
       <PmArtDefs />
       {showHello && profileLoaded && !viewerLocked ? (
-        <HelloToast role={myHatRole} name={displayName} onClose={() => setShowHello(false)} onGo={() => setView("tasks")}
-          openCount={tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt).length}
-          lateCount={tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt && hoursBetween(t.assignedAt || t.createdAt || nowIso(), nowIso()) > 24).length} />
+        (() => {
+          const openAll = tasks.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt && !isTaskSnoozed(t));
+          const ageH = (t) => hoursBetween(t.assignedAt || t.createdAt || nowIso(), nowIso());
+          const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+          if (isAdmin) {
+            const unassigned = openAll.filter(t => !t.asignadoA).length;
+            const late = openAll.filter(t => t.asignadoA && ageH(t) > 24).length;
+            const parts = [unassigned > 0 && `${plural(unassigned, "tarea sin asignar", "tareas sin asignar")}`, late > 0 && `${plural(late, "atrasada", "atrasadas")}`].filter(Boolean);
+            return <HelloToast role={myHatRole} name={displayName} onClose={() => setShowHello(false)} onGo={() => setView("today")}
+              summary={parts.length ? parts.join(" · ") : "Todo en orden por ahora"} cta="Ir al panel de hoy" hasAction />;
+          }
+          const mine = openAll.filter(t => t.asignadoA === currentUser);
+          const lateMine = mine.filter(t => ageH(t) > 24).length;
+          return <HelloToast role={myHatRole} name={displayName} onClose={() => setShowHello(false)}
+            onGo={() => { if (lateMine > 0) __pmState.__pmTasksEntryFilter = "vencidas"; setView("tasks"); }}
+            summary={mine.length > 0 ? `Tienes ${plural(mine.length, "tarea abierta", "tareas abiertas")}${lateMine > 0 ? ` · ${plural(lateMine, "atrasada", "atrasadas")}` : ""}` : "No tienes tareas abiertas"}
+            cta="Ver mis tareas" hasAction={mine.length > 0} />;
+        })()
       ) : null}
       <SyncStatusBar online={isOnline} pending={pendingSync + pendingPhotoRecords} retrying={retrying} onRetry={async () => { setRetrying(true); await tryFlush(); tryFlushPhotos(); setRetrying(false); }} />
       {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin
@@ -7308,7 +7356,7 @@ export default function App() {
           onClose={() => setScannedToolId(null)} onLend={lendTool} onReturn={returnTool} />
       )}
       {scannedEquipoId && (
-        <ScannedEquipoSheet equipo={mttoEquipos.find(e => e.id === scannedEquipoId)} tasks={tasks} accounts={profiles}
+        <ScannedEquipoSheet equipo={mttoEquipos.find(e => e.id === scannedEquipoId)} tasks={tasks} accounts={profiles} mttoLog={mttoLog}
           onClose={() => setScannedEquipoId(null)} onGoTasks={() => { setScannedEquipoId(null); setView("tasks"); }} />
       )}
       {roundSaveMsg && !roundSaveMsg.ok && (

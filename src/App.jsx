@@ -1234,8 +1234,43 @@ function MyWeekCard({ tasks, currentUser }) {
   const prom = conTiempo.length ? conTiempo.reduce((a, t) => a + hoursBetween(t.assignedAt, t.finishedAt), 0) / conTiempo.length : null;
   const rei = cerradas.filter(t => t.reincidencia).length;
   if (mine.length === 0) return null;
+  // Logros: se calculan con lo que ya hace (tareas cerradas por mí), sin competir con nadie.
+  const dayKey = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const doneAll = mine.filter(t => normalizeTaskState(t.estado) === "finalizada" && t.finishedAt);
+  const doneDays = new Set(doneAll.map(t => dayKey(t.finishedAt)));
+  let streak = 0; { let d = dayKey(Date.now()); if (!doneDays.has(d)) d -= 86400000; while (doneDays.has(d)) { streak++; d -= 86400000; } }
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const monthN = doneAll.filter(t => new Date(t.finishedAt).getTime() >= monthStart.getTime()).length;
+  const badges = [
+    { k: "p", t: "Primera tarea", d: "Cerraste tu primera", ok: doneAll.length >= 1, bg: C.amberSoft, fg: "#9a6403" },
+    { k: "d", t: "10 tareas", d: "Diez cerradas", ok: doneAll.length >= 10, bg: C.greenSoft, fg: "#1f7a35" },
+    { k: "r", t: "Racha de 7", d: "7 días seguidos", ok: streak >= 7, bg: C.blueSoft, fg: "#24496b" },
+    { k: "m", t: "Mes perfecto", d: "30 días seguidos", ok: streak >= 30, bg: C.line, fg: C.gray },
+  ];
+  const nextGoal = streak < 7 ? 7 : 30;
   return (
     <div className="rounded-2xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="rounded-xl flex items-center gap-3 p-3 mb-3" style={{ background: "#132030", color: "#fff" }}>
+        <div className="rounded-full flex items-center justify-center flex-none" style={{ width: 48, height: 48, background: "#f2b705", fontSize: 24 }} aria-hidden="true">🔥</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px]" style={{ color: "#c9d4df" }}>Tu racha</div>
+          <div className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{streak === 0 ? "Empieza hoy" : `${streak} día${streak === 1 ? "" : "s"} seguido${streak === 1 ? "" : "s"}`}</div>
+          <div className="text-[11px]" style={{ color: "#c9d4df" }}>cerrando tareas</div>
+        </div>
+        <div className="text-right"><div className="text-lg font-bold">{monthN}</div><div className="text-[11px]" style={{ color: "#c9d4df" }}>este mes</div></div>
+      </div>
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        {badges.map(b => (
+          <div key={b.k} className="text-center" style={{ opacity: b.ok ? 1 : 0.45 }} title={b.d}>
+            <div className="mx-auto rounded-full flex items-center justify-center mb-1" style={{ width: 40, height: 40, background: b.bg, color: b.fg, fontSize: 18 }}>{b.ok ? "★" : "🔒"}</div>
+            <div className="text-[11px] font-semibold leading-tight" style={{ color: C.ink }}>{b.t}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mb-3">
+        <div className="flex justify-between text-[11px] mb-1" style={{ color: C.inkSoft }}><span>Siguiente logro: {nextGoal === 7 ? "Racha de 7" : "Mes perfecto"}</span><span>{Math.min(streak, nextGoal)} de {nextGoal}</span></div>
+        <div className="rounded-full overflow-hidden" style={{ height: 8, background: C.bg }}><div style={{ width: `${Math.min(100, streak / nextGoal * 100)}%`, height: "100%", background: C.amber }} /></div>
+      </div>
       <div className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Mi semana</div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div><div className="text-2xl font-extrabold tabular-nums" style={{ color: C.green }}>{cerradas.length}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>cerradas</div></div>

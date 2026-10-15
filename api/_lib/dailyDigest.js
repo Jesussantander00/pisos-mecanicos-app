@@ -19,6 +19,12 @@ const isOpen = (t) => {
   return !(e === "finalizada" || e === "hecho");
 };
 const isSnoozed = (t) => !!t.snoozedUntil && new Date(t.snoozedUntil) > new Date();
+const lastActivityMs = (t) => {
+  const c = (t.comments || []).reduce((m, x) => Math.max(m, new Date(x.at || 0).getTime() || 0), 0);
+  return Math.max(new Date(t.updatedAt || 0).getTime() || 0, new Date(t.createdAt || t.assignedAt || 0).getTime() || 0, c);
+};
+const STALE_DAYS = 3;
+const isStale = (t) => lastActivityMs(t) > 0 && (Date.now() - lastActivityMs(t)) / 864e5 >= STALE_DAYS;
 const isOverdue = (t) => !!t.assignedAt && (Date.now() - new Date(t.assignedAt).getTime()) / 36e5 > OVERDUE_HOURS;
 
 async function readKey(supabaseAdmin, key) {
@@ -66,13 +72,15 @@ export async function runDailyDigest(supabaseAdmin) {
   // 2) Resumen de vencidas para los administradores
   const overdue = open.filter(isOverdue);
   const unassigned = open.filter((t) => !t.asignadoA);
+  // Escalamiento: tareas abiertas que llevan 3 o más días sin ningún movimiento (cambio o comentario).
+  const stale = open.filter(isStale);
   let adminSent = 0, adminPeople = 0;
-  if (overdue.length > 0 || unassigned.length > 0) {
+  if (overdue.length > 0 || unassigned.length > 0 || stale.length > 0) {
     const perUser = {};
     overdue.forEach((t) => { if (t.asignadoA) perUser[t.asignadoA] = (perUser[t.asignadoA] || 0) + 1; });
     const top = Object.entries(perUser).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([u, n]) => `${nameOf[u] || "—"} ${n}`).join(" · ");
-    const title = overdue.length > 0 ? `🔴 ${overdue.length} tarea${overdue.length === 1 ? "" : "s"} vencida${overdue.length === 1 ? "" : "s"} (más de 24 h)` : "📥 Hay tareas sin asignar";
-    const body = [top, unassigned.length > 0 ? `${unassigned.length} sin asignar` : ""].filter(Boolean).join(" · ");
+    const title = overdue.length > 0 ? `🔴 ${overdue.length} tarea${overdue.length === 1 ? "" : "s"} vencida${overdue.length === 1 ? "" : "s"} (más de 24 h)` : unassigned.length > 0 ? "📥 Hay tareas sin asignar" : "⏳ Hay tareas sin movimiento";
+    const body = [top, unassigned.length > 0 ? `${unassigned.length} sin asignar` : "", stale.length > 0 ? `${stale.length} sin movimiento ${STALE_DAYS}+ días` : ""].filter(Boolean).join(" · ");
     for (const admin of (profiles || []).filter((p) => p.is_admin && p.approved)) {
       const subs = subsOf(admin.id);
       if (!subs.length) continue;
@@ -81,22 +89,5 @@ export async function runDailyDigest(supabaseAdmin) {
     }
   }
 
-  return { openTasks: open.length, overdue: overdue.length, unassigned: unassigned.length, morningPeople, morningSent, adminPeople, adminSent };
-}
-
-// Aviso urgente a los administradores (por ejemplo, cuando falla el respaldo automático).
-// Solo LEE las suscripciones y los perfiles; no escribe nada.
-export async function notifyAdmins(supabaseAdmin, title, body) {
-  const publicKey = process.env.VAPID_PUBLIC_KEY;
-  const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (!publicKey || !privateKey) throw new Error("Faltan VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY en Vercel.");
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:soporte@example.com", publicKey, privateKey);
-  const subscriptions = await readKey(supabaseAdmin, "push-subscriptions");
-  const { data: profiles, error } = await supabaseAdmin.from("profiles").select("id, is_admin, approved");
-  if (error) throw new Error(`No se pudieron leer los perfiles: ${error.message}`);
-  let sent = 0;
-  for (const admin of (profiles || []).filter((p) => p.is_admin && p.approved)) {
-    sent += await send(subscriptions.filter((s) => s.ownerUsername === admin.id), title, body);
-  }
-  return sent;
+  return { openTasks: open.length, stale: stale.length, overdue: overdue.length, unassigned: unassigned.length, morningPeople, morningSent, adminPeople, adminSent };
 }

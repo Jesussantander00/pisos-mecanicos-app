@@ -3017,7 +3017,13 @@ function ReincidentCard({ mttoLog, equipos, tasks, onOpenEquipo }) {
       <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>3 o más fallas en 60 días. Puede convenir cambiarlos en vez de seguir reparando.</div>
       {list.map(({ e, n }) => (
         <button key={e.id} onClick={() => onOpenEquipo(e.id)} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
-          <span className="truncate">{e.nombre}</span>
+          <span className="truncate">{e.nombre}{(() => {
+            const v = Number(e.valorReemplazo) || 0;
+            if (!v) return null;
+            const gastado = (mttoLog || []).filter(r => r.equipoId === e.id).reduce((a, r) => a + (Number(r.costo) || 0), 0);
+            const pct = Math.round((gastado / v) * 100);
+            return <span style={{ color: pct >= 60 ? C.red : C.inkSoft, fontWeight: pct >= 60 ? 700 : 400 }}> · gastado {pct}% de uno nuevo{pct >= 60 ? " — conviene cambiarlo" : ""}</span>;
+          })()}</span>
           <span className="shrink-0 font-semibold" style={{ color: C.red }}>{n} fallas</span>
         </button>
       ))}

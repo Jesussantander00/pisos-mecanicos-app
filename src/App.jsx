@@ -2689,6 +2689,69 @@ function ActivityLogView({ log, accounts }) {
 /** "Mi turno": lo primero que ve la persona — cuánto falta para terminar su turno, cuántas tareas
  * lleva hechas hoy, cuántas tiene pendientes y cuáles están atrasadas (más de 24 h), y un botón
  * que la lleva directo a lo siguiente que le toca. */
+/* ===== Resumen de gerencia (celular): cómo está el hotel en 10 segundos ===== */
+function GerenciaGlance({ tasks, activeIssues, onNavigate }) {
+  const [blocked, setBlocked] = useState([]);
+  useEffect(() => { sGet("blocked-rooms", true).then(v => setBlocked(Array.isArray(v) ? v.filter(b => !b.releasedAt) : [])).catch(() => {}); }, []);
+  const open = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt);
+  const late = open.filter(t => Date.now() - new Date(t.createdAt || t.assignedAt || Date.now()).getTime() > 24 * 3600000);
+  const urgent = open.filter(t => t.prioridad === "alta");
+  const issues = Object.keys(activeIssues || {}).length;
+  const days = [];
+  for (let i = 6; i >= 0; i--) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); days.push({ d, n: 0 }); }
+  (tasks || []).forEach(t => {
+    if (!t.finishedAt) return;
+    const f = new Date(t.finishedAt); f.setHours(0, 0, 0, 0);
+    const x = days.find(y => y.d.getTime() === f.getTime());
+    if (x) x.n++;
+  });
+  const max = Math.max(1, ...days.map(x => x.n));
+  const stable = late.length === 0 && urgent.length === 0 && issues === 0;
+  const tile = (v, l, c, go) => (
+    <button type="button" onClick={() => onNavigate(go)} className="rounded-xl border p-3 text-left" style={{ borderColor: C.line, background: C.panel, minHeight: 64 }}>
+      <div className="text-2xl font-extrabold tabular-nums leading-tight" style={{ color: c, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{v}</div>
+      <div className="text-xs" style={{ color: C.inkSoft }}>{l}</div>
+    </button>
+  );
+  return (
+    <section className="rounded-2xl border p-4 mb-4" style={{ borderColor: C.line, background: C.bg }} aria-label="Resumen de gerencia">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div>
+          <h2 className="text-lg font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Resumen de gerencia</h2>
+          <p className="text-xs" style={{ color: C.inkSoft }}>Cómo está el hotel hoy, en 10 segundos.</p>
+        </div>
+        <span className="rounded-full px-3 py-1 text-xs font-bold whitespace-nowrap" style={{ background: stable ? C.greenSoft : C.amberSoft, color: stable ? "#14532d" : "#7a4e00" }}>{stable ? "✓ Operación estable" : "Requiere atención"}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {tile(open.length, "tareas abiertas", C.ink, "executive")}
+        {tile(late.length, "atrasadas (+24 h)", late.length ? C.red : C.green, "executive")}
+        {tile(blocked.length, "hab. bloqueadas", C.ink, "executive")}
+        {tile(issues, "equipos fuera de servicio", issues ? "#b45309" : C.green, "executive")}
+      </div>
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.line, background: C.panel }}>
+        <div className="flex justify-between items-center mb-1"><span className="text-sm font-bold" style={{ color: C.ink }}>Tareas cerradas por día</span><span className="text-xs" style={{ color: C.inkSoft }}>últimos 7 días</span></div>
+        <svg viewBox="0 0 280 100" width="100%" role="img" aria-label={"Tareas cerradas por día: " + days.map(x => x.n).join(", ")}>
+          {days.map((x, i) => {
+            const h = Math.round((x.n / max) * 58), isToday = i === 6;
+            return (
+              <g key={i}>
+                <rect x={i * 40 + 6} y={74 - h} width={28} height={h} rx={4} fill={isToday ? C.amber : C.steel} />
+                <text x={i * 40 + 20} y={68 - h} textAnchor="middle" fontSize="11" fontWeight="700" fill={C.ink}>{x.n}</text>
+                <text x={i * 40 + 20} y={92} textAnchor="middle" fontSize="11" fontWeight={isToday ? 700 : 400} fill={isToday ? C.ink : C.inkSoft}>{isToday ? "Hoy" : x.d.toLocaleDateString("es-CO", { weekday: "short" }).replace(".", "")}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => onNavigate("executive")} className="flex-1 rounded-xl font-bold text-sm text-white" style={{ minHeight: 48, background: C.steelDark }}>Ver panel ejecutivo</button>
+        <button type="button" onClick={() => onNavigate("maintenance-analytics")} className="flex-1 rounded-xl border font-bold text-sm" style={{ minHeight: 48, borderColor: C.line, background: C.panel, color: C.ink }}>Ver análisis</button>
+      </div>
+    </section>
+  );
+}
+
+
 function MyShiftCard({ tasks, currentUser, profiles, employees, scheduleEntries, onNavigate }) {
   const [tick, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 60000); return () => clearInterval(t); }, []);
@@ -7900,6 +7963,7 @@ export default function App() {
                     <WarrantyAlert key="wa" equipos={mttoEquipos} onOpenEquipo={goEq} />,
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
                   ] : null} />
+                {gerenciaLocked && <GerenciaGlance tasks={tasks} activeIssues={activeIssues} onNavigate={setView} />}
                 {!viewerLocked && !gerenciaLocked && <MyShiftCard tasks={tasks} currentUser={currentUser} profiles={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} />}
                 <MyWeekCard tasks={tasks} currentUser={currentUser} />
                 <MyBoardCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} oosCount={Object.keys(activeIssues || {}).length} lowStockCount={lowStockItems.length} currentUser={currentUser} onNavigate={setView} />

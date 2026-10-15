@@ -18,6 +18,27 @@
     },
     "api/telkonet.js": {
       "maxDuration": 60
+    },
+    "api/generate.js": {
+      "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/generate-procedure",
+      "destination": "/api/generate?kind=procedure"
+    },
+    {
+      "source": "/api/generate-reorder-notes",
+      "destination": "/api/generate?kind=reorder-notes"
+    },
+    {
+      "source": "/api/generate-schedule",
+      "destination": "/api/generate?kind=schedule"
+    },
+    {
+      "source": "/api/generate-weekly-summary",
+      "destination": "/api/generate?kind=weekly-summary"
+    }
+  ]
 }

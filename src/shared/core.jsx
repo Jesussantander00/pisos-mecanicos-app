@@ -7,6 +7,7 @@ import { FLOORS } from "./seeds";
 
 export const __pmState = {
   _toastListeners: [],
+  __errCount: 0,
   __pmBackStack: [],
   __pmScrollLockCount: 0,
   __pmTasksEntryFilter: null,
@@ -2173,6 +2174,22 @@ export async function buildActivityReport(fromYm, toYm, tasks, accounts) {
     Repuestos: (r.repuestos || []).map(x => `${x.nombre} x${x.cantidad}`).join(", "),
   }))), "Mantenimientos");
   return wb;
+}
+export async function reportClientError(message, source) {
+  try {
+    const now = Date.now();
+    if (__pmState.__errCount >= 15 || now - __pmState.__errLast < 5000) return; // tope por sesión y espacio entre reportes
+    __pmState.__errCount++; __pmState.__errLast = now;
+    const msg = String(message || "Error desconocido").slice(0, 300);
+    if (/ResizeObserver|Script error|Load failed|Failed to fetch|NetworkError/i.test(msg)) return; // ruido normal sin señal
+    const current = (await sGet("error-log", true)) || [];
+    const list = Array.isArray(current) ? current : [];
+    const prev = list.find(e => e.msg === msg);
+    const next = prev
+      ? list.map(e => e === prev ? { ...e, n: (e.n || 1) + 1, at: new Date().toISOString() } : e)
+      : [{ id: Math.random().toString(36).slice(2, 9), msg, src: String(source || "").slice(0, 120), at: new Date().toISOString(), n: 1, ua: (navigator.userAgent || "").slice(0, 80) }, ...list];
+    await sSet("error-log", next.slice(0, 50), true);
+  } catch { /* nunca romper la app por registrar un error */ }
 }
 
 /* ============================================================

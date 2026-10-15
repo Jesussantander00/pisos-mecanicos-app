@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -1709,14 +1709,41 @@ function UsagePanelView({ tasks, accounts }) {
       </div>
 
       <DriveArchivePanel tasks={tasks} accounts={accounts} />
+      <ErrorLogPanel />
 
       <div className="rounded-xl p-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
         <div className="text-sm font-bold mb-2" style={{ color: C.ink }}>Descargas</div>
         <div className="flex flex-wrap gap-3 items-start">
           <BackupButton />
+          <BackupVerifyButton />
           <Button size="sm" variant="ghost" icon={Download} onClick={exportTasks}>Tareas en Excel</Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ErrorLogPanel() {
+  const [list, setList] = useState(null);
+  const load = useCallback(() => { sGet("error-log", true).then(v => setList(Array.isArray(v) ? v : [])).catch(() => setList([])); }, []);
+  useEffect(() => { load(); }, [load]);
+  if (list === null) return null;
+  const week = list.filter(e => Date.now() - new Date(e.at).getTime() < 7 * 86400000);
+  const clear = async () => { await sSet("error-log", [], true); setList([]); };
+  return (
+    <div className="rounded-xl p-4 mb-4" style={{ background: C.panel, border: `1px solid ${week.length ? C.amber : C.line}` }}>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="text-sm font-bold" style={{ color: C.ink }}>Errores de la app (últimos 7 días): {week.length}</div>
+        {list.length > 0 && <button onClick={clear} className="text-xs font-semibold" style={{ color: C.gray }}>Limpiar</button>}
+      </div>
+      {list.length === 0 ? <div className="text-xs" style={{ color: C.green }}>✓ Sin errores registrados.</div> : (
+        list.slice(0, 8).map(e => (
+          <div key={e.id} className="text-xs py-1.5 border-t" style={{ borderColor: C.line, color: C.ink }}>
+            <div>{e.msg}{e.n > 1 ? ` (×${e.n})` : ""}</div>
+            <div className="text-[10px]" style={{ color: C.gray }}>{fmtDT(e.at)}{e.src ? ` · ${e.src}` : ""}</div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -3362,6 +3389,25 @@ function BackupReminderCard({ onNavigate }) {
   );
 }
 
+/** Recordatorio trimestral: probar que un respaldo realmente sirve (Panel de administrador). */
+function RestoreTestReminderCard({ onNavigate }) {
+  const [hidden, setHidden] = useState(() => { try { const t = Number(localStorage.getItem("pm-local:restore-reminder-snooze") || 0); return Date.now() < t; } catch { return false; } });
+  const last = (() => { try { return localStorage.getItem("pm-local:last-restore-test"); } catch { return null; } })();
+  const days = last ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000) : null;
+  if (hidden || (days != null && days < 90)) return null;
+  const snooze = () => { setHidden(true); try { localStorage.setItem("pm-local:restore-reminder-snooze", String(Date.now() + 7 * 86400000)); } catch { /* noop */ } };
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.amberSoft || C.panel, border: `1px solid ${C.amber}` }}>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}><TitleIco i={ShieldCheck} />{days == null ? "Falta probar que un respaldo sirve" : `Hace ${days} días no se prueba un respaldo`}</div>
+      <div className="text-[11px] mt-0.5 mb-2" style={{ color: C.inkSoft }}>Descarga un respaldo y súbelo en la prueba: la app revisa que se pueda leer, sin cambiar nada.</div>
+      <div className="flex gap-2">
+        <button onClick={() => onNavigate("usage")} className="text-xs font-semibold rounded-lg px-3" style={{ minHeight: 36, background: C.amber, color: "#fff" }}>Ir a probar</button>
+        <button onClick={snooze} className="text-xs font-semibold rounded-lg px-3" style={{ minHeight: 36, color: C.inkSoft }}>Recordar en 7 días</button>
+      </div>
+    </div>
+  );
+}
+
 /** Avisa al administrador de cuentas que entraron en los últimos 7 días desde un dispositivo que nunca habían usado. */
 function NewDeviceCard({ loginLog, nameOf }) {
   const [open, setOpen] = useState(false);
@@ -3620,6 +3666,7 @@ function HomeInsights({ part, tasks, mttoLog, equipos, invItems, currentUser, is
           <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
           {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
           {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
+          {isAdmin && <RestoreTestReminderCard onNavigate={onNavigate} />}
           {isAdmin && <NewDeviceCard loginLog={loginLog} nameOf={nameOf} />}
         </AlertsStack>
       </div>
@@ -4346,10 +4393,67 @@ function TrashView({ trash, onRestore, onPurge }) {
   );
 }
 
+/** Prueba de restauración: revisa que un archivo de respaldo se pueda leer y lo compara con los datos
+ *  de hoy. NO escribe nada en la base de datos — solo verifica. Se recomienda hacerla cada trimestre. */
+function BackupVerifyButton() {
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState(null);
+  const last = (() => { try { return localStorage.getItem("pm-local:last-restore-test"); } catch { return null; } })();
+  const onFile = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    setBusy(true); setReport(null);
+    try {
+      const backup = JSON.parse(await file.text());
+      if (!backup || typeof backup !== "object" || !backup.data || typeof backup.data !== "object") throw new Error("El archivo no tiene el formato de un respaldo de la app.");
+      const live = {}; (await exportFullBackup()).forEach(r => { live[r.key] = r.value; });
+      const size = (v) => Array.isArray(v) ? v.length : (v && typeof v === "object" ? Object.keys(v).length : 1);
+      const rows = Object.keys(backup.data).map(k => ({ key: k, backup: size(backup.data[k]), live: k in live ? size(live[k]) : null }));
+      const missing = rows.filter(r => r.live == null);
+      const importantMissing = ["tasks", "mtto-log", "mtto-equipos"].filter(k => !(k in backup.data));
+      const ok = rows.length > 0 && importantMissing.length === 0;
+      if (ok) { try { localStorage.setItem("pm-local:last-restore-test", nowIso()); } catch { /* noop */ } }
+      setReport({ ok, exportedAt: backup.exportedAt, total: rows.length, rows: rows.filter(r => r.live == null || r.backup !== r.live).slice(0, 12), missing: missing.length, importantMissing });
+    } catch (err) {
+      setReport({ ok: false, error: err.message || "No se pudo leer el archivo." });
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="mt-3">
+      <label className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-md cursor-pointer" style={{ background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
+        <ShieldCheck size={14} /> {busy ? "Revisando…" : "Probar un respaldo (sin cambiar nada)"}
+        <input type="file" accept=".json,application/json" className="hidden" disabled={busy} onChange={onFile} />
+      </label>
+      <div className="text-[11px] mt-1" style={{ color: C.gray }}>
+        {last ? `Última prueba: ${fmtDT(last)}.` : "Todavía no se ha probado ningún respaldo."} Conviene hacerla cada 3 meses.
+      </div>
+      {report && (
+        <div className="text-xs mt-2 rounded-md p-2" style={{ background: report.ok ? C.greenSoft : C.redSoft, color: C.ink }}>
+          {report.error ? <b>✗ {report.error}</b> : (
+            <>
+              <b>{report.ok ? "✓ El respaldo se puede leer y tiene los datos principales." : "✗ Al respaldo le faltan datos principales."}</b>
+              <div>Del {report.exportedAt ? fmtDT(report.exportedAt) : "—"} · {report.total} secciones.</div>
+              {report.importantMissing.length > 0 && <div>Faltan: {report.importantMissing.join(", ")}.</div>}
+              {report.rows.length > 0 && <div className="mt-1">Diferencias con los datos de hoy (normal si ha pasado tiempo):{report.rows.map(r => <div key={r.key}>· {r.key}: respaldo {r.backup}{r.live == null ? ", ya no existe hoy" : `, hoy ${r.live}`}</div>)}</div>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================
    APP PRINCIPAL
    ============================================================ */
 export default function App() {
+  useEffect(() => {
+    const onErr = (e) => reportClientError(e.message || e.error?.message, `${e.filename || ""}:${e.lineno || ""}`);
+    const onRej = (e) => reportClientError(e.reason?.message || String(e.reason || "Promesa rechazada"), "promesa");
+    window.addEventListener("error", onErr); window.addEventListener("unhandledrejection", onRej);
+    return () => { window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej); };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [profiles, setProfiles] = useState({}); // { [id de Supabase Auth]: { display_name, is_admin, is_almacenista, is_gerencia, approved, created_at, email } }
@@ -6629,7 +6733,7 @@ export default function App() {
   // crear, editar o cerrar nada, solo para consultar.
   const viewerLocked = isViewer && !isAdmin && !isAlmacenista && !isGerencia;
   const profileLoaded = !!profiles[currentUser];
-  const isOwner = String(account.email || "").toLowerCase() === OWNER_EMAIL;
+  const isOwner = account.is_owner === true || String(account.email || "").toLowerCase() === OWNER_EMAIL; // el dueño sale del perfil (is_owner); el correo queda de respaldo
   const limitedUI = profileLoaded && !isOwner; // todos menos el dueño: solo recorridos
   const allowedViews = limitedUI ? [...LIMITED_VIEWS, ...(isGerencia ? GERENCIA_ALLOWED_VIEWS : [])] : null;
   const railAdmin = isAdmin && !limitedUI;

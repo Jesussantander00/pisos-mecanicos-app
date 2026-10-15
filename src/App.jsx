@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, Download, Droplets, Eye, Gauge, History, Home, Image as ImageIcon, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, Download, Droplets, Eye, Gauge, History, Home, Image as ImageIcon, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, Wrench, X, Zap } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import * as XLSX from "xlsx";
 import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingCount, getPendingPhotoQueue, getPendingPhotoRecordsCount, sGet, sSet, uploadPhoto } from "./lib/storage";
@@ -1395,11 +1395,13 @@ function RequiredFieldsSettings({ value, onChange }) {
  * - Con señal pero con registros guardados sin subir: píldora azul abajo con botón "Reintentar". */
 function SyncStatusBar({ online, pending = 0, retrying = false, onRetry }) {
   if (!online) {
+    // Antes era una franja fija arriba que tapaba el encabezado (y la nube de conexión). Ahora es un
+    // aviso pequeño abajo: el encabezado queda libre y la nube con lluvia se ve siempre.
     return (
-      <div className="pm-safe-top fixed top-0 left-0 right-0 flex items-center justify-center gap-2 text-xs font-semibold py-2 px-3 text-center"
-        style={{ background: "#7a5405", color: "#fff", zIndex: 500 }}>
-        <WifiOff size={13} className="shrink-0" />
-        <span>Sin señal — lo que registres (incluidas fotos) queda guardado en este celular y se sube solo cuando vuelva{pending > 0 ? ` · ${pending} por subir` : ""}</span>
+      <div role="status" className="pm-slide-up-in fixed left-3 right-3 sm:left-auto sm:right-4 bottom-[68px] sm:bottom-4 z-[90] flex items-center gap-2 rounded-xl shadow-lg px-3 py-2 pointer-events-none"
+        style={{ background: C.panel, border: `1.5px solid ${C.red}`, color: C.ink }}>
+        <ConnectionCloud state="llu" size={26} />
+        <span className="text-xs font-semibold flex-1">Sin señal — lo que registres (incluidas fotos) queda guardado en este celular y se sube solo cuando vuelva{pending > 0 ? ` · ${pending} por subir` : ""}</span>
       </div>
     );
   }

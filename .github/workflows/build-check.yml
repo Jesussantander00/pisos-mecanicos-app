@@ -1,1 +1,35 @@
+name: Verificar build
 
+# Se ejecuta solo: cada vez que subes algo a "main", y cada vez que abres o actualizas un Pull
+# Request hacia "main". No hace despliegue ni toca Vercel: solo intenta compilar el proyecto
+# igual que lo haria Vercel, para avisarte aqui (con una X roja en GitHub) si algo rompe el
+# build, antes de que Vercel lo intente de verdad en produccion.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Compilar el proyecto (npm run build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar (lo mismo que hace Vercel)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder

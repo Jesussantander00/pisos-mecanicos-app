@@ -504,10 +504,10 @@ export async function requestAiAssistantStream(question, contextSummary, history
 /** Resumen de TelkHab (termostatos) para que la IA pueda responder sobre temperaturas de habitaciones.
  *  Usa la última lectura guardada en este dispositivo; si no hay o es vieja (más de 10 min), intenta traerla
  *  fresca (solo funciona para el administrador; para los demás simplemente no se incluye). */
-export async function buildHvacAiSummary() {
+export async function buildHvacAiSummary(allowFetch = true) {
   let cache = null;
   try { const c = JSON.parse(localStorage.getItem("pm-local:telk-rooms") || "null"); if (c && Array.isArray(c.rooms)) cache = c; } catch { /* sin caché */ }
-  if (!cache || Date.now() - (cache.at || 0) > 10 * 60 * 1000) {
+  if (allowFetch && (!cache || Date.now() - (cache.at || 0) > 10 * 60 * 1000)) {
     try {
       const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 6000);
       const resp = await authFetchRetry("/api/telkonet?action=rooms", { signal: ctrl.signal });
@@ -535,10 +535,11 @@ export async function buildHvacAiSummary() {
   L.push(`TERMOSTATOS (TelkHab), lectura de hace ${ago} min (temperaturas en °F; "fuera de rango" = 6 °F o más de diferencia con el objetivo):`);
   L.push(`Habitaciones con termostato: ${rooms.length}; ocupadas: ${occ.length}`);
   L.push(`Habitaciones fuera de rango: ${outRange.length} (${hot.length} más CALIENTES que su objetivo, ${cold.length} más FRÍAS)`);
-  hot.slice(0, 12).forEach(x => L.push(`  - Hab. ${x.r.RoomName}: ${x.t}° (objetivo ${x.sp}°, +${diff(x).toFixed(0)}°)${x.r.Occupied && x.r.Occupied !== "0" ? ", ocupada" : ""}`));
-  cold.slice(0, 5).forEach(x => L.push(`  - Hab. ${x.r.RoomName}: ${x.t}° (objetivo ${x.sp}°, ${diff(x).toFixed(0)}°) — fría`));
-  L.push(`Habitaciones con alertas: ${alerts.length}${alerts.length ? " (" + alerts.slice(0, 10).map(r => r.RoomName).join(", ") + ")" : ""}`);
-  L.push(`Termostatos con batería baja (<30%): ${lowBat.length}${lowBat.length ? " (" + lowBat.slice(0, 10).map(r => r.RoomName).join(", ") + ")" : ""}`);
+  const fmtRoom = (x) => `Hab. ${x.r.RoomName}: ${x.t}° (objetivo ${x.sp}°, ${diff(x) > 0 ? "+" : ""}${diff(x).toFixed(0)}°)${x.r.Occupied && x.r.Occupied !== "0" ? ", ocupada" : ""}`;
+  if (hot.length) L.push(`LISTA COMPLETA de habitaciones más calientes que su objetivo (de la más caliente a la menos):\n` + hot.map(x => "  - " + fmtRoom(x)).join("\n"));
+  if (cold.length) L.push(`LISTA COMPLETA de habitaciones más frías que su objetivo:\n` + cold.map(x => "  - " + fmtRoom(x)).join("\n"));
+  L.push(`Habitaciones con alertas: ${alerts.length}${alerts.length ? " (" + alerts.map(r => r.RoomName).join(", ") + ")" : ""}`);
+  L.push(`Termostatos con batería baja (<30%): ${lowBat.length}${lowBat.length ? " (" + lowBat.map(r => r.RoomName).join(", ") + ")" : ""}`);
   return L.join("\n");
 }
 
@@ -858,15 +859,15 @@ export function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activ
 
   const outOfService = Object.values(activeIssues || {});
   L.push(`Equipos fuera de servicio ahora mismo: ${outOfService.length}`);
-  outOfService.slice(0, 12).forEach(iss => L.push(`  - ${iss.name} (${iss.floorName || "sin piso"}), fuera de servicio desde ${fmtDT(iss.openedAt)}`));
+  outOfService.slice(0, 40).forEach(iss => L.push(`  - ${iss.name} (${iss.floorName || "sin piso"}), fuera de servicio desde ${fmtDT(iss.openedAt)}`));
 
   const openTasks = (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada");
   L.push(`Tareas abiertas (sin contar las ya finalizadas): ${openTasks.length}`);
-  openTasks.slice(0, 15).forEach(t => L.push(`  - "${t.titulo}" — prioridad ${t.prioridad}, estado ${normalizeTaskState(t.estado)}, asignada a ${t.asignadoA || "nadie todavía"}`));
+  openTasks.slice(0, 40).forEach(t => L.push(`  - "${t.titulo}" — prioridad ${t.prioridad}, estado ${normalizeTaskState(t.estado)}, asignada a ${t.asignadoA || "nadie todavía"}`));
 
   const lowStock = computeLowStock(invItems || []);
   L.push(`Repuestos con stock bajo o crítico: ${lowStock.length}`);
-  lowStock.slice(0, 12).forEach(it => L.push(`  - ${it.name}: quedan ${it.quantity} ${it.unit} (mínimo ${it.minThreshold})`));
+  lowStock.slice(0, 40).forEach(it => L.push(`  - ${it.name}: quedan ${it.quantity} ${it.unit} (mínimo ${it.minThreshold})`));
 
   if (fuelTanksCritical && fuelTanksCritical.length) {
     L.push(`Tanques de combustible (ACPM) en nivel crítico: ${fuelTanksCritical.length}`);
@@ -875,7 +876,7 @@ export function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activ
 
   const suggestions = computeMaintenanceSuggestions(equipos, mttoLog, mttoCronograma);
   L.push(`Equipos atrasados según su cronograma de mantenimiento (comparando el último mantenimiento real contra la frecuencia programada): ${suggestions.length}`);
-  suggestions.slice(0, 15).forEach(s => L.push(`  - ${s.equipo.nombre} (${s.equipo.sistema}): ${s.nuncaIntervenido ? "nunca se le ha registrado mantenimiento" : `${s.diasSinIntervencion} días sin intervención`}, ${s.overdueDays} días atrasado respecto a lo esperado`));
+  suggestions.slice(0, 40).forEach(s => L.push(`  - ${s.equipo.nombre} (${s.equipo.sistema}): ${s.nuncaIntervenido ? "nunca se le ha registrado mantenimiento" : `${s.diasSinIntervencion} días sin intervención`}, ${s.overdueDays} días atrasado respecto a lo esperado`));
 
   const mtto30 = (mttoLog || []).filter(m => hoursBetween(m.fecha, nowIso()) / 24 <= 30);
   L.push(`Mantenimientos registrados en los últimos 30 días: ${mtto30.length} (${mtto30.filter(m => m.tipo === "preventivo").length} preventivos, ${mtto30.filter(m => m.tipo === "correctivo").length} correctivos)`);

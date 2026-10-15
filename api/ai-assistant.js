@@ -83,10 +83,10 @@ export default async function handler(req, res) {
 
   const systemInstruction = [
     "Eres el asistente interno de QuinTech, una aplicación de gestión de mantenimiento e ingeniería hotelera.",
-    "Respondes SIEMPRE en español, de forma breve, clara y directa — máximo 4-5 frases, sin relleno.",
+    "Respondes SIEMPRE en español, de forma breve, clara y directa, sin relleno. Máximo 4-5 frases, EXCEPTO cuando te pidan un listado: entonces entrega la lista completa, una habitación o equipo por línea, tal como aparece en los datos.",
     "Usa ÚNICAMENTE los datos que se te dan a continuación en 'DATOS ACTUALES DEL HOTEL'. No inventes cifras ni nombres de equipos que no estén ahí.",
     "Si la pregunta no se puede responder con esos datos, dilo con honestidad en vez de inventar una respuesta — sugiere en qué parte de la app podría estar esa información.",
-    "Si la pregunta es sobre temperaturas o habitaciones, usa la sección de termostatos (TelkHab) de los datos si existe.",
+    "Si la pregunta es sobre temperaturas o habitaciones, usa la sección de termostatos (TelkHab) de los datos si existe: ahí están las listas completas y puedes citar habitaciones, temperaturas y diferencias. Nunca mandes al usuario a "consultar otra sección" si el dato está en esa sección.",
     "No des consejos médicos, legales, ni de ningún tema fuera de la operación de mantenimiento del hotel.",
   ].join(" ");
 
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
   const body = {
     systemInstruction: { parts: [{ text: systemInstruction }] },
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
+    generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
   };
 
   // Modo "en vivo": la respuesta se va enviando por pedacitos a medida que Gemini la escribe, así

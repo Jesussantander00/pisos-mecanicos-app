@@ -1424,9 +1424,11 @@ function AiAssistantWidget({ contextSummary }) {
     setSending(true);
     try {
       const history = messages.slice(-6).map(m => `${m.role === "user" ? "Persona" : "Asistente"}: ${m.text}`).join("\n");
-      // Los datos de termostatos se piden en paralelo solo si la pregunta trata de temperatura/habitaciones.
-      const wantsHvac = /temperatur|calor|calient|fr[ií]o|fri[ao]|termostato|telk|habitaci[oó]n|hab\.? ?\d|clima|aire|bater[ií]a/i.test(q);
-      const hvac = wantsHvac ? await buildHvacAiSummary().catch(() => "") : "";
+      // Si la pregunta (o la conversación reciente) trata de temperatura/habitaciones, se trae la lectura
+      // más fresca; en cualquier otro caso se usa lo que ya hay guardado en este dispositivo, sin esperar.
+      const hvacRe = /temperatur|calor|calient|fr[ií]o|fri[ao]|termostato|telk|habitaci[oó]n|hab\.? ?\d|clima|aire|bater[ií]a|listado|lista|cuales|cuáles|cuantas|cuántas/i;
+      const wantsHvac = hvacRe.test(q) || messages.slice(-4).some(m => /temperatur|calor|calient|termostato|telk|habitaci[oó]n/i.test(m.text || ""));
+      const hvac = await buildHvacAiSummary(wantsHvac).catch(() => "");
       const fullContext = hvac ? `${contextSummary}\n\n${hvac}` : contextSummary;
       let started = false;
       const answer = await requestAiAssistantStream(q, fullContext, history, (text) => {

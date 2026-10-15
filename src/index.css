@@ -200,3 +200,8 @@ button:disabled { cursor: not-allowed; }
 .pm-gloves input[type="checkbox"], .pm-gloves input[type="radio"] { width: 28px; height: 28px; }
 .pm-gloves .text-xs { font-size: 14px; line-height: 1.35; }
 .pm-gloves .text-sm { font-size: 16px; }
+
+/* Tanque de combustible: la superficie del líquido se mueve despacio. */
+.pm-tankwave { animation: pm-tankslide 3s linear infinite; }
+@keyframes pm-tankslide { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .pm-tankwave { animation: none; } }

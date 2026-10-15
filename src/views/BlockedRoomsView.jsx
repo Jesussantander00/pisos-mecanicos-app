@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { sGet, sSet } from "../lib/storage";
-import { C } from "../shared/core";
+import { C, normalizeTaskState, roomOfTask } from "../shared/core";
 
 
 
 /* ===== Habitaciones bloqueadas por mantenimiento (se guarda en "blocked-rooms") ===== */
-export function BlockedRoomsView({ accounts, currentUser, onNavigate }) {
+export function BlockedRoomsView({ accounts, currentUser, onNavigate, tasks }) {
   const [list, setList] = useState(null);
   const [room, setRoom] = useState("");
   const [reason, setReason] = useState("");
@@ -59,13 +59,28 @@ export function BlockedRoomsView({ accounts, currentUser, onNavigate }) {
         <div className="text-sm text-center py-6 rounded-xl border" style={{ color: C.gray, borderColor: C.line }}>No hay habitaciones bloqueadas.</div>
       ) : active.map(b => {
         const late = b.eta && new Date(b.eta + "T23:59:59").getTime() < Date.now();
+        const daysBlocked = Math.floor((Date.now() - new Date(b.since).getTime()) / 86400000);
+        const roomTasks = (tasks || []).filter(t => roomOfTask(t) === b.room && new Date(t.createdAt || t.assignedAt || b.since).getTime() >= new Date(b.since).getTime() - 86400000);
+        const doneN = roomTasks.filter(t => normalizeTaskState(t.estado) === "finalizada" || t.finishedAt).length;
+        const pct = roomTasks.length ? Math.round((doneN / roomTasks.length) * 100) : null;
+        const noTech = roomTasks.some(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt && !t.asignadoA);
         return (
-          <div key={b.id} className="rounded-xl border p-3 mb-2" style={{ borderColor: late ? C.red : C.line, background: C.panel }}>
+          <div key={b.id} className="rounded-xl border p-3 mb-2" style={{ borderColor: late || daysBlocked > 3 ? C.red : C.line, background: C.panel }}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-lg font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Hab {b.room}</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="text-lg font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Hab {b.room}</div>
+                  <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: daysBlocked > 3 ? C.redSoft : daysBlocked >= 1 ? C.amberSoft : C.greenSoft, color: daysBlocked > 3 ? "#8a2a12" : daysBlocked >= 1 ? "#7a4e00" : "#14532d" }}>{daysBlocked < 1 ? "Bloqueada hoy" : `${daysBlocked} día${daysBlocked === 1 ? "" : "s"} bloqueada`}</span>
+                  {noTech && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: C.amberSoft, color: "#7a4e00" }}>Sin técnico</span>}
+                </div>
                 <div className="text-sm" style={{ color: C.inkSoft }}>{b.reason}</div>
                 <div className="text-[11px] mt-0.5" style={{ color: C.gray }}>Bloqueada el {fmt(b.since)}{b.by ? ` por ${nameOf(b.by)}` : ""}</div>
+                {pct !== null && (
+                  <div className="mt-2" style={{ maxWidth: 260 }}>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.bg }}><div className="h-full" style={{ width: `${pct}%`, background: pct >= 100 ? C.green : C.amber }} /></div>
+                    <div className="text-[11px] mt-0.5" style={{ color: C.inkSoft }}>Reparación {pct}% · {doneN} de {roomTasks.length} tarea{roomTasks.length === 1 ? "" : "s"} cerrada{doneN === 1 ? "" : "s"}</div>
+                  </div>
+                )}
               </div>
               <div className="text-right shrink-0">
                 <div className="text-[11px]" style={{ color: C.inkSoft }}>Se libera</div>

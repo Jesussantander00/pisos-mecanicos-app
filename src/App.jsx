@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingCount, getPendingPhotoQueue, getPendingPhotoRecordsCount, sGet, sSet, uploadPhoto } from "./lib/storage";
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
-import { Avatar, BackupButton, Badge, Button, ConfirmDialog, HardHatAvatar, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
+import { Avatar, BackupButton, Badge, Button, ConfirmDialog, HardHatAvatar, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VoiceInputButton, VoiceTextarea } from "./shared/components";
 import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, fmtHours, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
@@ -1904,6 +1904,28 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf, onFoundTool }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Barras verticales simples, sin recharts — cada barra es un div con altura en %. */
+function VerticalBarChart({ data, labelKey, valueKey, colorFor, formatValue, max = 100 }) {
+  return (
+    <div className="flex items-end gap-2" style={{ height: 180 }}>
+      {data.map((d, i) => {
+        const val = d[valueKey];
+        const pct = val === null || val === undefined ? 0 : Math.max(2, Math.min(100, (Number(val) / max) * 100));
+        const color = val === null || val === undefined ? C.gray : (colorFor ? colorFor(val) : C.amber);
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
+            <span className="text-[10px] font-semibold mb-1 truncate w-full text-center" style={{ color }}>
+              {val === null || val === undefined ? "—" : (formatValue ? formatValue(val) : val)}
+            </span>
+            <div className="w-full rounded-t-md" style={{ height: `${pct}%`, minHeight: 4, background: color, transition: "height 500ms ease-out" }} />
+            <span className="text-[9px] mt-1 truncate w-full text-center" style={{ color: C.gray }} title={d[labelKey]}>{d[labelKey]}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -7933,7 +7955,7 @@ export default function App() {
             <MyScheduleView employee={employees.find(e => e.id === account.linked_employee_id)} scheduleEntries={scheduleEntries} onGoToProfile={() => setView("profile")} />
           )}
           {view === "handoff" && (
-            <HandoffView lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
+            <HandoffView tasks={tasks} accounts={profiles} lastTour={lastTour} tourHistory={tourHistory} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onLogSent={logSentReport} currentUser={displayName} justFinished={justFinished}
               onAckFinished={() => setJustFinished(false)} autoSendResult={autoSendResult}
               mySignature={account.signature} signerCargo={mySignerCargo} onGoToProfile={() => setView("profile")} />
@@ -8033,7 +8055,7 @@ export default function App() {
           {view === "floorplans" && isAdmin && (
             <PlanosView tasks={tasks} mttoLog={mttoLog} equipos={mttoEquipos} accounts={profiles} onNavigate={setView} />
           )}
-          {view === "blocked-rooms" && isAdmin && <BlockedRoomsView accounts={profiles} currentUser={currentUser} onNavigate={setView} />}
+          {view === "blocked-rooms" && isAdmin && <BlockedRoomsView accounts={profiles} currentUser={currentUser} onNavigate={setView} tasks={tasks} />}
           {view === "share-summary" && isAdmin && <ShareSummaryView tasks={tasks} accounts={profiles} lowStockItems={lowStockItems} />}
           {view === "plant-status" && isAdmin && <PlantStatusView tasks={tasks} activeIssues={activeIssues} coldOutOfRange={coldOutOfRange} meterAnomalies={meterAnomalies} criticalFuelTanks={criticalFuelTanks} lowStockItems={lowStockItems} staleIssues={staleIssues} onNavigate={setView} />}
           {view === "guest-requests" && isAdmin && <GuestRequestsView tasks={tasks} accounts={profiles} onNavigate={setView} />}

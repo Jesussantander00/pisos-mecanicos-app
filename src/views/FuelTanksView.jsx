@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C, FUEL_ITEMS, fmtDT } from "../shared/core";
-import { Button, Sparkline, VerticalBarChart } from "../shared/components";
+import { Button, Sparkline } from "../shared/components";
 
 
 
@@ -16,6 +16,29 @@ import { Button, Sparkline, VerticalBarChart } from "../shared/components";
  * cada piso), igual que ya hace "Tanques agua potable" — no es un registro aparte. Mismo formato
  * de tarjetas, gráfica y detalle por equipo que Análisis de fallas.
  */
+/** Tanque de combustible dibujado como un tanque real: el líquido sube hasta el nivel y la raya punteada marca el mínimo (20%). */
+function TankGauge({ name, floor, value }) {
+  const v = value == null ? null : Math.max(0, Math.min(100, value));
+  const col = v == null ? C.gray : v < 20 ? C.red : v < 35 ? C.amber : C.green;
+  const label = v == null ? "Sin datos" : v < 20 ? "Reabastecer ya" : v < 35 ? "Casi en el mínimo" : "Bien";
+  const bg = v == null ? C.bg : v < 20 ? C.redSoft : v < 35 ? C.amberSoft : C.greenSoft;
+  const fg = v == null ? C.gray : v < 20 ? "#8a2a12" : v < 35 ? "#7a4e00" : "#14532d";
+  return (
+    <div className="rounded-xl border p-3 flex flex-col items-center gap-1.5 text-center" style={{ borderColor: v != null && v < 20 ? C.red : C.line, background: C.panel }}>
+      <div role="img" aria-label={`${name}: ${v == null ? "sin datos" : v + " por ciento"}`} className="relative overflow-hidden" style={{ width: 58, height: 130, borderRadius: 12, border: `3px solid ${C.steel}`, background: C.bg }}>
+        {v != null && <div className="absolute left-0 right-0 bottom-0" style={{ height: `${v}%`, background: col }}>
+          <svg className="pm-tankwave" viewBox="0 0 200 10" preserveAspectRatio="none" aria-hidden="true" style={{ position: "absolute", left: 0, top: -6, width: "200%", height: 10 }}><path d="M0 5Q12 0 25 5T50 5T75 5T100 5T125 5T150 5T175 5T200 5V10H0Z" fill={col} /></svg>
+        </div>}
+        <div className="absolute" style={{ left: -3, right: -3, bottom: "20%", borderTop: `2px dashed ${C.ink}` }} />
+      </div>
+      <div className="text-2xl font-bold leading-none" style={{ color: col, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{v == null ? "—" : `${v}%`}</div>
+      <div className="text-xs font-semibold leading-tight" style={{ color: C.ink }}>{name}</div>
+      {floor && <div className="text-[11px] leading-tight" style={{ color: C.gray }}>{floor}</div>}
+      <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: bg, color: fg }}>{label}</span>
+    </div>
+  );
+}
+
 export function FuelTanksView({ latestValues, fuelHistory, onManualUpdate, onNavigate }) {
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState("");
@@ -57,7 +80,10 @@ export function FuelTanksView({ latestValues, fuelHistory, onManualUpdate, onNav
 
       {readPct.length > 0 && (
         <div className="rounded-lg border p-4 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-          <VerticalBarChart data={pctData} labelKey="name" valueKey="value" colorFor={colorFor} formatValue={v => `${v}%`} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {pctData.map(d => <TankGauge key={d.id} name={d.name} floor={d.floor} value={d.value} />)}
+          </div>
+          <p className="text-[11px] text-center mt-2" style={{ color: C.gray }}>La raya punteada es el mínimo del 20%.</p>
           <div className="flex items-center gap-4 justify-center mt-2 text-xs flex-wrap" style={{ color: C.inkSoft }}>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.green }} /> ≥ 50%</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: C.amber }} /> 20–49%</span>

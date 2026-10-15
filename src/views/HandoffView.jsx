@@ -1,11 +1,91 @@
 import { useEffect, useMemo, useState } from "react";
+import { sGet, sSet } from "../lib/storage";
 import { Download, Mail, MessageCircle, Search } from "lucide-react";
-import { C, buildTourText, buildWhatsAppLink, generateTourPdf, nowIso, sendTourEmailAuto } from "../shared/core";
+import { C, buildTourText, buildWhatsAppLink, generateTourPdf, hoursBetween, isTaskSnoozed, normalizeTaskState, nowIso, sendTourEmailAuto } from "../shared/core";
 import { Button } from "../shared/components";
 
 
 
-export function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult, mySignature, signerCargo, onGoToProfile }) {
+/** Relevo de turno: lo que deja el turno que sale para el que entra — pendientes, cerradas, habitaciones
+ * bloqueadas y una nota. Quien entra confirma que lo recibió y queda registro de quién lo leyó. */
+function ShiftRelevoCard({ tasks, accounts, currentUser }) {
+  const [blocked, setBlocked] = useState([]);
+  const [notes, setNotes] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    sGet("blocked-rooms", true).then(v => setBlocked(Array.isArray(v) ? v.filter(b => !b.releasedAt) : [])).catch(() => {});
+    sGet("handoff-notes", true).then(v => setNotes(Array.isArray(v) ? v : [])).catch(() => setNotes([]));
+  }, []);
+  const nameOf = (u) => accounts?.[u]?.display_name || u || "";
+  const all = tasks || [];
+  const open = all.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt && !isTaskSnoozed(t));
+  const ageH = (t) => hoursBetween(t.assignedAt || t.createdAt || nowIso(), nowIso());
+  const pending = [...open].sort((a, b) => (b.prioridad === "alta") - (a.prioridad === "alta") || ageH(b) - ageH(a));
+  const closed8h = all.filter(t => t.finishedAt && Date.now() - new Date(t.finishedAt).getTime() < 8 * 3600000).length;
+  const since = Date.now() - 8 * 3600000;
+  const lastNote = (notes || []).filter(n => n.kind === "note").sort((a, b) => new Date(b.at) - new Date(a.at))[0];
+  const acks = lastNote ? (notes || []).filter(n => n.kind === "ack" && n.noteId === lastNote.id) : [];
+  const iAcked = acks.some(a => a.by === currentUser);
+  const fmtT = (iso) => { try { return new Date(iso).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+  const persist = async (next) => {
+    setBusy(true); setErr("");
+    try { await sSet("handoff-notes", next.slice(0, 60), true); setNotes(next.slice(0, 60)); }
+    catch { setErr("No se pudo guardar. Revisa tu conexión e intenta otra vez."); }
+    setBusy(false);
+  };
+  const postNote = async () => {
+    const text = draft.trim(); if (!text) return;
+    await persist([{ id: "hn" + Date.now(), kind: "note", at: nowIso(), by: currentUser, text }, ...(notes || [])]);
+    setDraft("");
+  };
+  const ack = () => lastNote && persist([{ id: "ha" + Date.now(), kind: "ack", at: nowIso(), by: currentUser, noteId: lastNote.id }, ...(notes || [])]);
+  const Sec = ({ color, children }) => <div className="flex items-center gap-2 text-sm font-bold mb-1.5" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}><span className="rounded-full" style={{ width: 10, height: 10, background: color }} />{children}</div>;
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}>Relevo de turno</div>
+      <p className="text-xs mb-3" style={{ color: C.inkSoft }}>Lo que deja el turno que sale para el que entra, armado con lo que pasó.</p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="rounded-lg p-3" style={{ background: C.bg }}>
+          <Sec color={C.red}>Queda pendiente ({pending.length})</Sec>
+          {pending.length === 0 ? <div className="text-xs" style={{ color: C.green }}>Nada pendiente.</div> : pending.slice(0, 4).map(t => (
+            <div key={t.id} className="text-sm rounded-md px-2.5 py-1.5 mb-1" style={{ background: C.panel, color: C.ink }}>
+              {t.titulo}<span className="text-[11px] ml-1" style={{ color: ageH(t) > 24 ? C.red : C.gray }}>· {t.asignadoA ? nameOf(t.asignadoA) : "sin asignar"}{ageH(t) > 24 ? " · atrasada" : ""}</span>
+            </div>
+          ))}
+          {pending.length > 4 && <div className="text-[11px]" style={{ color: C.gray }}>y {pending.length - 4} más</div>}
+          <div className="mt-2"><Sec color={C.green}>Se cerró ({closed8h})</Sec><div className="text-xs" style={{ color: C.inkSoft }}>En las últimas 8 horas.</div></div>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: C.bg }}>
+          <Sec color={C.amber}>Ojo con esto</Sec>
+          {blocked.length === 0 ? <div className="text-xs mb-2" style={{ color: C.inkSoft }}>Sin habitaciones bloqueadas.</div> : (
+            <div className="text-sm rounded-md px-2.5 py-1.5 mb-2" style={{ background: C.amberSoft, color: "#5a3a02" }}>Bloqueadas: {blocked.map(b => b.room).join(", ")}</div>
+          )}
+          <Sec color={C.blue}>Nota del turno</Sec>
+          {lastNote ? (
+            <div className="text-sm rounded-md px-2.5 py-2" style={{ background: C.blueSoft, color: C.ink }}>
+              “{lastNote.text}”
+              <div className="text-[11px] mt-1" style={{ color: C.inkSoft }}>{nameOf(lastNote.by)} · {fmtT(lastNote.at)}{new Date(lastNote.at).getTime() < since ? " · de un turno anterior" : ""}</div>
+            </div>
+          ) : <div className="text-xs" style={{ color: C.inkSoft }}>Aún no hay nota.</div>}
+          {acks.length > 0 && <div className="text-[11px] mt-1.5 flex items-center gap-1.5" style={{ color: C.inkSoft }}><span className="rounded-full" style={{ width: 8, height: 8, background: C.green }} />Ya lo leyó: {acks.map(a => `${nameOf(a.by).split(" ")[0]} ${fmtT(a.at)}`).join(", ")}</div>}
+        </div>
+      </div>
+      <div className="flex gap-2 mt-3 flex-wrap">
+        <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Escribe una nota para el turno que entra…" aria-label="Nota para el turno que entra" maxLength={400}
+          className="flex-1 text-sm border rounded-md px-3 outline-none" style={{ minHeight: 44, minWidth: 180, borderColor: C.line, background: C.panel, color: C.ink }} />
+        <button onClick={postNote} disabled={busy || !draft.trim()} className="text-sm font-semibold rounded-xl px-4 disabled:opacity-50" style={{ minHeight: 44, background: C.steelDark, color: "#fff" }}>Dejar nota</button>
+      </div>
+      {lastNote && !iAcked && lastNote.by !== currentUser && (
+        <button onClick={ack} disabled={busy} className="w-full mt-2 text-sm font-bold rounded-xl disabled:opacity-50" style={{ minHeight: 48, background: C.steelDark, color: "#fff", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>Confirmar que recibí el relevo</button>
+      )}
+      {err && <div className="text-xs mt-2" style={{ color: C.red }} role="alert">{err}</div>}
+    </div>
+  );
+}
+
+export function HandoffView({ tasks, accounts, lastTour, tourHistory, reportEmail, reportWhatsapp, onLogSent, currentUser, justFinished, onAckFinished, autoSendResult, mySignature, signerCargo, onGoToProfile }) {
   const [emailTo, setEmailTo] = useState(reportEmail || "");
   const [waTo, setWaTo] = useState(reportWhatsapp || "");
   const [sentNow, setSentNow] = useState(null);
@@ -32,6 +112,7 @@ export function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp
     return (
       <div>
         <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Entrega de turno</h2>
+        <ShiftRelevoCard tasks={tasks} accounts={accounts} currentUser={currentUser} />
         <p className="text-sm py-10 text-center" style={{ color: C.gray }}>
           Aún no se ha completado un recorrido. Cuando termines de revisar todos los pisos, desde el primero hasta el
           último, aquí aparecerá automáticamente el resumen listo para enviar.
@@ -80,6 +161,7 @@ export function HandoffView({ lastTour, tourHistory, reportEmail, reportWhatsapp
 
   return (
     <div>
+      <ShiftRelevoCard tasks={tasks} accounts={accounts} currentUser={currentUser} />
       {justFinished && (
         <div className="rounded-lg p-3 mb-4" style={{ background: C.greenSoft, border: `1px solid ${C.green}` }}>
           <div className="flex items-center justify-between gap-2 flex-wrap">

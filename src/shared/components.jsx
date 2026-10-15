@@ -637,28 +637,6 @@ export function HorizontalBarChart({ data, labelKey, valueKey, colorFor, formatV
   );
 }
 
-/** Barras verticales simples, sin recharts — cada barra es un div con altura en %. */
-export function VerticalBarChart({ data, labelKey, valueKey, colorFor, formatValue, max = 100 }) {
-  return (
-    <div className="flex items-end gap-2" style={{ height: 180 }}>
-      {data.map((d, i) => {
-        const val = d[valueKey];
-        const pct = val === null || val === undefined ? 0 : Math.max(2, Math.min(100, (Number(val) / max) * 100));
-        const color = val === null || val === undefined ? C.gray : (colorFor ? colorFor(val) : C.amber);
-        return (
-          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
-            <span className="text-[10px] font-semibold mb-1 truncate w-full text-center" style={{ color }}>
-              {val === null || val === undefined ? "—" : (formatValue ? formatValue(val) : val)}
-            </span>
-            <div className="w-full rounded-t-md" style={{ height: `${pct}%`, minHeight: 4, background: color, transition: "height 500ms ease-out" }} />
-            <span className="text-[9px] mt-1 truncate w-full text-center" style={{ color: C.gray }} title={d[labelKey]}>{d[labelKey]}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /** Línea de tendencia pequeña ("sparkline"), en SVG puro — sin recharts. */
 export function Sparkline({ points, width = 200, height = 50, color }) {
   if (!points || points.length < 2) return null;

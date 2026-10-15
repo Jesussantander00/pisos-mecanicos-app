@@ -86,6 +86,7 @@ export default async function handler(req, res) {
     "Respondes SIEMPRE en español, de forma breve, clara y directa — máximo 4-5 frases, sin relleno.",
     "Usa ÚNICAMENTE los datos que se te dan a continuación en 'DATOS ACTUALES DEL HOTEL'. No inventes cifras ni nombres de equipos que no estén ahí.",
     "Si la pregunta no se puede responder con esos datos, dilo con honestidad en vez de inventar una respuesta — sugiere en qué parte de la app podría estar esa información.",
+    "Si la pregunta es sobre temperaturas o habitaciones, usa la sección de termostatos (TelkHab) de los datos si existe.",
     "No des consejos médicos, legales, ni de ningún tema fuera de la operación de mantenimiento del hotel.",
   ].join(" ");
 
@@ -95,14 +96,59 @@ export default async function handler(req, res) {
     `\nPREGUNTA: ${question.trim()}`,
   ].join("\n");
 
+  const body = {
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
+  };
+
+  // Modo "en vivo": la respuesta se va enviando por pedacitos a medida que Gemini la escribe, así
+  // la persona empieza a leer en ~1 segundo en vez de esperar la respuesta completa.
+  if (req.body?.stream === true) {
+    try {
+      const sresp = await callGeminiWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
+        body
+      );
+      if (!sresp.ok || !sresp.body) {
+        const errText = await sresp.text().catch(() => "");
+        const friendly = sresp.status === 503
+          ? "Gemini está saturado en este momento (alta demanda). Intenta de nuevo en unos segundos."
+          : `Gemini no pudo responder (${sresp.status}). ${errText.slice(0, 200)}`;
+        res.status(502).json({ ok: false, message: friendly });
+        return;
+      }
+      res.status(200);
+      res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      const decoder = new TextDecoder();
+      let buf = "", any = false;
+      for await (const chunk of sresp.body) {
+        buf += decoder.decode(chunk, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+          if (!line.startsWith("data:")) continue;
+          try {
+            const j = JSON.parse(line.slice(5));
+            const t = j?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+            if (t) { any = true; res.write(JSON.stringify({ t }) + "\n"); }
+          } catch { /* línea incompleta o sin texto: se ignora */ }
+        }
+      }
+      if (!any) res.write(JSON.stringify({ err: "Gemini no devolvió una respuesta utilizable." }) + "\n");
+      res.end();
+    } catch (err) {
+      if (!res.headersSent) res.status(500).json({ ok: false, message: "No se pudo contactar a Gemini. Intenta de nuevo." });
+      else { try { res.write(JSON.stringify({ err: "Se cortó la conexión con Gemini." }) + "\n"); res.end(); } catch { /* noop */ } }
+    }
+    return;
+  }
+
   try {
     const resp = await callGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-      {
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
-      }
+      body
     );
 
     if (!resp.ok) {

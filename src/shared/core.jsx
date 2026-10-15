@@ -452,7 +452,7 @@ export async function requestReorderNotes({ items }) {
 /** Le pregunta algo en español simple al asistente de IA, mandándole un resumen compacto de los
  *  datos actuales de la app (no la base de datos completa) para que responda con información
  *  real, no genérica. Ver api/ai-assistant.js. */
-export async function requestAiAssistant(question, contextSummary, history) {
+async function requestAiAssistant(question, contextSummary, history) {
   const resp = await fetch("/api/ai-assistant", {
     method: "POST",
     headers: aiRequestHeaders(),
@@ -466,6 +466,80 @@ export async function requestAiAssistant(question, contextSummary, history) {
   }
   if (!data) throw new Error("El servidor respondió algo que no pude leer");
   return data;
+}
+
+/** Igual que requestAiAssistant, pero la respuesta llega por pedacitos (onChunk recibe el texto acumulado). */
+export async function requestAiAssistantStream(question, contextSummary, history, onChunk) {
+  const resp = await fetch("/api/ai-assistant", {
+    method: "POST",
+    headers: aiRequestHeaders(),
+    body: JSON.stringify({ question, contextSummary, history, stream: true }),
+  });
+  if (!resp.ok || !resp.body) {
+    let data = null; try { data = await resp.json(); } catch { /* no era JSON */ }
+    throw new Error(data?.message || `El servidor respondió con error ${resp.status}`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "", full = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const j = JSON.parse(line);
+        if (j.err) throw new Error(j.err);
+        if (j.t) { full += j.t; onChunk(full); }
+      } catch (e) { if (e.message && !/JSON/.test(e.message)) throw e; }
+    }
+  }
+  if (!full.trim()) throw new Error("La IA no devolvió una respuesta.");
+  return full.trim();
+}
+
+/** Resumen de TelkHab (termostatos) para que la IA pueda responder sobre temperaturas de habitaciones.
+ *  Usa la última lectura guardada en este dispositivo; si no hay o es vieja (más de 10 min), intenta traerla
+ *  fresca (solo funciona para el administrador; para los demás simplemente no se incluye). */
+export async function buildHvacAiSummary() {
+  let cache = null;
+  try { const c = JSON.parse(localStorage.getItem("pm-local:telk-rooms") || "null"); if (c && Array.isArray(c.rooms)) cache = c; } catch { /* sin caché */ }
+  if (!cache || Date.now() - (cache.at || 0) > 10 * 60 * 1000) {
+    try {
+      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 6000);
+      const resp = await authFetchRetry("/api/telkonet?action=rooms", { signal: ctrl.signal });
+      clearTimeout(to);
+      const data = await resp.json();
+      if (resp.ok && Array.isArray(data.rooms)) {
+        cache = { rooms: data.rooms, at: Date.now() };
+        try { localStorage.setItem("pm-local:telk-rooms", JSON.stringify({ rooms: data.rooms, profileTypes: data.profileTypes || [], at: cache.at })); } catch { /* cuota llena */ }
+      }
+    } catch { /* sin permiso o sin red: se sigue con lo que haya */ }
+  }
+  if (!cache || !cache.rooms.length) return "";
+  const rooms = cache.rooms;
+  const num = (v) => (v == null || v === "" ? null : Number(v));
+  const withTemp = rooms.map(r => ({ r, t: num(r.Temperature), sp: num(r.UserSetPoint) })).filter(x => x.t != null);
+  const diff = (x) => (x.sp != null ? x.t - x.sp : 0);
+  const outRange = withTemp.filter(x => x.sp != null && Math.abs(x.t - x.sp) >= 6);
+  const hot = outRange.filter(x => diff(x) > 0).sort((a, b) => diff(b) - diff(a));
+  const cold = outRange.filter(x => diff(x) < 0).sort((a, b) => diff(a) - diff(b));
+  const alerts = rooms.filter(r => Number(r.AlertCount || 0) > 0 || Number(r.TKOAlertCount || 0) > 0);
+  const lowBat = rooms.filter(r => r.BatteryPercent != null && Number(r.BatteryPercent) >= 0 && Number(r.BatteryPercent) < 30);
+  const occ = rooms.filter(r => r.Occupied && r.Occupied !== "0");
+  const ago = Math.max(0, Math.round((Date.now() - (cache.at || Date.now())) / 60000));
+  const L = [];
+  L.push(`TERMOSTATOS (TelkHab), lectura de hace ${ago} min (temperaturas en °F; "fuera de rango" = 6 °F o más de diferencia con el objetivo):`);
+  L.push(`Habitaciones con termostato: ${rooms.length}; ocupadas: ${occ.length}`);
+  L.push(`Habitaciones fuera de rango: ${outRange.length} (${hot.length} más CALIENTES que su objetivo, ${cold.length} más FRÍAS)`);
+  hot.slice(0, 12).forEach(x => L.push(`  - Hab. ${x.r.RoomName}: ${x.t}° (objetivo ${x.sp}°, +${diff(x).toFixed(0)}°)${x.r.Occupied && x.r.Occupied !== "0" ? ", ocupada" : ""}`));
+  cold.slice(0, 5).forEach(x => L.push(`  - Hab. ${x.r.RoomName}: ${x.t}° (objetivo ${x.sp}°, ${diff(x).toFixed(0)}°) — fría`));
+  L.push(`Habitaciones con alertas: ${alerts.length}${alerts.length ? " (" + alerts.slice(0, 10).map(r => r.RoomName).join(", ") + ")" : ""}`);
+  L.push(`Termostatos con batería baja (<30%): ${lowBat.length}${lowBat.length ? " (" + lowBat.slice(0, 10).map(r => r.RoomName).join(", ") + ")" : ""}`);
+  return L.join("\n");
 }
 
 /** Le pide a la IA un procedimiento paso a paso para una tarea específica en un equipo, usando

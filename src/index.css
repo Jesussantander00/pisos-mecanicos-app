@@ -186,9 +186,11 @@ button:disabled { cursor: not-allowed; }
 .pm-rip { animation: pm-ripple 1s ease-out infinite; }
 .pm-r2 { animation-delay: 0.5s; }
 @keyframes pm-ripple { 0% { transform: scale(0.3); opacity: 0.9; } 100% { transform: scale(1.2); opacity: 0; } }
+/* Con "reducir movimiento" se apagan los adornos (parpadeo, flote, rayos del sol, nubes que se mueven),
+   pero la lluvia, el rayo, las ondas y el viento se quedan: ocupan un espacio mínimo y son la señal de
+   que no hay conexión — si no se mueven, la gente cree que el dibujo es una imagen fija. */
 @media (prefers-reduced-motion: reduce) {
-  .pm-eye, .pm-bob, .pm-rays, .pm-glow, .pm-drift, .pm-drift2, .pm-wind, .pm-dr, .pm-bolt, .pm-rip, .pm-waving .pm-arm { animation: none !important; }
-  .pm-dr, .pm-bolt { opacity: 1; }
+  .pm-eye, .pm-bob, .pm-rays, .pm-glow, .pm-drift, .pm-drift2, .pm-waving .pm-arm { animation: none !important; }
   .pm-waving .pm-arm { opacity: 1; }
 }
 

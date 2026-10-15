@@ -1603,6 +1603,20 @@ export function employeesWorkingNow(employees, scheduleEntries, now = new Date()
   });
 }
 
+/** Horas que le faltan a esa persona para terminar su turno de ahora (null si no está de turno). */
+export function hoursToShiftEnd(emp, scheduleEntries, now = new Date()) {
+  const hour = now.getHours() + now.getMinutes() / 60;
+  const today = scheduleEntries[`${emp.id}::${localDateIso(now)}`];
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  const yest = scheduleEntries[`${emp.id}::${localDateIso(y)}`];
+  if (today && !today.code && today.entrada != null && today.salida != null) {
+    if (today.salida > today.entrada) { if (hour >= today.entrada && hour < today.salida) return today.salida - hour; }
+    else if (hour >= today.entrada) return 24 - hour + today.salida;
+  }
+  if (yest && !yest.code && yest.entrada != null && yest.salida != null && yest.salida < yest.entrada && hour < yest.salida) return yest.salida - hour;
+  return null;
+}
+
 /* ============================================================
    HORARIOS — festivos Colombia 2026 y reglas de turnistas
    ============================================================ */

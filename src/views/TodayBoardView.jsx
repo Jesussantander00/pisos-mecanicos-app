@@ -3,6 +3,39 @@ import { C, TASK_PRIORITY_COLORS, employeesWorkingNow, hoursBetween, isTaskSnooz
 
 
 
+/** Tiempo promedio de cierre de las órdenes de HotSOS por tipo de falla (últimos 30 días). */
+function HotsosCloseTimeCard({ tasks }) {
+  const stats = useMemo(() => {
+    const cutoff = Date.now() - 30 * 86400000;
+    const by = {};
+    (tasks || []).forEach(t => {
+      if (t.origen !== "hotsos" || normalizeTaskState(t.estado) !== "finalizada" || !t.finishedAt || new Date(t.finishedAt).getTime() < cutoff) return;
+      const cat = (/categoría sugerida: ([^)]+)\)/.exec(t.descripcion || "") || [])[1] || "Otros";
+      const total = hoursBetween(t.createdAt || t.assignedAt, t.finishedAt);
+      if (!isFinite(total) || total < 0) return;
+      const x = (by[cat] ||= { cat, n: 0, sum: 0, work: 0, nWork: 0 });
+      x.n++; x.sum += total;
+      if (t.startedAt) { const w = hoursBetween(t.startedAt, t.finishedAt); if (isFinite(w) && w >= 0) { x.work += w; x.nWork++; } }
+    });
+    return Object.values(by).sort((a, b) => b.n - a.n);
+  }, [tasks]);
+  if (!stats.length) return null;
+  const fmtH = (h) => h < 1 ? `${Math.round(h * 60)} min` : h < 48 ? `${h.toFixed(1)} h` : `${(h / 24).toFixed(1)} días`;
+  return (
+    <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>⏱️ Tiempo promedio de cierre por tipo de falla <span className="text-xs font-normal" style={{ color: C.gray }}>— órdenes HotSOS cerradas en 30 días</span></div>
+      <div className="space-y-1">
+        {stats.map(x => (
+          <div key={x.cat} className="flex items-center justify-between gap-2 text-xs">
+            <span className="truncate" style={{ color: C.ink }}>{x.cat} <span style={{ color: C.gray }}>({x.n})</span></span>
+            <span className="shrink-0"><b style={{ color: C.ink }}>{fmtH(x.sum / x.n)}</b> desde que llegó{x.nWork ? <span style={{ color: C.gray }}> · {fmtH(x.work / x.nWork)} trabajando</span> : null}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, onNavigate, onAssign, onReview, pushSubscriptions = [] }) {
   const [onlyHotsos, setOnlyHotsos] = useState(false);
   const [staleHours, setStaleHours] = useState(24);
@@ -30,6 +63,7 @@ export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, on
       if (est === "en-proceso") bucket(u).enProceso.push(t); else bucket(u).pendientes.push(t);
       const horas = hoursBetween(t.createdAt || t.assignedAt || nowIso(), nowIso());
       if (!u) alertas.push({ t, motivo: "Sin asignar", horas });
+      else if (t.origen === "hotsos" && est !== "en-proceso" && !t.esperaRepuesto && horas > 3 && horas <= staleHours) alertas.push({ t, motivo: `🛎️ Sin tomar hace ${Math.floor(horas)} h`, horas });
       else if (!t.esperaRepuesto && horas > staleHours) alertas.push({ t, motivo: `Abierta hace ${horas >= 48 ? Math.floor(horas / 24) + " días" : Math.floor(horas) + " h"}`, horas });
     });
     alertas.sort((a, b) => b.horas - a.horas);
@@ -86,12 +120,13 @@ export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, on
   // y entre ellos quien tenga menos tareas abiertas — esa persona es la "sugerida".
   const candidates = useMemo(() => {
     const working = new Set(employeesWorkingNow(employees || [], scheduleEntries || []).map(e => e.id));
-    const open = {};
-    (tasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada") open[t.asignadoA] = (open[t.asignadoA] || 0) + 1; });
+    const open = {}, load = {};
+    const weight = { alta: 3, media: 2, baja: 1 };
+    (tasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada") { open[t.asignadoA] = (open[t.asignadoA] || 0) + 1; load[t.asignadoA] = (load[t.asignadoA] || 0) + (weight[t.prioridad] || 2); } });
     return Object.keys(accounts || {})
       .filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia; })
-      .map(u => ({ u, working: working.has(accounts[u]?.linked_employee_id), open: open[u] || 0 }))
-      .sort((a, b) => (b.working - a.working) || (a.open - b.open));
+      .map(u => ({ u, working: working.has(accounts[u]?.linked_employee_id), open: open[u] || 0, load: load[u] || 0 }))
+      .sort((a, b) => (b.working - a.working) || (a.load - b.load) || (a.open - b.open));
   }, [tasks, accounts, employees, scheduleEntries]);
   const suggested = candidates[0] || null;
   const [assigning, setAssigning] = useState(null);
@@ -104,13 +139,13 @@ export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, on
     <div className="flex items-center gap-1.5 flex-wrap mt-1">
       {suggested && (
         <button disabled={assigning === t.id} onClick={() => doAssign(t.id, suggested.u)} className="text-xs font-semibold rounded-lg px-2.5" style={{ background: C.amber, color: C.steelDark, minHeight: 36 }}
-          title={`${suggested.working ? "Está de turno ahora" : "No está de turno ahora"} · ${suggested.open} abiertas`}>
+          title={`${suggested.working ? "Está de turno ahora" : "No está de turno ahora"} · ${suggested.open} abiertas · carga ${suggested.load} (las urgentes pesan más)`}>
           Asignar a {(accounts[suggested.u]?.display_name || suggested.u).split(" ")[0]} (sugerido)
         </button>
       )}
       <select disabled={assigning === t.id} value="" onChange={e => doAssign(t.id, e.target.value)} className="text-xs border rounded-lg px-2 outline-none" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }} aria-label="Asignar a otra persona">
         <option value="">Otra persona…</option>
-        {candidates.map(c => <option key={c.u} value={c.u}>{(accounts[c.u]?.display_name || c.u)} · {c.open} abiertas{c.working ? " · de turno" : ""}</option>)}
+        {candidates.map(c => <option key={c.u} value={c.u}>{(accounts[c.u]?.display_name || c.u)} · {c.open} abiertas · carga {c.load}{c.working ? " · de turno" : ""}</option>)}
       </select>
     </div>
   );
@@ -192,6 +227,8 @@ export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, on
           </div>
         </div>
       )}
+
+      <HotsosCloseTimeCard tasks={tasks} />
 
       {data.esperando.length > 0 && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>

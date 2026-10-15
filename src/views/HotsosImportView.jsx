@@ -184,7 +184,7 @@ export function HotsosImportView({ accounts, existingOrderIds, currentUserDispla
           </div>
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="text-xs" style={{ color: C.inkSoft }}>
-              {visibleRows.length} de {rows.length} órdenes visibles · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {rows.filter(r => r.possibleDup).length} posibles duplicados (sin marcar) · {selectedCount} seleccionadas
+              {visibleRows.length} de {rows.length} órdenes visibles · {rows.filter(r => r.alreadyImported).length} ya importadas antes · {rows.filter(r => r.possibleDup).length} posibles duplicados (sin marcar) · {rows.filter(r => r.reincidencia).length > 0 && <b style={{ color: C.red }}>↻ {rows.filter(r => r.reincidencia).length} reincidencias (subirán de prioridad) · </b>}{selectedCount} seleccionadas
             </div>
             <div className="flex items-center gap-3">
               <button onClick={() => toggleAll(true)} className="text-xs font-semibold" style={{ color: C.amber }}>Marcar visibles</button>
@@ -210,7 +210,7 @@ export function HotsosImportView({ accounts, existingOrderIds, currentUserDispla
                 {visibleRows.length === 0 ? (
                   <tr><td colSpan={8} className="p-4 text-center" style={{ color: C.gray }}>Nadie coincide con ese filtro.</td></tr>
                 ) : visibleRows.map((r, i) => (
-                  <tr key={r.orderId} style={{ background: i % 2 ? C.cardAlt : C.panel, opacity: r.alreadyImported ? 0.5 : 1 }}>
+                  <tr key={r.orderId} style={{ background: r.reincidencia ? C.redSoft : (i % 2 ? C.cardAlt : C.panel), opacity: r.alreadyImported ? 0.5 : 1 }}>
                     <td className="p-2"><input type="checkbox" disabled={r.alreadyImported} checked={!!selected[r.orderId]} onChange={e => setSelected(s => ({ ...s, [r.orderId]: e.target.checked }))} /></td>
                     <td className="p-2" style={{ color: C.ink }}>{r.orderId}{r.alreadyImported && <div style={{ color: C.gray }}>ya importada</div>}{r.possibleDup && <div style={{ color: C.amber, fontWeight: 600 }}>⚠ Posible duplicado: {r.possibleDup}</div>}{r.reincidencia && <div style={{ color: C.red, fontWeight: 600 }}>↻ Reincidencia: «{r.reincidencia.titulo}» se cerró {r.reincidencia.dias === 0 ? "hoy" : `hace ${r.reincidencia.dias} día(s)`}</div>}</td>
                     <td className="p-2" style={{ color: C.ink }}>{r.problema}</td>

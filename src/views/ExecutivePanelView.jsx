@@ -1,10 +1,66 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, ClipboardCheck, Clock, Download, X } from "lucide-react";
-import { C, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateExecutivePdf, hoursBetween, normalizeTaskState, todayStr } from "../shared/core";
+import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateExecutivePdf, hoursBetween, normalizeTaskState, todayStr } from "../shared/core";
 import { Button, HorizontalBarChart, MiniDonut, MiniGauge, StatCard } from "../shared/components";
 import { SystemCoverageGrid } from "./SystemCoverageGrid";
 
 
+
+/** Tabla de cumplimiento por turno (últimos 7 días): quién hizo la ronda, los medidores y los cuartos fríos en cada turno. */
+function ShiftComplianceTable({ roundsIndex, coldRoundsIndex, meterRoundsIndex }) {
+  const rows = useMemo(() => {
+    const fmt = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+    const who = (idx, date, shift) => {
+      const u = [...new Set((idx || []).filter(r => r.date === date && r.shift === shift).map(r => r.user).filter(Boolean))];
+      return u;
+    };
+    const now = new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now); d.setDate(d.getDate() - i);
+      const date = fmt(d);
+      SHIFTS.forEach((shift, si) => {
+        const over = i > 0 ? (si === 2 ? (i > 1 || hour >= 6) : true) : (si === 0 ? hour >= 14 : si === 1 ? hour >= 22 : false);
+        out.push({
+          date, shift, over,
+          ronda: who(roundsIndex, date, shift),
+          medidores: si === 0 ? who(meterRoundsIndex, date, shift) : null,
+          frios: si === 0 ? who(coldRoundsIndex, date, shift) : null,
+        });
+      });
+    }
+    return out;
+  }, [roundsIndex, coldRoundsIndex, meterRoundsIndex]);
+  const cell = (users, over) => {
+    if (users === null) return <span style={{ color: C.gray }}>—</span>;
+    if (users.length) return <span style={{ color: C.green }}>✓ {users.join(", ")}</span>;
+    return over ? <span className="font-semibold" style={{ color: C.red }}>✗ Falta</span> : <span style={{ color: C.gray }}>pendiente</span>;
+  };
+  return (
+    <>
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento por turno (últimos 7 días)</div>
+      <div className="rounded-lg border mb-5 overflow-x-auto" style={{ borderColor: C.line, background: C.panel }}>
+        <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+          <thead><tr style={{ background: C.bg }}>
+            <th className="text-left p-2">Fecha</th><th className="text-left p-2">Turno</th><th className="text-left p-2">Ronda</th><th className="text-left p-2">Medidores</th><th className="text-left p-2">Cuartos fríos</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.date + r.shift} style={{ background: i % 2 ? C.cardAlt : C.panel, borderTop: `1px solid ${C.line}` }}>
+                <td className="p-2" style={{ color: C.ink }}>{r.date}</td>
+                <td className="p-2" style={{ color: C.inkSoft }}>{r.shift}</td>
+                <td className="p-2">{cell(r.ronda, r.over)}</td>
+                <td className="p-2">{cell(r.medidores, r.over)}</td>
+                <td className="p-2">{cell(r.frios, r.over)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
 
 function TrendBadge({ current, previous, unit = "%", goodDirection = "up" }) {
   if (previous == null) return null;
@@ -426,6 +482,8 @@ export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIn
           </div>
         ))}
       </div>
+
+      <ShiftComplianceTable roundsIndex={roundsIndex} coldRoundsIndex={coldRoundsIndex} meterRoundsIndex={meterRoundsIndex} />
 
       {cost.bySistema.length > 0 && (
         <>

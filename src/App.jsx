@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -6677,6 +6677,60 @@ export default function App() {
     [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks, roundsIndex, tourHistory, coldRoundsIndex, meterRoundsIndex, profiles]
   );
   useEffect(() => { __pmState.__aiCtxLatest = aiContextSummary; }, [aiContextSummary]);
+
+  // Vigilante de avisos (solo mientras un administrador tiene la app abierta): cada 10 min revisa
+  // (a) órdenes de HotSOS que llevan más de 3 h sin que nadie las tome y (b) técnicos a los que les
+  // faltan 45 min o menos para terminar el turno y aún tienen tareas abiertas. Cada aviso se manda
+  // una sola vez (se anota en "ops-alerts-sent" para que otro administrador no lo repita).
+  const opsRef = useRef({});
+  opsRef.current = { tasks, employees, scheduleEntries, profiles, pushSubscriptions };
+  useEffect(() => {
+    if (!isAdmin || !account?.approved) return undefined;
+    const run = async () => {
+      try {
+        const { tasks: tk, employees: emps, scheduleEntries: se, profiles: pf, pushSubscriptions: subs } = opsRef.current;
+        if (!subs?.length || !tk?.length) return;
+        const sent = (await sGet("ops-alerts-sent", true)) || {};
+        const nowMs = Date.now();
+        const next = { ...sent };
+        let changed = false;
+        Object.keys(next).forEach(k => { if (nowMs - new Date(next[k]).getTime() > 3 * 86400000) { delete next[k]; changed = true; } });
+        const subsOf = (u) => subs.filter(s => s.ownerUsername === u);
+        const openTk = tk.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t));
+        // (a) HotSOS sin tomar
+        const sinTomar = openTk.filter(t => t.origen === "hotsos" && normalizeTaskState(t.estado) !== "en-proceso" && !t.esperaRepuesto && hoursBetween(t.createdAt || t.assignedAt || nowIso(), nowIso()) > 3 && !next["st:" + t.id]);
+        const byUser = {};
+        sinTomar.forEach(t => { (byUser[t.asignadoA || ""] ||= []).push(t); next["st:" + t.id] = nowIso(); changed = true; });
+        for (const [u, list] of Object.entries(byUser)) {
+          const titles = list.slice(0, 3).map(t => t.titulo).join(" · ");
+          if (u) await sendPushToSubscriptions(subsOf(u), `🛎️ ${list.length === 1 ? "Orden de HotSOS sin tomar" : list.length + " órdenes de HotSOS sin tomar"}`, titles, "/");
+          else {
+            const adminSubs = subs.filter(s => pf?.[s.ownerUsername]?.is_admin);
+            await sendPushToSubscriptions(adminSubs, `🛎️ ${list.length} orden(es) de HotSOS sin técnico (más de 3 h)`, titles, "/");
+          }
+        }
+        // (b) Fin de turno
+        const now = new Date();
+        for (const emp of (emps || [])) {
+          if (emp.active === false) continue;
+          const left = hoursToShiftEnd(emp, se || {}, now);
+          if (left == null || left <= 0 || left > 0.75) continue;
+          const uid = Object.keys(pf || {}).find(id => pf[id]?.linked_employee_id === emp.id);
+          if (!uid) continue;
+          const key = `fin:${uid}:${localDateIso(now)}`;
+          if (next[key]) continue;
+          const mine = openTk.filter(t => t.asignadoA === uid);
+          next[key] = nowIso(); changed = true;
+          if (!mine.length) continue;
+          await sendPushToSubscriptions(subsOf(uid), "⏰ Tu turno termina pronto", `Tienes ${mine.length} ${mine.length === 1 ? "tarea abierta" : "tareas abiertas"}: ${mine.slice(0, 2).map(t => t.titulo).join(" · ")}. Ciérralas o déjales una nota para el siguiente turno.`, "/");
+        }
+        if (changed) await sSet("ops-alerts-sent", next, true);
+      } catch (e) { console.warn("Vigilante de avisos:", e?.message); }
+    };
+    const first = setTimeout(run, 25000);
+    const iv = setInterval(run, 10 * 60 * 1000);
+    return () => { clearTimeout(first); clearInterval(iv); };
+  }, [isAdmin, account?.approved]);
   const hotsosExistingOrderIds = useMemo(() => new Set(tasks.filter(t => t.hotsosOrderId).map(t => t.hotsosOrderId)), [tasks]);
   const hotsosTaskCount = useMemo(() => tasks.filter(t => t.origen === "hotsos").length, [tasks]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);

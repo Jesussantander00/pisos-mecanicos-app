@@ -537,6 +537,8 @@ export async function buildHvacAiSummary(allowFetch = true) {
   L.push(`Habitaciones con termostato: ${rooms.length}; ocupadas: ${occ.length}`);
   L.push(`Habitaciones fuera de rango: ${outRange.length} (${hot.length} más CALIENTES que su objetivo, ${cold.length} más FRÍAS)`);
   const fmtRoom = (x) => `Hab. ${x.r.RoomName}: ${x.t}° (objetivo ${x.sp}°, ${diff(x) > 0 ? "+" : ""}${diff(x).toFixed(0)}°)${x.r.Occupied && x.r.Occupied !== "0" ? ", ocupada" : ""}`;
+  const hotOcc = hot.filter(x => x.r.Occupied && x.r.Occupied !== "0");
+  L.push(`Habitaciones calientes OCUPADAS (con huésped, prioridad): ${hotOcc.length}${hotOcc.length ? " (" + hotOcc.map(x => x.r.RoomName).join(", ") + ")" : ""}; calientes VACÍAS: ${hot.length - hotOcc.length}`);
   if (hot.length) L.push(`LISTA COMPLETA de habitaciones más calientes que su objetivo (de la más caliente a la menos):\n` + hot.map(x => "  - " + fmtRoom(x)).join("\n"));
   if (cold.length) L.push(`LISTA COMPLETA de habitaciones más frías que su objetivo:\n` + cold.map(x => "  - " + fmtRoom(x)).join("\n"));
   L.push(`Habitaciones con alertas: ${alerts.length}${alerts.length ? " (" + alerts.map(r => r.RoomName).join(", ") + ")" : ""}`);

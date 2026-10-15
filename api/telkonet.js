@@ -25,7 +25,7 @@
 
 import { runDriveArchive } from "./_lib/driveArchive.js";
 import { getSupabaseAdmin, requireApprovedUser } from "./_lib/security.js";
-import { runDailyDigest } from "./_lib/dailyDigest.js";
+import { runDailyDigest, runFloorAlerts } from "./_lib/dailyDigest.js";
 
 const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
@@ -366,13 +366,24 @@ async function scanOneRoom(room, knownDeviceId) {
   const outOfRangeCount = deltas.filter(d => d >= SCAN_OUT_OF_RANGE_DELTA).length;
   const totalReadings = readings.length;
   const outOfRangePct = totalReadings > 0 ? (outOfRangeCount / totalReadings) * 100 : null;
+  // Días (de los ~7 revisados) en que la habitación estuvo MÁS CALIENTE que su objetivo buena parte
+  // del día: un día cuenta si al menos 4 lecturas ese día y 25% o más de ellas pasaron 6 °F sobre el objetivo.
+  const perDay = {};
+  for (const r of readings) {
+    const day = String(r.dateTime || '').slice(0, 10);
+    if (!day) continue;
+    const d = (perDay[day] ||= { n: 0, hot: 0 });
+    d.n += 1;
+    if (r.temperature - r.userSetPoint >= SCAN_OUT_OF_RANGE_DELTA) d.hot += 1;
+  }
+  const hotDayKeys = Object.keys(perDay).filter(k => perDay[k].n >= 4 && perDay[k].hot / perDay[k].n >= 0.25).sort();
   const needsMaintenance = totalReadings >= 20 && outOfRangePct != null && outOfRangePct >= 25;
   return {
     roomId, roomName: room.RoomName, deviceId, totalReadings, outOfRangeCount, outOfRangePct,
     avgDelta: scanAverage(deltas),
     oldestReading: log.length ? log[log.length - 1].dateTime : null,
     newestReading: log.length ? log[0].dateTime : null,
-    needsMaintenance, scanError: null,
+    needsMaintenance, hotDays: hotDayKeys.length, hotDaysList: hotDayKeys.join(','), scanError: null,
   };
 }
 
@@ -418,6 +429,8 @@ async function runMaintenanceScan(supabaseAdmin) {
       oldest_reading: r.oldestReading ?? null,
       newest_reading: r.newestReading ?? null,
       needs_maintenance: r.needsMaintenance ?? false,
+      hot_days: r.hotDays ?? null,
+      hot_days_list: r.hotDaysList ?? null,
       last_scanned_at: new Date().toISOString(),
       scan_error: r.scanError ?? null,
       updated_at: new Date().toISOString(),
@@ -460,7 +473,11 @@ export default async function handler(req, res) {
       let drive = null;
       try { drive = await runDriveArchive(supabaseAdmin, { budgetMs: 40000 }); }
       catch (e) { drive = { error: e.message || "falló el archivo en Drive" }; }
-      res.status(200).json({ ok: true, ...result, drive });
+      // Aviso por piso: habitaciones OCUPADAS muy calientes, al técnico que está de turno.
+      let floors = null;
+      try { floors = await runFloorAlerts(supabaseAdmin, await fetchAllRooms()); }
+      catch (e) { floors = { error: e.message || 'falló el aviso por piso' }; }
+      res.status(200).json({ ok: true, ...result, drive, floors });
     } catch (e) {
       res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario." });
     }

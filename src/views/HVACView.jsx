@@ -486,21 +486,52 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
             </div>
           )}
 
-          {dashboard.tempIssues.length > 0 && (
-            <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
-              <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>Habitaciones con temperatura fuera de rango ahora mismo</div>
-              <p className="text-[11px] mb-2" style={{ color: C.gray }}>Diferencia entre temperatura actual y set point de 6°F o más — candidatas a revisión de equipo.</p>
-              <div className="space-y-1">
-                {dashboard.tempIssues.slice(0, 20).map(({ r, delta }) => (
-                  <div key={r.RoomID} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
-                    <span style={{ color: C.ink }}>{r.RoomName}</span>
-                    <span style={{ color: C.inkSoft }}>{r.Temperature}°F / set {Number(r.UserSetPoint)}°F</span>
-                    <span className="font-semibold" style={{ color: C.red }}>Δ {delta.toFixed(1)}°F</span>
-                  </div>
-                ))}
+          {dashboard.tempIssues.length > 0 && (() => {
+            const isOccRow = ({ r }) => !!(r.Occupied && r.Occupied !== "0");
+            const occ = dashboard.tempIssues.filter(isOccRow);
+            const empty = dashboard.tempIssues.filter(x => !isOccRow(x));
+            const row = ({ r, delta }) => (
+              <div key={r.RoomID} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
+                <span style={{ color: C.ink }}>{r.RoomName}</span>
+                <span style={{ color: C.inkSoft }}>{r.Temperature}°F / set {Number(r.UserSetPoint)}°F</span>
+                <span className="font-semibold" style={{ color: C.red }}>Δ {delta.toFixed(1)}°F</span>
               </div>
-            </div>
-          )}
+            );
+            return (
+              <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>Habitaciones con temperatura fuera de rango ahora mismo</div>
+                <p className="text-[11px] mb-2" style={{ color: C.gray }}>Diferencia entre temperatura actual y set point de 6°F o más — candidatas a revisión de equipo.</p>
+                <div className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: C.red }}>Ocupadas — hay un huésped ahí ({occ.length})</div>
+                <div className="space-y-1 mb-3">
+                  {occ.length === 0 ? <div className="text-xs" style={{ color: C.gray }}>Ninguna ahora mismo.</div> : occ.slice(0, 20).map(row)}
+                </div>
+                <div className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Vacías — pueden esperar ({empty.length})</div>
+                <div className="space-y-1">
+                  {empty.length === 0 ? <div className="text-xs" style={{ color: C.gray }}>Ninguna ahora mismo.</div> : empty.slice(0, 20).map(row)}
+                </div>
+              </div>
+            );
+          })()}
+
+          {(() => {
+            const rep = (maintenanceReport?.rows || []).filter(x => Number(x.hot_days) >= 3).sort((a, b) => Number(b.hot_days) - Number(a.hot_days));
+            if (!rep.length) return null;
+            return (
+              <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>Calientes varios días seguidos ({rep.length})</div>
+                <p className="text-[11px] mb-2" style={{ color: C.gray }}>Habitaciones que en 3 o más de los últimos 7 días pasaron buena parte del día 6°F o más por encima de su objetivo — el problema no se está resolviendo solo.</p>
+                <div className="space-y-1">
+                  {rep.slice(0, 20).map(x => (
+                    <div key={x.room_id} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
+                      <span style={{ color: C.ink }}>{x.room_name}</span>
+                      <span style={{ color: C.inkSoft }}>{String(x.hot_days_list || "").split(",").filter(Boolean).map(d => d.slice(5)).join(" · ")}</span>
+                      <span className="font-semibold" style={{ color: C.red }}>{x.hot_days} días</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {dashboard.checkoutActive.length > 0 && (
             <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>

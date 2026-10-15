@@ -158,3 +158,32 @@ export async function runFloorAlerts(supabaseAdmin, rooms) {
   for (const p of targets) sent += await send(subscriptions.filter((s) => s.ownerUsername === p.id), title, body);
   return { floors: alerts.length, sent, people: targets.length, toAdmins };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Alerta de fallas del servidor: si algo de lo que corre solo cada día falló (Telkonet, archivo en
+// Drive, Gemini), avisa por push a los administradores para que no se enteren días después.
+export async function checkGeminiAlive() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return 'Falta GEMINI_API_KEY en Vercel';
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite?key=' + key);
+    if (r.ok) return null;
+    return 'Gemini respondió ' + r.status + (r.status === 400 || r.status === 403 ? ' (clave inválida o vencida)' : '');
+  } catch { return 'No se pudo contactar a Gemini'; }
+}
+
+export async function runHealthAlert(supabaseAdmin, problems) {
+  const list = (problems || []).filter(Boolean);
+  if (!list.length) return { problems: 0, sent: 0 };
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) return { problems: list.length, sent: 0 };
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:soporte@example.com', publicKey, privateKey);
+  const subscriptions = await readKey(supabaseAdmin, 'push-subscriptions');
+  const { data: profiles } = await supabaseAdmin.from('profiles').select('id, is_admin, approved');
+  let sent = 0;
+  for (const a of (profiles || []).filter((p) => p.is_admin && p.approved)) {
+    sent += await send(subscriptions.filter((s) => s.ownerUsername === a.id), '⚠️ Falla en el servidor', list.join(' · '));
+  }
+  return { problems: list.length, sent };
+}

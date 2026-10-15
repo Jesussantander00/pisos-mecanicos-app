@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { Sparkles, X } from "lucide-react";
-import { C, aiNorm, buildHvacAiSummary, bumpAiUsage, normalizeTaskState, nowIso, requestAiAssistantStream, splitAiAction, useBackCloseModal } from "../shared/core";
+import { C, aiNorm, buildHvacAiSummary, bumpAiUsage, normalizeTaskState, nowIso, requestAiAssistantStream, splitAiAction, todayStr, useBackCloseModal } from "../shared/core";
 import { Button } from "../shared/components";
 
 
@@ -81,6 +82,19 @@ export function AiAssistantWidget({ contextSummary, profiles, tasks, onCreateTas
     const part = exact.length ? exact : open_.filter(t => aiNorm(t.titulo).includes(n));
     return part.length === 1 ? part[0] : null;
   };
+  const tableRowsOf = (text) => {
+    const lines = String(text || "").split("\n").filter(l => l.includes("|") && !/^[\s|:\-]+$/.test(l));
+    if (lines.length < 2) return null;
+    return lines.map(l => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim()));
+  };
+  const downloadTable = (text) => {
+    const rows = tableRowsOf(text);
+    if (!rows) return;
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Asistente");
+    XLSX.writeFile(wb, `asistente-${todayStr().replace(/\//g, "-")}.xlsx`);
+  };
   const setActionState = (idx, st, note) => setMessages(m => m.map((x, i) => i === idx ? { ...x, actionState: st, actionNote: note } : x));
   const runAction = async (idx, a) => {
     try {
@@ -144,6 +158,9 @@ export function AiAssistantWidget({ contextSummary, profiles, tasks, onCreateTas
               <div key={i} className="text-sm rounded-lg px-3 py-2 max-w-[85%]"
                 style={{ background: m.role === "user" ? C.steelDark : C.bg, color: m.role === "user" ? "#fff" : C.ink, marginLeft: m.role === "user" ? "auto" : 0, whiteSpace: "pre-wrap", overflowX: "auto", wordBreak: "break-word" }}>
                 {m.text}
+                {m.role === "assistant" && !sending && tableRowsOf(m.text) && (
+                  <div className="mt-2"><button onClick={() => downloadTable(m.text)} className="text-xs font-semibold rounded-md px-2.5 py-1" style={{ background: C.panel, color: C.steelDark, border: `1px solid ${C.line}` }}>⬇ Descargar tabla en Excel</button></div>
+                )}
                 {m.action && !sending && (
                   <div className="mt-2 rounded-lg p-2.5 text-xs" style={{ background: C.panel, border: `1.5px solid ${C.amber}`, color: C.ink, whiteSpace: "normal" }}>
                     <div className="font-bold mb-1">{m.action.tipo === "crear_tarea" ? "Crear esta tarea" : "Asignar esta tarea"}</div>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, ClipboardCheck, Clock, Download, X } from "lucide-react";
-import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateExecutivePdf, hoursBetween, normalizeTaskState, todayStr } from "../shared/core";
+import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateDirectorWeeklyPdf, generateExecutivePdf, hoursBetween, normalizeTaskState, todayStr } from "../shared/core";
 import { Button, HorizontalBarChart, MiniDonut, MiniGauge, StatCard } from "../shared/components";
 import { SystemCoverageGrid } from "./SystemCoverageGrid";
 
@@ -244,7 +244,17 @@ export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIn
           <h2 className="text-lg font-semibold" style={{ color: C.ink }}>Panel Ejecutivo</h2>
           <p className="text-sm" style={{ color: C.inkSoft }}>Resumen general, listo para mostrarle a la gerencia.</p>
         </div>
-        <Button icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="ghost" icon={Download} disabled={downloading} onClick={async () => {
+            setDownloading(true); setMsg(null);
+            try {
+              const doc = await generateDirectorWeeklyPdf({ tasks, roundsIndex, coldRoundsIndex, meterRoundsIndex, activeIssues, accounts }, currentUser);
+              doc.save(`reporte-semanal-${todayStr().replace(/\//g, "-")}.pdf`);
+            } catch { setMsg("No se pudo generar el reporte semanal — revisa la conexión e intenta de nuevo."); }
+            setDownloading(false);
+          }}>Reporte semanal (PDF)</Button>
+          <Button icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
+        </div>
       </div>
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
 

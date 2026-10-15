@@ -25,7 +25,7 @@
 
 import { runDriveArchive } from "./_lib/driveArchive.js";
 import { getSupabaseAdmin, requireApprovedUser } from "./_lib/security.js";
-import { runDailyDigest, runFloorAlerts } from "./_lib/dailyDigest.js";
+import { runDailyDigest, runFloorAlerts, runHealthAlert, checkGeminiAlive } from "./_lib/dailyDigest.js";
 
 const BASE = "https://aws.telkonet.com/Central";
 const PROP_ID = "101414"; // Hyatt Regency - Cartagena Colombia (fijo para este hotel)
@@ -477,7 +477,17 @@ export default async function handler(req, res) {
       let floors = null;
       try { floors = await runFloorAlerts(supabaseAdmin, await fetchAllRooms()); }
       catch (e) { floors = { error: e.message || 'falló el aviso por piso' }; }
-      res.status(200).json({ ok: true, ...result, drive, floors });
+      // Alerta de fallas: si algo de lo automático falló hoy, se avisa a los administradores.
+      let health = null;
+      try {
+        const geminiProblem = await checkGeminiAlive();
+        health = await runHealthAlert(supabaseAdmin, [
+          floors?.error ? 'Telkonet: ' + floors.error : null,
+          drive?.error ? 'Archivo en Drive: ' + drive.error : null,
+          geminiProblem,
+        ]);
+      } catch (e) { health = { error: e.message || 'falló la revisión de salud' }; }
+      res.status(200).json({ ok: true, ...result, drive, floors, health });
     } catch (e) {
       res.status(500).json({ ok: false, message: e.message || "Error en el resumen diario." });
     }

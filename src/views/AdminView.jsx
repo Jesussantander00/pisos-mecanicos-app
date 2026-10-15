@@ -93,6 +93,21 @@ export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSave
             </div>
           ))}
         </div>
+        {(() => {
+          const ym = new Date().toISOString().slice(0, 7);
+          // [campo, nombre, tokens de entrada aprox., tokens de salida aprox.]
+          const kinds = [["assistantQueries", "Preguntas al asistente", 9000, 500], ["meterReadings", "Fotos de medidores", 1500, 100], ["scheduleGenerations", "Horarios", 3000, 2000], ["weeklySummaries", "Resúmenes semanales", 3000, 600], ["reorderNotes", "Notas de reorden", 1500, 400], ["procedureRequests", "Procedimientos", 2000, 800]];
+          const PRICE_IN = 0.10, PRICE_OUT = 0.40; // USD por millón de tokens — precio de referencia, confírmalo en Google
+          let cost = 0, total = 0;
+          const parts = kinds.map(([f, label, tin, tout]) => { const n = aiUsageStats?.[`mo:${ym}:${f}`] || 0; total += n; cost += n * (tin * PRICE_IN + tout * PRICE_OUT) / 1e6; return n ? `${label}: ${n}` : null; }).filter(Boolean);
+          return (
+            <div className="mt-3 rounded-md p-2.5 text-xs" style={{ background: C.bg, color: C.inkSoft }}>
+              <div className="font-semibold mb-0.5" style={{ color: C.ink }}>Este mes ({ym}): {total} usos de IA · costo estimado ≈ US$ {cost < 0.01 ? "menos de 0.01" : cost.toFixed(2)}</div>
+              <div>{parts.length ? parts.join(" · ") : "Todavía no hay usos registrados este mes."}</div>
+              <div className="text-[10px] mt-1" style={{ color: C.gray }}>Estimado con tamaños típicos de cada consulta y precio de referencia de Gemini Flash-Lite; el valor real es el que muestra Google AI Studio.</div>
+            </div>
+          );
+        })()}
         {aiUsageStats?.lastUpdated && <div className="text-[10px] mt-2" style={{ color: C.gray }}>Última actividad: {fmtDT(aiUsageStats.lastUpdated)}</div>}
       </div>
 

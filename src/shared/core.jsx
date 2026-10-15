@@ -574,7 +574,8 @@ export async function requestProcedure({ equipoNombre, sistema, tarea, historial
 export async function bumpAiUsage(field) {
   try {
     const current = (await sGet("ai-usage-stats", true)) || {};
-    const next = { ...current, [field]: (current[field] || 0) + 1, lastUpdated: nowIso() };
+    const mk = `mo:${new Date().toISOString().slice(0, 7)}:${field}`;
+    const next = { ...current, [field]: (current[field] || 0) + 1, [mk]: (current[mk] || 0) + 1, lastUpdated: nowIso() };
     await sSet("ai-usage-stats", next, true);
   } catch { /* es solo una estadística informativa, no pasa nada si falla */ }
 }
@@ -3385,6 +3386,57 @@ async function generateWeeklySummaryPdf(summaryText, weekLabel, generatedBy) {
   doc.setFontSize(10.5); doc.setTextColor(...PDF_C.ink);
   const lines = doc.splitTextToSize(summaryText, 182);
   doc.text(lines, 14, y);
+  pdfFooterAll(doc);
+  return doc;
+}
+
+/** Reporte semanal para dirección: solo números reales de los últimos 7 días (sin IA). */
+export async function generateDirectorWeeklyPdf({ tasks, roundsIndex, coldRoundsIndex, meterRoundsIndex, activeIssues, accounts }, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
+  const from = new Date(Date.now() - 7 * 86400000);
+  const fmtD = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  const period = `Del ${fmtD(from)} al ${fmtD(new Date())}`;
+  let y = pdfLetterhead(doc, "Reporte Semanal de Operación", [period, `Generado por ${generatedBy || "—"}`]);
+  y += 4;
+  const all = tasks || [];
+  const inWeek = (iso) => iso && new Date(iso).getTime() >= from.getTime();
+  const closed = all.filter(t => normalizeTaskState(t.estado) === "finalizada" && inWeek(t.finishedAt));
+  const created = all.filter(t => inWeek(t.createdAt));
+  const open = all.filter(t => normalizeTaskState(t.estado) !== "finalizada");
+  const overdue = open.filter(t => t.assignedAt && (Date.now() - new Date(t.assignedAt).getTime()) > 86400000);
+  const hrs = (a, b) => (new Date(b) - new Date(a)) / 36e5;
+  const avg = (list) => { const v = list.map(t => hrs(t.createdAt || t.assignedAt || t.finishedAt, t.finishedAt)).filter(h => isFinite(h) && h >= 0); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const fmtH = (h) => h == null ? "—" : h < 48 ? `${h.toFixed(1)} h` : `${(h / 24).toFixed(1)} días`;
+  y = pdfSectionTitle(doc, y, "Resumen de la semana");
+  y = pdfStatBoxes(doc, y, [
+    { label: "Tareas cerradas", value: closed.length, color: PDF_C.green },
+    { label: "Tareas nuevas", value: created.length },
+    { label: "Abiertas ahora", value: open.length },
+    { label: "Abiertas > 24 h", value: overdue.length, color: overdue.length ? PDF_C.red : PDF_C.green },
+  ]);
+  const hs = closed.filter(t => t.origen === "hotsos");
+  const reinc = created.filter(t => t.reincidencia).length;
+  y = pdfStatBoxes(doc, y, [
+    { label: "Órdenes HotSOS cerradas", value: hs.length },
+    { label: "Tiempo prom. de cierre", value: fmtH(avg(closed)) },
+    { label: "Reincidencias", value: reinc, color: reinc ? PDF_C.red : PDF_C.ink },
+  ]);
+  y = pdfSectionTitle(doc, y, "Trabajo por técnico");
+  const nameOf = (u) => accounts?.[u]?.display_name || u || "Sin asignar";
+  const per = {};
+  closed.forEach(t => { const k = t.asignadoA || ""; (per[k] ||= { c: 0, o: 0 }).c++; });
+  open.forEach(t => { const k = t.asignadoA || ""; (per[k] ||= { c: 0, o: 0 }).o++; });
+  const rowsT = Object.entries(per).sort((a, b) => b[1].c - a[1].c).slice(0, 15).map(([u, x]) => [nameOf(u), String(x.c), String(x.o)]);
+  y = pdfTable(doc, y, ["Técnico", "Cerradas (7 días)", "Abiertas ahora"], rowsT.length ? rowsT : [["—", "0", "0"]]);
+  y = pdfSectionTitle(doc, y, "Cumplimiento de rondas (7 días)");
+  const wk = (idx) => (idx || []).filter(r => { const p = String(r.date || "").split("/"); return p.length === 3 && new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])).getTime() >= from.getTime() - 86400000; }).length;
+  const rowR = [["Ronda de revisión", String(wk(roundsIndex)), "21"], ["Cuartos fríos", String(wk(coldRoundsIndex)), "7"], ["Lecturas de medidores", String(wk(meterRoundsIndex)), "7"]]
+    .map(([n, a, e]) => [n, a, e, `${Math.min(100, Math.round(Number(a) / Number(e) * 100))}%`]);
+  y = pdfTable(doc, y, ["Rutina", "Hechas", "Esperadas", "Cumplimiento"], rowR);
+  const out = Object.values(activeIssues || {});
+  y = pdfSectionTitle(doc, y, `Equipos fuera de servicio ahora (${out.length})`);
+  y = pdfTable(doc, y, ["Equipo", "Ubicación", "Desde"], out.length ? out.slice(0, 20).map(i => [`#${i.code} ${i.name}`, i.floorName || "—", fmtDT(i.openedAt)]) : [["Ninguno", "—", "—"]]);
   pdfFooterAll(doc);
   return doc;
 }

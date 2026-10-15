@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { FLOORS } from "./seeds";
 
 export const __pmState = {
+  __aiCtxLatest: "",
   _toastListeners: [],
   __errCount: 0,
   __pmBackStack: [],
@@ -452,7 +453,7 @@ export async function requestReorderNotes({ items }) {
 /** Le pregunta algo en español simple al asistente de IA, mandándole un resumen compacto de los
  *  datos actuales de la app (no la base de datos completa) para que responda con información
  *  real, no genérica. Ver api/ai-assistant.js. */
-async function requestAiAssistant(question, contextSummary, history) {
+export async function requestAiAssistant(question, contextSummary, history) {
   const resp = await fetch("/api/ai-assistant", {
     method: "POST",
     headers: aiRequestHeaders(),
@@ -466,7 +467,7 @@ async function requestAiAssistant(question, contextSummary, history) {
   }
   if (!data) throw new Error("El servidor respondió algo que no pude leer");
   return data;
-}
+} // último resumen de datos para la IA (lo actualiza App); lo usan botones sueltos como el de entrega de turno
 
 /** Igual que requestAiAssistant, pero la respuesta llega por pedacitos (onChunk recibe el texto acumulado). */
 export async function requestAiAssistantStream(question, contextSummary, history, onChunk) {
@@ -880,6 +881,43 @@ export function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activ
 
   const mtto30 = (mttoLog || []).filter(m => hoursBetween(m.fecha, nowIso()) / 24 <= 30);
   L.push(`Mantenimientos registrados en los últimos 30 días: ${mtto30.length} (${mtto30.filter(m => m.tipo === "preventivo").length} preventivos, ${mtto30.filter(m => m.tipo === "correctivo").length} correctivos)`);
+
+  // ── Habitaciones, fichas técnicas, cronograma anual y HotSOS ──
+  const cut60 = Date.now() - 60 * 86400000;
+  const porHab = {};
+  (tasks || []).forEach(t => {
+    if (t.origen === "preventivo-hab" || t.origen === "plantilla") return;
+    if (new Date(t.createdAt || 0).getTime() < cut60) return;
+    const room = roomOfTask(t); if (room) (porHab[room] ||= []).push(t.titulo);
+  });
+  const habTop = Object.entries(porHab).sort((a, b) => b[1].length - a[1].length).slice(0, 15);
+  if (habTop.length) { L.push("HISTORIAL POR HABITACIÓN: habitaciones con más tareas en los últimos 60 días:"); habTop.forEach(([r, arr]) => L.push(`  - Hab. ${r}: ${arr.length} tareas (ej.: ${arr.slice(0, 3).join(" | ")})`)); }
+  const hoy = Date.now();
+  const fichas = (equipos || []).filter(e => e.active !== false).map(e => {
+    const bits = [];
+    if (e.garantiaHasta) { const d = Math.ceil((new Date(e.garantiaHasta + "T23:59:59").getTime() - hoy) / 86400000); if (d >= 0 && d <= 90) bits.push(`garantía vence en ${d} días`); }
+    if (e.fechaInstalacion && e.vidaUtilAnios) { const yrs = (hoy - new Date(e.fechaInstalacion + "T00:00:00").getTime()) / (365.25 * 86400000); if (yrs > e.vidaUtilAnios) bits.push(`superó su vida útil (${yrs.toFixed(1)} de ${e.vidaUtilAnios} años)`); }
+    if (e.valorReemplazo) { const g = (mttoLog || []).filter(r => r.equipoId === e.id).reduce((a, r) => a + (Number(r.costo) || 0), 0); if (g / e.valorReemplazo >= 0.4) bits.push(`gastado ${Math.round((g / e.valorReemplazo) * 100)}% del valor de reemplazo`); }
+    return bits.length ? `  - ${e.nombre} (${e.sistema || "sin sistema"}${e.ubicacion ? ", " + e.ubicacion : ""}): ${bits.join("; ")}` : null;
+  }).filter(Boolean);
+  if (fichas.length) { L.push(`FICHAS TÉCNICAS: equipos con garantía por vencer, vida útil superada o alto gasto (${fichas.length}):`); fichas.slice(0, 40).forEach(x => L.push(x)); }
+  const mesAct = new Date().getMonth() + 1;
+  const crono = (mttoCronograma || []).filter(c => c.programado && c.mesNum === mesAct);
+  if (crono.length) {
+    const nombreEq = Object.fromEntries((equipos || []).map(e => [e.id, e.nombre]));
+    L.push(`CRONOGRAMA ANUAL: mantenimientos programados para este mes (${crono.length}):`);
+    crono.slice(0, 40).forEach(c => L.push(`  - ${nombreEq[c.equipoId] || c.equipoId}: ${c.tipo || "interno"}, estado ${c.estado || "pendiente"}${c.tecnico ? ", técnico " + c.tecnico : ""}`));
+  }
+  const hs = (tasks || []).filter(t => t.origen === "hotsos");
+  const hsAbiertas = hs.filter(t => normalizeTaskState(t.estado) !== "finalizada");
+  if (hs.length) {
+    L.push(`ÓRDENES HOTSOS importadas: ${hs.length} en total, ${hsAbiertas.length} abiertas.`);
+    hsAbiertas.slice(0, 25).forEach(t => L.push(`  - Orden ${t.hotsosOrderId || "?"}: ${t.titulo} — prioridad ${t.prioridad}, ${t.asignadoA ? "asignada a " + (nameOfUser ? nameOfUser(t.asignadoA) : t.asignadoA) : "sin técnico"}`));
+  }
+  const carga = {};
+  (tasks || []).forEach(t => { if (normalizeTaskState(t.estado) === "finalizada") return; const w = t.asignadoA ? (nameOfUser ? nameOfUser(t.asignadoA) : t.asignadoA) : "SIN ASIGNAR"; carga[w] = (carga[w] || 0) + 1; });
+  const cg = Object.entries(carga).sort((a, b) => b[1] - a[1]);
+  if (cg.length) { L.push("CARGA DE TRABAJO: tareas abiertas por persona:"); cg.slice(0, 25).forEach(([u, n]) => L.push(`  - ${u}: ${n}`)); }
 
   // ── Personal y recorridos (quién hizo qué) ──
   const cutoff14 = Date.now() - 14 * 86400000;

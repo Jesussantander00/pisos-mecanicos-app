@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistantStream, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestAiAssistantStream, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -1415,8 +1415,16 @@ function AiAssistantWidget({ contextSummary }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, open, sending]);
 
-  const send = async () => {
-    const q = input.trim();
+  const SUGGESTIONS = [
+    "¿Cuántas habitaciones tienen temperatura alta?",
+    "Dame un cuadro de quién hizo recorrido",
+    "¿Qué equipos están atrasados en su mantenimiento?",
+    "¿Qué tareas llevan días sin movimiento?",
+    "¿Qué repuestos están bajos?",
+    "Hazme un resumen del turno",
+  ];
+  const send = async (override) => {
+    const q = (typeof override === "string" ? override : input).trim();
     if (!q || sending) return;
     setInput("");
     const nextMessages = [...messages, { role: "user", text: q }];
@@ -1479,13 +1487,18 @@ function AiAssistantWidget({ contextSummary }) {
             )}
             {messages.map((m, i) => (
               <div key={i} className="text-sm rounded-lg px-3 py-2 max-w-[85%]"
-                style={{ background: m.role === "user" ? C.steelDark : C.bg, color: m.role === "user" ? "#fff" : C.ink, marginLeft: m.role === "user" ? "auto" : 0 }}>
+                style={{ background: m.role === "user" ? C.steelDark : C.bg, color: m.role === "user" ? "#fff" : C.ink, marginLeft: m.role === "user" ? "auto" : 0, whiteSpace: "pre-wrap", overflowX: "auto", wordBreak: "break-word" }}>
                 {m.text}
               </div>
             ))}
             {sending && <div className="text-xs" style={{ color: C.gray }}>Pensando…</div>}
           </div>
-          <div className="p-2 border-t flex items-center gap-1.5 shrink-0" style={{ borderColor: C.line }}>
+          <div className="px-2 pt-2 flex gap-1.5 overflow-x-auto shrink-0" style={{ borderTop: `1px solid ${C.line}` }}>
+            {SUGGESTIONS.map(sg => (
+              <button key={sg} disabled={sending} onClick={() => send(sg)} className="text-[11px] font-medium rounded-full px-2.5 py-1 shrink-0" style={{ background: C.bg, color: C.inkSoft, border: `1px solid ${C.line}`, opacity: sending ? 0.5 : 1 }}>{sg}</button>
+            ))}
+          </div>
+          <div className="p-2 flex items-center gap-1.5 shrink-0" style={{ borderColor: C.line }}>
             <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} placeholder="Escribe tu pregunta…"
               className="flex-1 text-sm border rounded-md px-2 py-2 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }} />
             <Button size="sm" disabled={sending || !input.trim()} onClick={send}>Enviar</Button>
@@ -3314,6 +3327,17 @@ function ShiftHandoverCard({ tasks, mttoLog, nameOf, byName }) {
   const [sel, setSel] = useState(null);
   const [last, setLast] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const draftWithAi = async () => {
+    setDrafting(true);
+    try {
+      const hvac = await buildHvacAiSummary(false).catch(() => "");
+      const ctx = hvac ? `${__pmState.__aiCtxLatest}\n\n${hvac}` : __pmState.__aiCtxLatest;
+      const res = await requestAiAssistant("Redacta una nota de entrega de turno para el siguiente turno, máximo 6 líneas cortas, una por renglón con un guion: lo más urgente, equipos fuera de servicio, habitaciones con problemas de temperatura y órdenes de HotSOS pendientes. Sin saludo ni despedida y sin línea de Fuente.", ctx, "");
+      setNote((res.answer || "").replace(/^\s*Fuente:.*$/gim, "").trim());
+    } catch { showToast("No se pudo redactar con IA — escribe la nota a mano.", false); }
+    setDrafting(false);
+  };
   const isAlta = (t) => t.prioridad === "alta" || t.prioridad === "critica";
   const pend = useMemo(() => (tasks || []).filter(t => normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t))
     .sort((a, b) => (isAlta(b) ? 1 : 0) - (isAlta(a) ? 1 : 0)).slice(0, 25), [tasks]);
@@ -3370,6 +3394,9 @@ function ShiftHandoverCard({ tasks, mttoLog, nameOf, byName }) {
               ))}
             </div>
           )}
+          <button onClick={draftWithAi} disabled={drafting} className="text-xs font-semibold rounded-md px-3 mb-1.5 inline-flex items-center gap-1" style={{ minHeight: 34, background: C.blueSoft, color: C.blue, opacity: drafting ? 0.6 : 1 }}>
+            <Sparkles size={13} /> {drafting ? "Redactando…" : "Redactar nota con IA"}
+          </button>
           <VoiceTextarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Nota para el siguiente turno (opcional)…" className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
           <textarea readOnly value={text} rows={8} className="w-full text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
           <div className="flex gap-2 mt-2 flex-wrap">
@@ -6770,6 +6797,7 @@ export default function App() {
     () => buildAiContextSummary({ equipos: mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical: criticalFuelTanks, roundsIndex, tourHistory, coldRoundsIndex, meterRoundsIndex, nameOfUser: (u) => profiles?.[u]?.display_name || u || "sin responsable" }),
     [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks, roundsIndex, tourHistory, coldRoundsIndex, meterRoundsIndex, profiles]
   );
+  useEffect(() => { __pmState.__aiCtxLatest = aiContextSummary; }, [aiContextSummary]);
   const hotsosExistingOrderIds = useMemo(() => new Set(tasks.filter(t => t.hotsosOrderId).map(t => t.hotsosOrderId)), [tasks]);
   const hotsosTaskCount = useMemo(() => tasks.filter(t => t.origen === "hotsos").length, [tasks]);
   const pendingAccountsCount = useMemo(() => Object.values(profiles).filter(a => a.approved === false).length, [profiles]);

@@ -299,6 +299,29 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
     });
   };
 
+  // ===== Filtros guardados (por persona, en este dispositivo) =====
+  const SF_KEY = `pm-local:tasks-saved-filters:${currentUsername}`;
+  const [savedFilters, setSavedFilters] = useState(() => { try { return JSON.parse(localStorage.getItem(SF_KEY) || "[]"); } catch { return []; } });
+  const [savingFilter, setSavingFilter] = useState(false);
+  const [filterName, setFilterName] = useState("");
+  const persistFilters = (list) => { setSavedFilters(list); try { localStorage.setItem(SF_KEY, JSON.stringify(list)); } catch { /* noop */ } };
+  const currentFilterSnapshot = () => ({ estado: filterEstado, operario: filterOperario, prioridad: filterPrioridad, turno: filterTurno, etiqueta: filterEtiqueta, origen: filterOrigen, mine: onlyMine, vencidas: onlyVencidas });
+  const applyFilterSnapshot = (f) => {
+    setFilterEstado(f.estado || ""); setFilterOperario(f.operario || ""); setFilterPrioridad(f.prioridad || ""); setFilterTurno(f.turno || "");
+    setFilterEtiqueta(f.etiqueta || ""); setFilterOrigen(f.origen || ""); setOnlyVencidas(!!f.vencidas);
+    if (!myWorkMode) setOnlyMine(!!f.mine);
+  };
+  const saveCurrentFilter = () => {
+    const name = filterName.trim();
+    if (!name) return;
+    persistFilters([...savedFilters.filter(x => x.name !== name), { name, ...currentFilterSnapshot() }].slice(-8));
+    setFilterName(""); setSavingFilter(false);
+  };
+  const quickFilters = [
+    { name: "Mis atrasadas", mine: true, vencidas: true },
+    { name: "Alta prioridad", prioridad: "alta" },
+  ];
+
   const priorityOrder = { alta: 0, media: 1, baja: 2 };
   const filtered = useMemo(() => tasks
     .filter(t => !onlyMine || t.asignadoA === currentUsername)
@@ -843,6 +866,27 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
           )}
         </div>
       )}
+
+      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <span className="text-[11px] font-semibold" style={{ color: C.gray }}>Filtros rápidos:</span>
+        {[...quickFilters, ...savedFilters].map(f => (
+          <span key={f.name} className="inline-flex items-center rounded-full" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            <button onClick={() => applyFilterSnapshot(f)} className="text-xs font-medium px-2.5 py-1" style={{ color: C.inkSoft }}>{f.name}</button>
+            {savedFilters.some(x => x.name === f.name) && !quickFilters.some(x => x.name === f.name) && (
+              <button onClick={() => persistFilters(savedFilters.filter(x => x.name !== f.name))} aria-label={`Quitar filtro ${f.name}`} className="text-xs pr-2" style={{ color: C.gray }}>×</button>
+            )}
+          </span>
+        ))}
+        {savingFilter ? (
+          <span className="inline-flex items-center gap-1">
+            <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Nombre del filtro" className="text-xs border rounded-md px-2 py-1 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, width: 130 }} />
+            <button onClick={saveCurrentFilter} disabled={!filterName.trim()} className="text-xs font-semibold px-2 py-1 rounded-md" style={{ background: C.steelDark, color: "#fff", opacity: filterName.trim() ? 1 : 0.5 }}>Guardar</button>
+            <button onClick={() => { setSavingFilter(false); setFilterName(""); }} className="text-xs px-1" style={{ color: C.gray }}>Cancelar</button>
+          </span>
+        ) : (
+          <button onClick={() => setSavingFilter(true)} className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: C.blue, border: `1px dashed ${C.line}` }}>＋ Guardar filtro actual</button>
+        )}
+      </div>
 
       <div className="flex items-center gap-2 flex-wrap mb-2">
         <button onClick={() => setFilterEstado("")} className="text-xs font-medium px-2.5 py-1.5 rounded-full"

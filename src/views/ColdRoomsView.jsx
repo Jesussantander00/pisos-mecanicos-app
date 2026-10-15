@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Download, Mail, Save, Search } from "lucide-react";
 import { ALL_COLD_ROOM_ITEMS, C, COLD_ROOMS, ICE_MACHINES_AB, ICE_MACHINES_LINOS, ICE_STATUS_OPTS, addDays, buildColdRoomsWeekGrid, fmtDayFull, generateColdRoomsWeekPdf, isColdRoomOutOfRange, nowIso, sendColdRoomsWeekEmailAuto, showToast, startOfWeek, todayStr, validateRoundEntries } from "../shared/core";
-import { Button, PendingItemsAlert, Pill } from "../shared/components";
+import { Button, PendingItemsAlert, Pill, VoiceTextarea } from "../shared/components";
 import { EquipmentRow } from "./EquipmentRow";
 
 
@@ -163,7 +163,7 @@ export function ColdRoomsView({ currentUser, shift, activeIssues, latestColdValu
 
       <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+        <VoiceTextarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones generales de la ronda…"
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
         <div className="grid grid-cols-2 gap-2">

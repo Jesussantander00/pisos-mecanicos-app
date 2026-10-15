@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { C, showToast, todayStr, validateRoundEntries } from "../shared/core";
-import { Button, PendingItemsAlert, Pill } from "../shared/components";
+import { Button, PendingItemsAlert, Pill, VoiceTextarea } from "../shared/components";
 import { EquipmentRow } from "./EquipmentRow";
 
 
@@ -119,7 +119,7 @@ export function RoundView({ floor, currentUser, shift, activeIssues, latestValue
 
       <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas importantes del recorrido</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+        <VoiceTextarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones generales del piso, pendientes para el próximo turno, etc."
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>

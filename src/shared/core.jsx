@@ -200,7 +200,14 @@ export const GERENCIA_ALLOWED_VIEWS = ["home", "executive", "maintenance-analyti
 // los recorridos. Más adelante, aquí se conectan los accesos por usuario que dé el dueño.
 export const OWNER_EMAIL = "jesusdanielquintanasantander@gmail.com";
 // Exactamente lo que muestra la "Vista del operario": Mi turno, Consultar y Mi cuenta.
-export const LIMITED_VIEWS = ["home", "ronda", "coldrooms", "meters", "handoff", "issues", "fichas-tecnicas", "procedures", "tanks", "fuel", "wiki", "my-schedule", "profile"];
+// Fuente única del menú del operario: de aquí salen tanto lo que se muestra en el menú como las
+// pantallas permitidas (LIMITED_VIEWS). Para agregar o quitar algo del operario, se cambia solo aquí.
+export const OPERATOR_MENU = [
+  ["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"]]],
+  ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]],
+  ["Mi cuenta", [["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]],
+];
+export const LIMITED_VIEWS = ["home", ...OPERATOR_MENU.flatMap(([, items]) => items.map(([id]) => id))];
 
 // Aplanar con id único por equipo (piso+código) — resuelve códigos duplicados (ej. "24")
 FLOORS.forEach(f => f.items.forEach(it => { it.id = `${f.id}-${it.c}`; it.floorId = f.id; it.floorName = f.name; }));

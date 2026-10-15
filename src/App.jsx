@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, CloudOff, Download, Droplets, Eye, Gauge, History, Home, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, CloudOff, Download, Droplets, Eye, Gauge, History, Home, Image as ImageIcon, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import * as XLSX from "xlsx";
 import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingCount, getPendingPhotoQueue, getPendingPhotoRecordsCount, sGet, sSet, uploadPhoto } from "./lib/storage";
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
-import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -310,6 +310,11 @@ function MeterRow({ meter, entry, onChange, previous }) {
                   <input type="file" accept="image/*" capture="environment" className="hidden" disabled={reading !== null}
                     onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) doRead(sub, f); }} />
                 </label>
+                <label className="flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-md cursor-pointer shrink-0" style={{ background: C.blueSoft, color: C.blue }} title="Elegir de la galería">
+                  <ImageIcon size={13} />
+                  <input type="file" accept="image/*" className="hidden" disabled={reading !== null}
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) doRead(sub, f); }} />
+                </label>
               </div>
               {confirmed && <span className="text-xs mt-1 font-medium" style={{ color: C.green }}>✓ Leído por foto</span>}
               {consumo !== null ? (
@@ -424,7 +429,7 @@ function MetersView({ currentUser, shift, latestMeterValues, onSaveMetersRound, 
 
       <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones generales</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+        <VoiceTextarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones sobre las lecturas de hoy…"
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
@@ -572,7 +577,7 @@ function AreaChecklistView({ title, subtitle, sections, statusOptions, currentUs
 
       <div className="rounded-lg border p-3 mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Notas importantes</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+        <VoiceTextarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
           placeholder="Observaciones generales, pendientes para el próximo turno, etc."
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
@@ -682,7 +687,7 @@ function CalderaView({ currentUser, shift, onSaveCaldera, lastCalderaRound }) {
 
       <div className="rounded-lg border p-3 mb-3" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Observaciones (opcional)</div>
-        <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} rows={2}
+        <VoiceTextarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} rows={2}
           className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
       </div>
 
@@ -2032,6 +2037,8 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
   const [uploadingBefore, setUploadingBefore] = useState(false);
   const [resolving, setResolving] = useState(false);
   const checkins = iss.checkins || [];
+  // Si el daño se reportó con foto, la reparación también debe cerrarse con foto (antes/después).
+  const afterRequired = !!iss.beforePhotoUrl;
 
   // Libera la vista previa anterior cada vez que se reemplaza o se quita, y también al cerrar la
   // tarjeta — sin esto, cada foto que el técnico probaba antes de decidirse quedaba en memoria
@@ -2093,11 +2100,10 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
             {iss.beforePhotoUrl ? (
               <img loading="lazy" src={iss.beforePhotoUrl} alt="Foto del daño" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 140 }} />
             ) : (
-              <label className="text-xs font-medium px-2 py-1 rounded-md cursor-pointer inline-flex items-center gap-1" style={{ background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
-                <Camera size={12} /> {uploadingBefore ? "Subiendo…" : "Agregar foto del daño"}
-                <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploadingBefore}
-                  onChange={e => doAttachBefore(e.target.files?.[0])} />
-              </label>
+              <div>
+                <div className="text-[11px] mb-1" style={{ color: C.gray }}>Agregar foto del daño</div>
+                <PhotoSourceButtons size="sm" busy={uploadingBefore} disabled={uploadingBefore} onFiles={([f]) => doAttachBefore(f)} />
+              </div>
             )}
           </div>
         </div>
@@ -2116,15 +2122,14 @@ function IssueResolveCard({ iss, onResolve, onCheckIn, onAttachPhoto }) {
             <VoiceInputButton onResult={text => setSolution(s => (s ? s + " " : "") + text)} />
           </div>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <label className="text-xs font-medium px-2 py-1 rounded-md cursor-pointer inline-flex items-center gap-1" style={{ background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}` }}>
-              <Camera size={12} /> {afterPhotoFile ? "Cambiar foto de la reparación" : "Foto de la reparación (opcional)"}
-              <input type="file" accept="image/*" capture="environment" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; setAfterPhotoFile(f || null); setAfterPhotoPreview(f ? URL.createObjectURL(f) : null); }} />
-            </label>
+            <div>
+              <div className="text-[11px] mb-1" style={{ color: C.gray }}>{afterPhotoFile ? "Cambiar foto de la reparación" : afterRequired ? "Foto de la reparación (obligatoria)" : "Foto de la reparación (opcional)"}</div>
+              <PhotoSourceButtons size="sm" onFiles={([f]) => { setAfterPhotoFile(f || null); setAfterPhotoPreview(f ? URL.createObjectURL(f) : null); }} />
+            </div>
             {afterPhotoPreview && <img loading="lazy" src={afterPhotoPreview} alt="Vista previa" className="rounded-md border" style={{ borderColor: C.line, maxWidth: 80, maxHeight: 60 }} />}
           </div>
           <div className="flex items-center gap-2 mt-2">
-            <Button size="sm" icon={CheckCircle2} disabled={!solution.trim() || resolving} onClick={doResolve}>
+            <Button size="sm" icon={CheckCircle2} disabled={!solution.trim() || resolving || (afterRequired && !afterPhotoFile)} onClick={doResolve}>
               {resolving ? "Guardando…" : "Confirmar"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
@@ -3020,6 +3025,32 @@ function ReincidentCard({ mttoLog, equipos, tasks, onOpenEquipo }) {
   );
 }
 
+/** Habitaciones que repiten problemas: 3 o más tareas en 60 días. Visible para todo el equipo. */
+function RoomRepeatCard({ tasks, onNavigate, isAdmin }) {
+  const since = Date.now() - 60 * 86400000;
+  const count = {};
+  (tasks || []).forEach(t => {
+    if (t.origen === "preventivo-hab" || t.origen === "plantilla") return;
+    if (new Date(t.createdAt || 0).getTime() < since) return;
+    const room = roomOfTask(t);
+    if (room) count[room] = (count[room] || 0) + 1;
+  });
+  const list = Object.entries(count).filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  if (list.length === 0) return null;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.redSoft, border: `1px solid ${C.red}` }}>
+      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}><TitleIco i={RotateCcw} color={C.red} />Habitaciones que repiten problemas ({list.length})</div>
+      <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>3 o más tareas en 60 días. Conviene revisar la causa de fondo.</div>
+      {list.map(([room, n]) => (
+        <button key={room} onClick={() => onNavigate(isAdmin ? "room-history" : "tasks")} className="w-full flex justify-between gap-2 text-xs py-1.5 border-t text-left" style={{ borderColor: C.line, color: C.ink, minHeight: 36 }}>
+          <span className="truncate">Habitación {room}</span>
+          <span className="shrink-0 font-semibold" style={{ color: C.red }}>{n} tareas</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Tareas abiertas que llevan 3 o más días sin ningún movimiento (cambio, comentario). */
 function StaleTasksCard({ tasks, currentUser, isAdmin, nameOf, onNavigate }) {
   const [open, setOpen] = useState(false);
@@ -3296,7 +3327,7 @@ function ShiftHandoverCard({ tasks, mttoLog, nameOf, byName }) {
               ))}
             </div>
           )}
-          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Nota para el siguiente turno (opcional)…" className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
+          <VoiceTextarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Nota para el siguiente turno (opcional)…" className="w-full text-sm border rounded-md px-2 py-1.5 outline-none mb-2" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
           <textarea readOnly value={text} rows={8} className="w-full text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }} />
           <div className="flex gap-2 mt-2 flex-wrap">
             <Button size="sm" disabled={saving} onClick={save}>{saving ? "Guardando…" : "Guardar entrega"}</Button>
@@ -3573,11 +3604,13 @@ function HomeInsights({ part, tasks, mttoLog, equipos, invItems, currentUser, is
     return (
       <div className="pm-stagger">
         {style}
+        {!isAdmin && !viewerLocked && <OperatorGuideCard currentUser={currentUser} />}
         {!viewerLocked && <EmergencyButton tasks={tasks} currentUser={currentUser} onCreateTask={onCreateTask} onNavigate={onNavigate} />}
         <GlobalSearchCard tasks={tasks} equipos={equipos} invItems={invItems} onNavigate={onNavigate} onOpenEquipo={onOpenEquipo} />
         <AlertsStack max={3}>
           {extraAlerts}
           {isAdmin && <ReincidentCard mttoLog={mttoLog} equipos={equipos} tasks={tasks} onOpenEquipo={onOpenEquipo} />}
+          <RoomRepeatCard tasks={tasks} onNavigate={onNavigate} isAdmin={isAdmin} />
           <StaleTasksCard tasks={tasks} currentUser={currentUser} isAdmin={isAdmin} nameOf={nameOf} onNavigate={onNavigate} />
           {isAdmin && <FailurePredictCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
           {isAdmin && <BackupReminderCard onNavigate={onNavigate} />}
@@ -3591,11 +3624,65 @@ function HomeInsights({ part, tasks, mttoLog, equipos, invItems, currentUser, is
       {style}
       <ModuleGroupsCard groups={navGroups} onNavigate={onNavigate} />
       <ShiftHandoverCard tasks={tasks} mttoLog={mttoLog} nameOf={nameOf} byName={nameOf(currentUser)} />
+      {isAdmin && <TimeSavedCard tasks={tasks} />}
       {isAdmin && <MonthChartsCard tasks={tasks} mttoLog={mttoLog} equipos={equipos} />}
       {isAdmin && <YearCostCard mttoLog={mttoLog} equipos={equipos} onOpenEquipo={onOpenEquipo} />}
       {isAdmin && <MonthlyBudgetCard mttoLog={mttoLog} />}
       {isAdmin && <LowStockOrderCard invItems={invItems} />}
       <IdleLogoutSetting />
+    </div>
+  );
+}
+
+/** Guía rápida para operarios: se abre sola la primera vez y luego queda como un enlace pequeño. */
+function OperatorGuideCard({ currentUser }) {
+  const key = `pm-local:guide-seen:${currentUser}`;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== "1"; } catch { return true; } });
+  const close = () => { setOpen(false); try { localStorage.setItem(key, "1"); } catch { /* noop */ } };
+  if (!open) {
+    return <button onClick={() => setOpen(true)} className="text-xs font-semibold mb-3 underline" style={{ color: C.blue }}>Ver guía rápida de la app</button>;
+  }
+  const steps = [
+    ["1", "Ronda de revisión", "Abre el menú y entra a Ronda. Marca cada equipo como bien o con problema; si falla, toma una foto."],
+    ["2", "Equipo dañado", "En Fuera de servicio reporta el daño. Usa el botón Cámara para tomar la foto o Galería para elegir una."],
+    ["3", "Hablar en vez de escribir", "Toca el micrófono azul junto a los cuadros de texto y dicta lo que hiciste."],
+    ["4", "Entrega de turno", "Al terminar, entra a Entrega de turno: marca lo que queda pendiente y deja una nota para el siguiente."],
+  ];
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.blueSoft, border: `1px solid ${C.blue}` }}>
+      <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>👋 Guía rápida: 4 pasos para empezar</div>
+      {steps.map(([n, t, d]) => (
+        <div key={n} className="flex gap-2 mb-1.5">
+          <span className="shrink-0 w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center" style={{ background: C.blue, color: "#fff" }}>{n}</span>
+          <div className="text-xs" style={{ color: C.ink }}><b>{t}.</b> <span style={{ color: C.inkSoft }}>{d}</span></div>
+        </div>
+      ))}
+      <button onClick={close} className="text-xs font-semibold px-3 py-1.5 rounded-md mt-1" style={{ background: C.blue, color: "#fff" }}>Entendido</button>
+    </div>
+  );
+}
+
+/** Tiempo ahorrado este mes (estimado): tareas que nacieron sin que nadie las escribiera de cero. */
+function TimeSavedCard({ tasks }) {
+  const [minPer, setMinPer] = useState(3);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const month = (tasks || []).filter(t => new Date(t.createdAt || 0).getTime() >= start);
+  const auto = month.filter(t => t.origen || t.recurrencia || /^Mantenimiento preventivo —/.test(t.titulo || ""));
+  const hrs = (auto.length * minPer) / 60;
+  const by = (o) => month.filter(t => t.origen === o).length;
+  return (
+    <div className="rounded-xl p-3 mb-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-sm font-semibold mb-0.5" style={{ color: C.ink }}><TitleIco i={Clock} color={C.green} />Tiempo ahorrado este mes (estimado)</div>
+      <div className="text-2xl font-bold" style={{ color: C.green }}>{hrs.toLocaleString("es-CO", { maximumFractionDigits: 1 })} h</div>
+      <div className="text-[11px] mb-1" style={{ color: C.inkSoft }}>
+        {auto.length} de {month.length} tareas del mes se crearon solas o con ayuda de la app: cronograma ({month.filter(t => /^Mantenimiento preventivo —/.test(t.titulo || "")).length}), HotSOS ({by("hotsos")}), plantillas ({by("plantilla")}), preventivo de habitaciones ({by("preventivo-hab")}) y repetidas ({month.filter(t => t.recurrencia).length}).
+      </div>
+      <label className="text-[11px] flex items-center gap-1" style={{ color: C.gray }}>
+        Minutos que se ahorran por tarea:
+        <input type="number" min="1" max="30" value={minPer} onChange={e => setMinPer(Math.max(1, Number(e.target.value) || 1))} className="w-14 text-xs border rounded px-1 py-0.5" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+        <span>(supuesto, ajústalo)</span>
+      </label>
     </div>
   );
 }
@@ -6925,7 +7012,7 @@ export default function App() {
   }
 
   // ── Menú del dueño: categorías que se despliegan (Operario = lo que ve un técnico) ──
-  const OWN_OPERARIO = [["Mi turno", [["ronda", "Ronda de revisión"], ["coldrooms", "Cuartos fríos"], ["meters", "Lecturas de medidores"], ["handoff", "Entrega de turno"], ["issues", "Fuera de servicio"]]], ["Consultar", [["fichas-tecnicas", "Fichas técnicas"], ["procedures", "Procedimientos"], ["tanks", "Tanques de agua potable"], ["fuel", "Combustibles y gas"], ["wiki", "Wiki interna"]]], ["Mi cuenta", [["my-schedule", "Mi horario"], ["profile", "Mi perfil"]]]];
+  const OWN_OPERARIO = OPERATOR_MENU;
   const OWN_TITLES = { operario: "Operario", operacion: "Operación", historial: "Historial y reportes", analisis: "Análisis", personal: "Personal", administracion: "Administración" };
   const ownBadgeOf = {}; NAV_GROUPS.forEach(g => g.items.forEach(n => { ownBadgeOf[n.id] = n; }));
   const ownMine = (tasks || []).filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length;

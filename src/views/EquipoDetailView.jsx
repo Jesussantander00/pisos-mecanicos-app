@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { saveRecordWithPhotos, uploadPhoto, uploadVideo } from "../lib/storage";
 import { AlertTriangle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Download, Upload, Video, Wrench } from "lucide-react";
 import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, showToast } from "../shared/core";
-import { Avatar, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, Pill, VoiceInputButton } from "../shared/components";
+import { Avatar, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, PhotoSourceButtons, Pill, VoiceInputButton } from "../shared/components";
 
 
 
@@ -253,16 +253,14 @@ export function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onL
             return chips.length ? <div className="flex flex-wrap gap-1.5 mt-1.5">{chips.map(c => <span key={c} className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: C.bg, color: C.inkSoft }}>{c}</span>)}</div> : null;
           })()}
           {isAdmin && (
-            <label className="inline-flex items-center gap-1 text-xs font-semibold mt-1 cursor-pointer" style={{ color: C.amber }}>
-              {uploadingFoto ? "Subiendo…" : equipo.fotoMaestra ? "Cambiar foto oficial" : "Agregar foto oficial del equipo"}
-              <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto} onChange={async e => {
-                const file = e.target.files?.[0];
-                if (!file) return;
+            <div className="mt-1.5">
+              <div className="text-xs font-semibold mb-1" style={{ color: C.amber }}>{equipo.fotoMaestra ? "Cambiar foto oficial" : "Agregar foto oficial del equipo"}</div>
+              <PhotoSourceButtons size="sm" busy={uploadingFoto} disabled={uploadingFoto} onFiles={async ([file]) => {
                 setUploadingFoto(true);
                 try { const url = await uploadPhoto(file, `equipo-foto-${equipo.id}`); await onSetFotoMaestra(equipo.id, url); }
                 finally { setUploadingFoto(false); }
               }} />
-            </label>
+            </div>
           )}
         </div>
       </div>

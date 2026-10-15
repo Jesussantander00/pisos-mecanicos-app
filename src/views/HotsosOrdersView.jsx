@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { sGet, sSet } from "../lib/storage";
 import { C, HSO_KEY, hsoAge, hsoNow, hsoSeed, showToast } from "../shared/core";
-import { Button, Pill } from "../shared/components";
+import { Button, Pill, VoiceTextarea } from "../shared/components";
 
 
 export function HotsosOrdersView({ profiles, currentUser, canImpersonate }) {
@@ -113,7 +113,7 @@ export function HotsosOrdersView({ profiles, currentUser, canImpersonate }) {
         ) : (
           <div className="space-y-2">
             <div><div className="text-xs mb-1" style={{ color: C.gray }}>Qué se hizo</div>
-              <textarea rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Describe el trabajo realizado" className="text-sm border rounded-md px-2 py-1.5 w-full resize-y" style={{ background: C.panel, color: C.ink, borderColor: C.line }} /></div>
+              <VoiceTextarea rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Describe el trabajo realizado" className="text-sm border rounded-md px-2 py-1.5 w-full resize-y" style={{ background: C.panel, color: C.ink, borderColor: C.line }} /></div>
             <div><div className="text-xs mb-1" style={{ color: C.gray }}>Materiales usados</div>
               <input value={form.mat} onChange={e => setForm(f => ({ ...f, mat: e.target.value }))} placeholder="Ej. 1 bombillo LED, silicona" className="text-sm border rounded-md px-2 py-1.5 w-full" style={{ background: C.panel, color: C.ink, borderColor: C.line }} /></div>
             <div className="flex gap-2 flex-wrap">

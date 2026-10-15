@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { uploadPhoto } from "../lib/storage";
 import { Camera, Download, X } from "lucide-react";
 import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
-import { Avatar, Badge, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, SignaturePad, TaskTimer, VoiceInputButton } from "../shared/components";
+import { Avatar, Badge, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, SignaturePad, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
 
@@ -414,7 +414,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                     <PartsPicker invItems={invItems} parts={closeParts} onChange={setCloseParts} />
                   </div>
                 )}
-                <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
+                <VoiceTextarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 {task.prioridad === "alta" && (
                   <div className="mt-2">

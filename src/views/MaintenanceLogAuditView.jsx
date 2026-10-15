@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { ArrowLeft, ChevronRight, Download, Mail, Wrench, X } from "lucide-react";
 import { C, MTTO_ESTADOS, MTTO_TIPOS, authHeaders, badgeToneFor, bufferToBase64, fmtDT, isPendingReview, nowIso, showToast, sortRows, todayStr, useBackCloseModal } from "../shared/core";
-import { Avatar, Badge, Button, Lightbox, Pill } from "../shared/components";
+import { Avatar, Badge, Button, Lightbox, Pill, VoiceTextarea } from "../shared/components";
 
 
 
@@ -345,7 +345,7 @@ export function MaintenanceLogAuditView({ equipos, mttoLog, isAdmin, onReview, r
           {isAdmin && isPendingReview(selected) && (
             <div className="shrink-0 border-t p-4" style={{ borderColor: C.line, background: C.bg }}>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Revisión de supervisor</div>
-              <textarea value={reviewComment} onChange={e => { setReviewComment(e.target.value); setReviewError(null); }} rows={2} placeholder="Escribe un comentario o motivo de rechazo…"
+              <VoiceTextarea value={reviewComment} onChange={e => { setReviewComment(e.target.value); setReviewError(null); }} rows={2} placeholder="Escribe un comentario o motivo de rechazo…"
                 className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mb-2" style={{ borderColor: reviewError ? C.red : C.line, background: C.panel, color: C.ink }} />
               {reviewError && <p className="text-xs mb-2" style={{ color: C.red }}>{reviewError}</p>}
               <div className="space-y-2">

@@ -1,4 +1,4 @@
-import { AlertTriangle, ClipboardList, Clock, Download, Mic, WifiOff, X } from "lucide-react";
+import { AlertTriangle, Camera, ClipboardList, Clock, Download, Image as ImageIcon, Mic, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { exportFullBackup } from "../lib/storage";
@@ -229,6 +229,18 @@ export function QrCodeBox({ url, label, filename }) {
 /* ============================================================
    DICTADO POR VOZ (usa el reconocimiento de voz que ya trae el navegador — sin costo)
    ============================================================ */
+/** Cuadro de texto con botón de micrófono para dictar (mismo uso que un textarea normal). */
+export function VoiceTextarea({ value, onChange, style, ...rest }) {
+  return (
+    <div className="relative">
+      <textarea value={value} onChange={onChange} style={{ ...style, paddingRight: 44 }} {...rest} />
+      <div className="absolute top-1 right-1">
+        <VoiceInputButton onResult={t => onChange({ target: { value: (value ? value + " " : "") + t } })} />
+      </div>
+    </div>
+  );
+}
+
 export function VoiceInputButton({ onResult }) {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
@@ -261,6 +273,29 @@ export function VoiceInputButton({ onResult }) {
       className="p-2 rounded-md shrink-0" style={{ background: listening ? C.red : C.blueSoft, color: listening ? "#fff" : C.blue }}>
       {listening ? <span className="pm-pulse block"><Mic size={15} /></span> : <Mic size={15} />}
     </button>
+  );
+}
+
+/**
+ * Dos botones para subir una foto: "Cámara" abre la cámara directo y "Galería" deja buscar en las
+ * fotos del celular. Se usa en todos los lugares donde se sube una foto.
+ */
+export function PhotoSourceButtons({ onFiles, multiple = false, disabled = false, busy = false, camLabel = "Cámara", galLabel = "Galería", size = "md" }) {
+  const small = size === "sm";
+  const base = { background: C.panel, color: C.inkSoft, border: `1px solid ${C.line}`, opacity: disabled ? 0.6 : 1 };
+  const cls = `font-medium rounded-md cursor-pointer inline-flex items-center gap-1 ${small ? "text-[11px] px-2 py-1" : "text-xs px-2.5 py-1.5"}`;
+  const handle = (e) => { const files = Array.from(e.target.files || []); e.target.value = ""; if (files.length) onFiles(files); };
+  return (
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <label className={cls} style={base}>
+        <Camera size={small ? 11 : 13} /> {busy ? "Subiendo…" : camLabel}
+        <input type="file" accept="image/*" capture="environment" className="hidden" disabled={disabled} onChange={handle} />
+      </label>
+      <label className={cls} style={base}>
+        <ImageIcon size={small ? 11 : 13} /> {galLabel}
+        <input type="file" accept="image/*" multiple={multiple} className="hidden" disabled={disabled} onChange={handle} />
+      </label>
+    </span>
   );
 }
 
@@ -304,13 +339,11 @@ export function PhotoPicker({ photos, onChange, max = 2 }) {
           </div>
         ))}
         {photos.length < max && (
-          <button type="button" onClick={() => inputRef.current?.click()}
-            className="w-16 h-16 rounded-md border-2 border-dashed flex items-center justify-center text-xs" style={{ borderColor: C.line, background: C.panel, color: C.gray }}>
-            + Foto
-          </button>
+          <div className="flex flex-col gap-1.5">
+            <PhotoSourceButtons multiple size="sm" onFiles={(files) => onChange([...photos, ...files.slice(0, max - photos.length)])} />
+          </div>
         )}
       </div>
-      <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={onFiles} />
     </div>
   );
 }

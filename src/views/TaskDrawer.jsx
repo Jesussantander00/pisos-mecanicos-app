@@ -1,10 +1,36 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, hatRoleFor, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, SignaturePad, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
+
+/** Antes y después lado a lado (se muestra al cerrar la tarea, si hay fotos de las dos etapas). */
+function BeforeAfterCompare({ before, after, onZoom, duration }) {
+  const [i, setI] = useState(0);
+  const b = before[Math.min(i, before.length - 1)], a = after[Math.min(i, after.length - 1)];
+  const n = Math.max(before.length, after.length);
+  const pane = (url, label, color) => (
+    <button type="button" onClick={() => onZoom && onZoom(url)} aria-label={`Ver foto ${label.toLowerCase()} ampliada`} className="relative rounded-xl overflow-hidden border" style={{ borderColor: C.line, aspectRatio: "1 / 1" }}>
+      <img loading="lazy" src={url} alt={`Foto ${label.toLowerCase()}`} className="w-full h-full object-cover" />
+      <span className="absolute left-2 top-2 text-[11px] font-bold text-white rounded-full px-2.5 py-0.5" style={{ background: color }}>{label}</span>
+    </button>
+  );
+  return (
+    <div className="rounded-xl border p-3" style={{ borderColor: C.line, background: C.bg }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: C.gray }}>Antes y después{duration ? ` · duró ${duration}` : ""}</div>
+      <div className="grid grid-cols-2 gap-2">{pane(b, "Antes", C.red)}{pane(a, "Después", C.green)}</div>
+      {n > 1 && (
+        <div className="flex justify-center gap-2 mt-2">
+          {Array.from({ length: n }).map((_, k) => (
+            <button key={k} type="button" onClick={() => setI(k)} aria-label={`Ver par ${k + 1}`} className="rounded-full" style={{ width: 14, height: 14, background: k === i ? C.steelDark : C.line, minWidth: 14 }} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Línea de avance de una tarea: Creada → Asignada → En curso → Cerrada. Muestra de un vistazo en qué paso va. */
 function TaskProgressLine({ estado, assigned }) {
@@ -374,6 +400,10 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
 
           {estado === "finalizada" ? (
             <>
+              {task.fotosAntes?.length > 0 && task.fotosDespues?.length > 0 && (
+                <BeforeAfterCompare before={task.fotosAntes} after={task.fotosDespues} onZoom={onZoom}
+                  duration={(() => { const h = hoursBetween(task.startedAt || task.assignedAt || task.createdAt, task.finishedAt); return isFinite(h) && h >= 0 ? fmtHours(h) : ""; })()} />
+              )}
               {task.fotosDespues && task.fotosDespues.length > 0 && (
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.green }}>Fotos — después</div>

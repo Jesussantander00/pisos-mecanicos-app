@@ -1942,21 +1942,27 @@ function ConnectionCloud({ state = "sol", size = 28 }) {
 
 /** Saludo al entrar a la app: el avatar levanta la mano y dice hola con la hora del día y cuántas
  * tareas abiertas tiene la persona. Se cierra solo a los 7 segundos (o al tocarlo). */
-function HelloToast({ role, name, openCount, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 7000); return () => clearTimeout(t); }, [onClose]);
+function HelloToast({ role, name, openCount, lateCount = 0, onGo, onClose }) {
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => { const t = setTimeout(() => closeRef.current(), 9000); return () => clearTimeout(t); }, []);
   const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "America/Bogota" }).format(new Date())) % 24;
   const greet = hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches";
   const first = (name || "").trim().split(/\s+/)[0] || "";
+  const go = () => { if (lateCount > 0) __pmState.__pmTasksEntryFilter = "vencidas"; onGo && onGo(); onClose(); };
   return (
-    <button type="button" onClick={onClose} aria-label="Cerrar saludo"
-      className="pm-animate-in fixed right-3 z-[70] flex items-center gap-3 rounded-2xl shadow-xl pl-2 pr-4 py-2 text-left"
+    <div className="pm-animate-in fixed right-3 z-[70] flex items-stretch rounded-2xl shadow-xl overflow-hidden"
       style={{ top: "calc(env(safe-area-inset-top) + 64px)", background: C.panel, border: `1px solid ${C.line}`, maxWidth: "calc(100vw - 24px)" }}>
-      <HardHatAvatar role={role} size={56} waving />
-      <span className="block">
-        <span className="block text-sm font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>¡{greet}{first ? `, ${first}` : ""}!</span>
-        <span className="block text-xs" style={{ color: C.inkSoft }}>{openCount > 0 ? `Tienes ${openCount} tarea${openCount === 1 ? "" : "s"} abierta${openCount === 1 ? "" : "s"}` : "No tienes tareas abiertas"}</span>
-      </span>
-    </button>
+      <button type="button" onClick={openCount > 0 ? go : onClose} aria-label={openCount > 0 ? "Ir a mis tareas" : "Cerrar saludo"}
+        className="flex items-center gap-3 pl-2 pr-3 py-2 text-left">
+        <HardHatAvatar role={role} size={56} waving />
+        <span className="block">
+          <span className="block text-sm font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>¡{greet}{first ? `, ${first}` : ""}!</span>
+          <span className="block text-xs" style={{ color: C.inkSoft }}>{openCount > 0 ? `Tienes ${openCount} tarea${openCount === 1 ? "" : "s"} abierta${openCount === 1 ? "" : "s"}${lateCount > 0 ? ` · ${lateCount} atrasada${lateCount === 1 ? "" : "s"}` : ""}` : "No tienes tareas abiertas"}</span>
+          {openCount > 0 && <span className="inline-flex items-center gap-0.5 text-xs font-bold mt-0.5" style={{ color: C.amber }}>Ver mis tareas <ChevronRight size={13} /></span>}
+        </span>
+      </button>
+      <button type="button" onClick={onClose} aria-label="Cerrar saludo" className="px-2.5 flex items-start pt-2" style={{ color: C.gray }}><X size={14} /></button>
+    </div>
   );
 }
 
@@ -7265,8 +7271,9 @@ export default function App() {
       <ToastHost />
       <PmArtDefs />
       {showHello && profileLoaded && !viewerLocked ? (
-        <HelloToast role={myHatRole} name={displayName} onClose={() => setShowHello(false)}
-          openCount={tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length} />
+        <HelloToast role={myHatRole} name={displayName} onClose={() => setShowHello(false)} onGo={() => setView("tasks")}
+          openCount={tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt).length}
+          lateCount={tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt && hoursBetween(t.assignedAt || t.createdAt || nowIso(), nowIso()) > 24).length} />
       ) : null}
       <SyncStatusBar online={isOnline} pending={pendingSync + pendingPhotoRecords} retrying={retrying} onRetry={async () => { setRetrying(true); await tryFlush(); tryFlushPhotos(); setRetrying(false); }} />
       {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin

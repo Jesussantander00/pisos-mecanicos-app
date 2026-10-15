@@ -2408,6 +2408,22 @@ export function median(nums) {
   const mid = Math.floor(arr.length / 2);
   return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
 }
+
+/** Qué avatar le toca a cada persona según su cuenta y su cargo. */
+export function hatRoleFor(account, cargo) {
+  if (account?.is_gerencia && !account?.is_admin && !account?.is_almacenista) return "ger";
+  if (/supervis|jefe|coordin/i.test(cargo || "")) return "sup";
+  if (account?.is_admin || /ingenier/i.test(cargo || "")) return "ing";
+  return "tec";
+}
+
+export const PM_HAT_STYLE = {
+  tec: { vest: "#e8670c", vg: "pmv-o", helm: "pmh-y", helmDk: "#c78f00", brim: "#d79a00", brimHi: "#ffd83a", sk: "pmsk-a", skFlat: "#e8b387", neck: "#c9895f", stripe: "#f5f2cf", hi: 0.5, eye: "#2a1b12" },
+  ing: { vest: "#2a4560", vg: "pmv-n", helm: "pmh-w", helmDk: "#aeb9c4", brim: "#c3ccd5", brimHi: "#ffffff", sk: "pmsk-b", skFlat: "#a97650", neck: "#9a6a44", stripe: "#b8cadb", hi: 0.9, eye: "#1d130c" },
+  sup: { vest: "#7a8794", vg: "pmv-g", helm: "pmh-b", helmDk: "#1f4a73", brim: "#244f78", brimHi: "#7fb1e0", sk: "pmsk-c", skFlat: "#ebc29d", neck: "#d39a74", stripe: "#eef2f5", hi: 0.45, eye: "#2a1b12" },
+};
+
+export const PM_CLOUD_D = "M30 74C15 74 7 63 10 52C12 42 22 38 31 40C34 27 46 19 59 22C69 24 76 30 79 38C92 33 107 42 106 56C105 67 97 74 86 74Z";
 export function useBackClose(isOpen, onClose) {
   const idRef = useRef(null);
   const onCloseRef = useRef(onClose);

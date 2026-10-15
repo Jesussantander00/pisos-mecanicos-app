@@ -155,39 +155,39 @@ button:disabled { cursor: not-allowed; }
   .pm-card-hover:hover { translate: none; }
 }
 
-/* ===== Mejoras de interfaz (lote 10) ===== */
-/* Transición entre vistas: termina en transform:none para no romper elementos fixed hijos */
-@keyframes pm-view-in-k { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.pm-view-in { animation: pm-view-in-k 240ms var(--ease-out) backwards; }
-
-/* Barras de gráficas que crecen */
-@keyframes pm-grow-y-k { from { transform: scaleY(0); } to { transform: none; } }
-.pm-grow-y { transform-origin: bottom center; animation: pm-grow-y-k 500ms var(--ease-out) backwards; }
-.pm-grow-x { transform-origin: left center; animation: pm-grow-x 500ms var(--ease-out) backwards; }
-
-/* Pop de confirmación (avisos) */
-@keyframes pm-pop-k { 0% { transform: scale(.6); } 60% { transform: scale(1.15); } 100% { transform: none; } }
-.pm-pop { animation: pm-pop-k 320ms var(--ease-out) backwards; }
-
-/* Tipografía: títulos con Space Grotesk */
-h1, h2, h3 { font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.01em; }
-
-/* Texto minúsculo más legible */
-.text-\[10px\] { font-size: 11px; }
-
-/* Botones fáciles de tocar en celular: área invisible ampliada */
-@media (pointer: coarse) {
-  button, [role="button"] { position: relative; }
-  button::after, [role="button"]::after {
-    content: ""; position: absolute; left: -4px; right: -4px; top: -6px; bottom: -6px;
-  }
+/* ---- Avatares con casco y nubes de conexión animadas ---- */
+.pm-eye { transform-box: fill-box; transform-origin: center; animation: pm-blink 4.5s infinite; }
+@keyframes pm-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+.pm-arm { transform-box: fill-box; transform-origin: 50% 100%; opacity: 0; }
+.pm-waving .pm-arm { animation: pm-wave 3.4s ease-in-out 1 both; }
+@keyframes pm-wave {
+  0% { opacity: 0; transform: rotate(0); } 8% { opacity: 1; transform: rotate(0); }
+  14% { transform: rotate(24deg); } 26% { transform: rotate(-14deg); } 38% { transform: rotate(24deg); }
+  50% { transform: rotate(-14deg); } 62% { transform: rotate(20deg); } 76% { opacity: 1; transform: rotate(0); }
+  90%, 100% { opacity: 0; transform: rotate(0); }
 }
-
-/* Modo oscuro: detalles */
-.pm-dark ::placeholder { color: rgba(203, 213, 225, 0.5); }
-.pm-dark ::selection { background: rgba(56, 189, 248, 0.35); }
-.pm-dark { color-scheme: dark; }
-
+.pm-bob { animation: pm-bob 3.4s ease-in-out infinite; }
+@keyframes pm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.pm-rays, .pm-glow, .pm-rip { transform-box: fill-box; transform-origin: center; }
+.pm-rays { animation: pm-spin 24s linear infinite; }
+@keyframes pm-spin { to { transform: rotate(360deg); } }
+.pm-glow { animation: pm-glowp 3.6s ease-in-out infinite; }
+@keyframes pm-glowp { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.12); opacity: 1; } }
+.pm-drift { animation: pm-drift 6s ease-in-out infinite; }
+.pm-drift2 { animation: pm-drift 7s ease-in-out infinite reverse; }
+@keyframes pm-drift { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(5px); } }
+.pm-wind { stroke-dasharray: 8 10; animation: pm-wind 1.6s linear infinite; }
+@keyframes pm-wind { to { stroke-dashoffset: -36; } }
+.pm-dr { opacity: 0; animation: pm-fall 1s linear infinite; }
+.pm-d2 { animation-delay: 0.25s; } .pm-d3 { animation-delay: 0.5s; } .pm-d4 { animation-delay: 0.75s; }
+@keyframes pm-fall { 0% { transform: translate(2px, -8px); opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { transform: translate(-4px, 14px); opacity: 0; } }
+.pm-bolt { opacity: 0.15; animation: pm-flash 5s infinite; }
+@keyframes pm-flash { 0%, 60%, 100% { opacity: 0.15; } 62% { opacity: 1; } 64% { opacity: 0.2; } 66% { opacity: 1; } 72% { opacity: 0.15; } }
+.pm-rip { animation: pm-ripple 1s ease-out infinite; }
+.pm-r2 { animation-delay: 0.5s; }
+@keyframes pm-ripple { 0% { transform: scale(0.3); opacity: 0.9; } 100% { transform: scale(1.2); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .pm-view-in, .pm-grow-y, .pm-grow-x, .pm-pop { animation: none !important; }
+  .pm-eye, .pm-bob, .pm-rays, .pm-glow, .pm-drift, .pm-drift2, .pm-wind, .pm-dr, .pm-bolt, .pm-rip, .pm-waving .pm-arm { animation: none !important; }
+  .pm-dr, .pm-bolt { opacity: 1; }
+  .pm-waving .pm-arm { opacity: 1; }
 }

@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, CloudOff, Download, Droplets, Eye, Gauge, History, Home, Image as ImageIcon, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bell, BookOpen, Building2, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Cloud, Download, Droplets, Eye, Gauge, History, Home, Image as ImageIcon, Layers, LogOut, Mail, Menu as MenuIcon, MessageCircle, Moon, Package, PackagePlus, PlusCircle, QrCode, RotateCcw, Save, Search, Send, Settings as SettingsIcon, ShieldCheck, Snowflake, Sparkles, Sun, Thermometer, Trash2, TrendingDown, TrendingUp, Upload, User, Users, WifiOff, Wrench, X, Zap } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import * as XLSX from "xlsx";
 import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingCount, getPendingPhotoQueue, getPendingPhotoRecordsCount, sGet, sSet, uploadPhoto } from "./lib/storage";
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, PM_HAT_STYLE, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -1652,21 +1652,32 @@ function ErrorLogPanel() {
 
 function NetworkStatusIndicator({ pendingCount = 0 }) {
   const [online, setOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+  const readSlow = () => {
+    const c = typeof navigator !== "undefined" ? (navigator.connection || navigator.mozConnection || navigator.webkitConnection) : null;
+    if (!c) return false;
+    return c.effectiveType === "slow-2g" || c.effectiveType === "2g" || (c.rtt && c.rtt > 1500) || (c.downlink != null && c.downlink > 0 && c.downlink < 0.15);
+  };
+  const [slow, setSlow] = useState(readSlow);
   useEffect(() => {
     const goOnline = () => setOnline(true);
     const goOffline = () => setOnline(false);
+    const onConn = () => setSlow(readSlow());
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
-    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+    const c = navigator.connection;
+    c?.addEventListener?.("change", onConn);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); c?.removeEventListener?.("change", onConn); };
   }, []);
   const hasPending = pendingCount > 0;
-  const label = !online ? "Guardando localmente" : hasPending ? `Subiendo ${pendingCount}…` : "En línea";
-  const tone = !online ? { bg: C.amberSoft, fg: "#7a5405" } : hasPending ? { bg: C.blueSoft, fg: C.blue } : { bg: C.greenSoft, fg: C.green };
+  // sol = buena · nub = inestable o subiendo pendientes · llu = sin señal
+  const cloud = !online ? "llu" : (slow || hasPending) ? "nub" : "sol";
+  const label = !online ? (hasPending ? `Sin señal · ${pendingCount} pendiente${pendingCount === 1 ? "" : "s"}` : "Sin señal") : hasPending ? `Subiendo ${pendingCount}…` : slow ? "Señal inestable" : "En línea";
+  const tone = !online ? { bg: C.redSoft, fg: C.red } : cloud === "nub" ? { bg: C.amberSoft, fg: "#7a5405" } : { bg: C.greenSoft, fg: C.green };
   return (
-    <div title={!online ? "Sin señal — lo que registres se guarda en este celular y se sube solo apenas vuelva la conexión." : hasPending ? `${pendingCount} registro${pendingCount === 1 ? "" : "s"} guardado${pendingCount === 1 ? "" : "s"} en este celular, subiendo a la nube ahora.` : "Conectado — todo se guarda en la nube al instante."}
-      className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
+    <div role="status" aria-label={label} title={!online ? "Sin señal — lo que registres se guarda en este celular y se sube solo apenas vuelva la conexión." : hasPending ? `${pendingCount} registro${pendingCount === 1 ? "" : "s"} guardado${pendingCount === 1 ? "" : "s"} en este celular, subiendo a la nube ahora.` : slow ? "La señal está lenta o inestable; puede que algo tarde en subir." : "Conectado — todo se guarda en la nube al instante."}
+      className="flex items-center gap-1.5 text-xs font-semibold pl-1.5 pr-2.5 py-0.5 rounded-full"
       style={{ background: tone.bg, color: tone.fg }}>
-      {!online ? <CloudOff size={13} /> : hasPending ? <Cloud size={13} className="animate-pulse" /> : <Cloud size={13} />}
+      <ConnectionCloud state={cloud} size={26} />
       <span className="hidden sm:inline">{label}</span>
     </div>
   );
@@ -1893,6 +1904,162 @@ function QrScannerView({ onClose, onFoundEquipo, onFoundShelf, onFoundTool }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Gradientes compartidos de los avatares con casco y de las nubes de conexión. Se dibuja UNA sola
+ * vez en la raíz de la app (un svg de 0×0, nunca display:none) y el resto los referencia por id. */
+function PmArtDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="pm-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#eaf2fa" /><stop offset="1" stopColor="#cfdfee" /></linearGradient>
+        <linearGradient id="pmsk-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f3c6a0" /><stop offset="1" stopColor="#dd9e75" /></linearGradient>
+        <linearGradient id="pmsk-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#d9a074" /><stop offset="1" stopColor="#b57a52" /></linearGradient>
+        <linearGradient id="pmsk-c" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f6d3b5" /><stop offset="1" stopColor="#e3ab85" /></linearGradient>
+        <linearGradient id="pmsk-d" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#e5b48c" /><stop offset="1" stopColor="#c58b62" /></linearGradient>
+        <linearGradient id="pmh-y" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffd83a" /><stop offset="1" stopColor="#e0a000" /></linearGradient>
+        <linearGradient id="pmh-w" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#d3dbe3" /></linearGradient>
+        <linearGradient id="pmh-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#5b97cf" /><stop offset="1" stopColor="#2b5a88" /></linearGradient>
+        <linearGradient id="pmv-o" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ff8a24" /><stop offset="1" stopColor="#d95a05" /></linearGradient>
+        <linearGradient id="pmv-n" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#34536f" /><stop offset="1" stopColor="#16283a" /></linearGradient>
+        <linearGradient id="pmv-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#97a4b1" /><stop offset="1" stopColor="#5d6a77" /></linearGradient>
+        <linearGradient id="pmv-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2b3d52" /><stop offset="1" stopColor="#0f1b29" /></linearGradient>
+        <linearGradient id="pmc-w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#cfe0f0" /></linearGradient>
+        <linearGradient id="pmc-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#d7dde3" /><stop offset="1" stopColor="#9aa6b2" /></linearGradient>
+        <linearGradient id="pmc-gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#e9edf1" /><stop offset="1" stopColor="#b9c3cd" /></linearGradient>
+        <linearGradient id="pmc-d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#7d8b99" /><stop offset="1" stopColor="#4a5866" /></linearGradient>
+        <radialGradient id="pmc-sun" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#ffe27a" /><stop offset="1" stopColor="#f5a800" /></radialGradient>
+        <radialGradient id="pmc-glow" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#ffd54a" stopOpacity=".55" /><stop offset="1" stopColor="#ffd54a" stopOpacity="0" /></radialGradient>
+      </defs>
+    </svg>
+  );
+}
+
+/** Avatar con casco por rol: técnico (casco amarillo, chaleco naranja), ingeniero/admin (casco blanco,
+ * chaleco azul marino), supervisor (casco azul, gafas) y gerencia (sin casco, saco y corbata).
+ * `waving` = levanta la mano y saluda una vez (al entrar a la app). `bob` = flota suave. */
+function HardHatAvatar({ role = "tec", size = 36, waving = false, bob = false, label }) {
+  const aria = label || { tec: "Técnico con casco amarillo", ing: "Ingeniero con casco blanco", sup: "Supervisor con casco azul", ger: "Gerencia" }[role];
+  const wrap = { width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "none", display: "block" };
+  const cls = `${waving ? "pm-waving" : ""} ${bob ? "pm-bob" : ""}`.trim() || undefined;
+  if (role === "ger") {
+    return (
+      <svg viewBox="0 0 120 120" role="img" aria-label={aria} style={wrap} className={cls}>
+        <circle cx="60" cy="60" r="60" fill="url(#pm-bg)" />
+        <path d="M12 124C12 94 34 84 60 84S108 94 108 124Z" fill="url(#pmv-s)" />
+        <path d="M48 84L60 112L72 84Z" fill="#f7f9fb" />
+        <path d="M48 84L38 100L52 108L60 112Z" fill="#1d2e41" /><path d="M72 84L82 100L68 108L60 112Z" fill="#1d2e41" />
+        <path d="M57 88h6l2 6l-5 18l-5-18Z" fill="#d98e04" />
+        <rect x="51" y="72" width="18" height="16" rx="6" fill="#bf8960" />
+        <g className="pm-arm"><rect x="92" y="74" width="12" height="26" rx="6" fill="#1d2e41" /><circle cx="98" cy="68" r="6.5" fill="#d09a70" /><circle cx="94.5" cy="63.5" r="2.4" fill="#d09a70" /><circle cx="98" cy="62" r="2.4" fill="#d09a70" /><circle cx="101.5" cy="63.5" r="2.4" fill="#d09a70" /><ellipse cx="91.8" cy="68.5" rx="2.4" ry="4" fill="#d09a70" transform="rotate(20 91.8 68.5)" /></g>
+        <ellipse cx="40.5" cy="52" rx="4.5" ry="6" fill="url(#pmsk-d)" /><ellipse cx="79.5" cy="52" rx="4.5" ry="6" fill="url(#pmsk-d)" />
+        <ellipse cx="60" cy="50" rx="20" ry="23" fill="url(#pmsk-d)" />
+        <path d="M39 46C36 28 46 20 61 20S85 28 81 46C79 38 74 33 60 33S42 38 39 46Z" fill="#2a1d14" />
+        <path d="M45 47q5-3 10 0M65 47q5-3 10 0" stroke="#2a1d14" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+        <ellipse className="pm-eye" cx="51" cy="54" rx="2.4" ry="3" fill="#1d130c" /><ellipse className="pm-eye" cx="69" cy="54" rx="2.4" ry="3" fill="#1d130c" />
+        <path d="M60 56q-2 5 1 6" stroke="#a9754e" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <path d="M52 65q8 5 16 0" stroke="#7a3b25" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  const s = PM_HAT_STYLE[role] || PM_HAT_STYLE.tec;
+  return (
+    <svg viewBox="0 0 120 120" role="img" aria-label={aria} style={wrap} className={cls}>
+      <circle cx="60" cy="60" r="60" fill="url(#pm-bg)" />
+      <path d="M12 124C12 94 34 84 60 84S108 94 108 124Z" fill={`url(#${s.vg})`} />
+      <path d="M47 84L60 100L73 84Z" fill="#f2f5f8" />
+      <path d="M30 93L40 89L40 124L28 124Z" fill={s.stripe} /><path d="M90 93L80 89L80 124L92 124Z" fill={s.stripe} />
+      <rect x="14" y="108" width="92" height="6" fill={s.stripe} opacity=".9" />
+      <rect x="51" y="72" width="18" height="16" rx="6" fill={s.neck} />
+      <g className="pm-arm"><rect x="92" y="74" width="12" height="26" rx="6" fill={s.vest} /><circle cx="98" cy="68" r="6.5" fill={s.skFlat} /><circle cx="94.5" cy="63.5" r="2.4" fill={s.skFlat} /><circle cx="98" cy="62" r="2.4" fill={s.skFlat} /><circle cx="101.5" cy="63.5" r="2.4" fill={s.skFlat} /><ellipse cx="91.8" cy="68.5" rx="2.4" ry="4" fill={s.skFlat} transform="rotate(20 91.8 68.5)" /></g>
+      <ellipse cx="40.5" cy="58" rx="4.5" ry="6" fill={`url(#${s.sk})`} /><ellipse cx="79.5" cy="58" rx="4.5" ry="6" fill={`url(#${s.sk})`} />
+      <ellipse cx="60" cy="54" rx="20" ry="22" fill={`url(#${s.sk})`} />
+      {role === "sup" ? (
+        <>
+          <rect x="45" y="61" width="12" height="9" rx="4" fill="none" stroke="#2a3744" strokeWidth="1.8" /><rect x="63" y="61" width="12" height="9" rx="4" fill="none" stroke="#2a3744" strokeWidth="1.8" /><path d="M57 65h6" stroke="#2a3744" strokeWidth="1.8" />
+          <ellipse className="pm-eye" cx="51" cy="65.5" rx="2.2" ry="2.8" fill={s.eye} /><ellipse className="pm-eye" cx="69" cy="65.5" rx="2.2" ry="2.8" fill={s.eye} />
+          <path d="M53 74q7 4 14 0" stroke="#8a3f2a" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <ellipse className="pm-eye" cx="52" cy="64" rx="2.4" ry="3" fill={s.eye} /><ellipse className="pm-eye" cx="68" cy="64" rx="2.4" ry="3" fill={s.eye} />
+          <path d="M60 65q-2 5 1 6" stroke="#b9794f" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+          {role === "ing" ? (
+            <>
+              <path d="M51 71q9 6 18 0" stroke="#fff" strokeWidth="3.4" fill="none" strokeLinecap="round" />
+              <path d="M44 74Q60 86 76 74Q76 80 60 83Q44 80 44 74Z" fill="#2a1b12" opacity=".85" />
+            </>
+          ) : (
+            <>
+              <path d="M52 72q8 6 16 0" stroke="#7a3b25" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+              <ellipse cx="47" cy="70" rx="4" ry="2.4" fill="#f08a6a" opacity=".35" /><ellipse cx="73" cy="70" rx="4" ry="2.4" fill="#f08a6a" opacity=".35" />
+            </>
+          )}
+        </>
+      )}
+      <path d="M33 54C32 31 44 20 60 20S88 31 87 54Z" fill={`url(#${s.helm})`} />
+      <path d="M54 20H66V54H54Z" fill={s.helmDk} opacity=".55" />
+      <path d="M45 24C40 29 37 37 37 48" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" opacity={s.hi} />
+      <path d="M26 54C26 49 94 49 94 54V58C94 61 26 61 26 58Z" fill={s.brim} />
+      <path d="M26 54C26 49 94 49 94 54" stroke={s.brimHi} strokeWidth="1.5" fill="none" />
+    </svg>
+  );
+}
+
+/** Nube de conexión: "sol" = buena, "nub" = inestable (nube gris), "llu" = sin señal (llueve, se guarda
+ * en el celular). La lluvia vive solo dentro de este dibujito — no mueve ni tapa nada de la pantalla. */
+function ConnectionCloud({ state = "sol", size = 28 }) {
+  const w = Math.round(size * 1.25);
+  return (
+    <svg viewBox="0 0 120 96" width={w} height={size} aria-hidden="true" style={{ flex: "none", overflow: "hidden" }}>
+      {state === "sol" && (
+        <>
+          <circle className="pm-glow" cx="86" cy="30" r="34" fill="url(#pmc-glow)" />
+          <g className="pm-rays" stroke="#f5b400" strokeWidth="4" strokeLinecap="round"><path d="M86 6V12M86 48V54M62 30H68M104 30H110M69 13L73 17M103 13L99 17M69 47L73 43M103 47L99 43" /></g>
+          <circle cx="86" cy="30" r="15" fill="url(#pmc-sun)" />
+          <g transform="translate(0 8)"><path d={PM_CLOUD_D} fill="url(#pmc-w)" stroke="#8fb0d0" strokeWidth="2.5" strokeLinejoin="round" /><path d="M18 58C19 50 26 46 33 47" stroke="#fff" strokeWidth="3" fill="none" strokeLinecap="round" /></g>
+        </>
+      )}
+      {state === "nub" && (
+        <>
+          <g className="pm-drift2"><g transform="translate(24 -2) scale(.8)"><path d={PM_CLOUD_D} fill="url(#pmc-gb)" stroke="#aab5c0" strokeWidth="3" strokeLinejoin="round" /></g></g>
+          <g className="pm-drift"><g transform="translate(0 6)"><path d={PM_CLOUD_D} fill="url(#pmc-g)" stroke="#6d7a87" strokeWidth="2.5" strokeLinejoin="round" /><path d="M18 58C19 50 26 46 33 47" stroke="#fff" strokeWidth="3" fill="none" strokeLinecap="round" opacity=".55" /></g></g>
+          <path className="pm-wind" d="M24 90H100" stroke="#6d7a87" strokeWidth="3.5" strokeLinecap="round" fill="none" opacity=".8" />
+        </>
+      )}
+      {state === "llu" && (
+        <>
+          <g transform="translate(0 -12)"><path d={PM_CLOUD_D} fill="url(#pmc-d)" stroke="#3a4753" strokeWidth="2.5" strokeLinejoin="round" /><path d="M18 58C19 50 26 46 33 47" stroke="#fff" strokeWidth="3" fill="none" strokeLinecap="round" opacity=".3" /></g>
+          <g stroke="#4f9ad8" strokeWidth="4.5" strokeLinecap="round">
+            <path className="pm-dr" d="M28 66L25 74" /><path className="pm-dr pm-d3" d="M36 68L33 76" /><path className="pm-dr pm-d2" d="M44 66L41 74" /><path className="pm-dr pm-d4" d="M52 68L49 76" />
+            <path className="pm-dr pm-d2" d="M70 66L67 74" /><path className="pm-dr" d="M78 68L75 76" /><path className="pm-dr pm-d4" d="M86 66L83 74" /><path className="pm-dr pm-d3" d="M94 68L91 76" />
+          </g>
+          <polygon className="pm-bolt" points="64,62 52,80 60,80 55,94 72,74 63,74 69,62" fill="#ffc21a" stroke="#c78f00" strokeWidth="1.5" strokeLinejoin="round" />
+          <ellipse className="pm-rip" cx="30" cy="92" rx="8" ry="2" fill="none" stroke="#5fa3dc" strokeWidth="1.5" /><ellipse className="pm-rip pm-r2" cx="90" cy="92" rx="8" ry="2" fill="none" stroke="#5fa3dc" strokeWidth="1.5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** Saludo al entrar a la app: el avatar levanta la mano y dice hola con la hora del día y cuántas
+ * tareas abiertas tiene la persona. Se cierra solo a los 7 segundos (o al tocarlo). */
+function HelloToast({ role, name, openCount, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 7000); return () => clearTimeout(t); }, [onClose]);
+  const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "America/Bogota" }).format(new Date())) % 24;
+  const greet = hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches";
+  const first = (name || "").trim().split(/\s+/)[0] || "";
+  return (
+    <button type="button" onClick={onClose} aria-label="Cerrar saludo"
+      className="pm-animate-in fixed right-3 z-[70] flex items-center gap-3 rounded-2xl shadow-xl pl-2 pr-4 py-2 text-left"
+      style={{ top: "calc(env(safe-area-inset-top) + 64px)", background: C.panel, border: `1px solid ${C.line}`, maxWidth: "calc(100vw - 24px)" }}>
+      <HardHatAvatar role={role} size={56} waving />
+      <span className="block">
+        <span className="block text-sm font-bold" style={{ color: C.ink, fontFamily: "'Space Grotesk', Inter, sans-serif" }}>¡{greet}{first ? `, ${first}` : ""}!</span>
+        <span className="block text-xs" style={{ color: C.inkSoft }}>{openCount > 0 ? `Tienes ${openCount} tarea${openCount === 1 ? "" : "s"} abierta${openCount === 1 ? "" : "s"}` : "No tienes tareas abiertas"}</span>
+      </span>
+    </button>
   );
 }
 
@@ -4434,6 +4601,7 @@ export default function App() {
     undoTimerRef.current = setTimeout(() => setUndoToast(null), 10000);
   };
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showHello, setShowHello] = useState(true); // saludo del avatar al entrar a la app
   useBackCloseModal(showProfileMenu, () => setShowProfileMenu(false));
   const closeOnboarding = () => {
     setShowOnboarding(false);
@@ -6648,6 +6816,7 @@ export default function App() {
   // (tareas, rondas, cuartos fríos, medidores, caldera, inventario) no aparecen los botones para
   // crear, editar o cerrar nada, solo para consultar.
   const viewerLocked = isViewer && !isAdmin && !isAlmacenista && !isGerencia;
+  const myHatRole = hatRoleFor(account, cargoForUsername(currentUser, profiles, employees));
   const profileLoaded = !!profiles[currentUser];
   const isOwner = account.is_owner === true || String(account.email || "").toLowerCase() === OWNER_EMAIL; // el dueño sale del perfil (is_owner); el correo queda de respaldo
   const limitedUI = profileLoaded && !isOwner; // todos menos el dueño: solo recorridos
@@ -7119,6 +7288,11 @@ export default function App() {
   return (
     <div className="min-h-screen flex overflow-x-hidden" style={{ background: C.bg, fontFamily: "Inter, ui-sans-serif, system-ui", maxWidth: "100vw" }}>
       <ToastHost />
+      <PmArtDefs />
+      {showHello && profileLoaded && !viewerLocked ? (
+        <HelloToast role={myHatRole} name={displayName} onClose={() => setShowHello(false)}
+          openCount={tasks.filter(t => t.asignadoA === currentUser && normalizeTaskState(t.estado) !== "finalizada").length} />
+      ) : null}
       <SyncStatusBar online={isOnline} pending={pendingSync + pendingPhotoRecords} retrying={retrying} onRetry={async () => { setRetrying(true); await tryFlush(); tryFlushPhotos(); setRetrying(false); }} />
       {/* Franja fija para la barra de estado nativa (hora/batería) — siempre azul oscuro, sin
           importar si la app está en modo claro u oscuro, para que combine con el theme-color
@@ -7556,11 +7730,11 @@ export default function App() {
               </div>
             )}
             {isAdmin && <span className="hidden sm:inline-flex"><Pill tone="amber">Admin</Pill></span>}
-            <span className="hidden sm:flex text-sm font-medium items-center gap-1.5" style={{ color: C.ink }}><User size={14} /> {displayName}</span>
+            <span className="hidden sm:flex text-sm font-medium items-center gap-2" style={{ color: C.ink }}><HardHatAvatar role={myHatRole} size={30} bob /> {displayName}</span>
             <span className="hidden sm:inline-flex"><Button size="sm" variant="ghost" icon={LogOut} onClick={logout}>Salir</Button></span>
             {/* En móvil: solo el avatar — toca para abrir la pantalla de Perfil con todo consolidado */}
-            <button onClick={() => setShowProfileMenu(true)} className="sm:hidden rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg, minWidth: 44, minHeight: 44 }}>
-              <User size={16} color={isAdmin ? "#7a5405" : C.ink} />
+            <button onClick={() => setShowProfileMenu(true)} aria-label="Abrir mi perfil" className="sm:hidden rounded-full flex items-center justify-center shrink-0" style={{ minWidth: 44, minHeight: 44 }}>
+              <HardHatAvatar role={myHatRole} size={38} />
             </button>
           </div>
         </header>
@@ -7575,9 +7749,7 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <div className="flex items-center gap-3 mb-5">
-                <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0" style={{ background: isAdmin ? C.amberSoft : C.bg }}>
-                  <User size={22} color={isAdmin ? "#7a5405" : C.ink} />
-                </div>
+                <HardHatAvatar role={myHatRole} size={64} bob />
                 <div>
                   <div className="text-base font-semibold" style={{ color: C.ink }}>{displayName}</div>
                   {isAdmin && <Pill tone="amber">Admin</Pill>}

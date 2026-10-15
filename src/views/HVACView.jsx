@@ -514,7 +514,10 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
           })()}
 
           {(() => {
-            const rep = (maintenanceReport?.rows || []).filter(x => Number(x.hot_days) >= 3).sort((a, b) => Number(b.hot_days) - Number(a.hot_days));
+            // Solo cuentan los últimos 7 días (el escaneo guardaba más historia antes de esta corrección).
+            const cutoffDay = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+            const recentDays = (x) => String(x.hot_days_list || "").split(",").filter(d => d && /^\d{4}-/.test(d) && d >= cutoffDay);
+            const rep = (maintenanceReport?.rows || []).map(x => ({ ...x, _days: recentDays(x) })).filter(x => x._days.length >= 3).sort((a, b) => b._days.length - a._days.length);
             if (!rep.length) return null;
             return (
               <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
@@ -524,8 +527,8 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
                   {rep.slice(0, 20).map(x => (
                     <div key={x.room_id} className="flex items-center justify-between text-xs rounded-md px-2.5 py-1.5" style={{ background: C.redSoft }}>
                       <span style={{ color: C.ink }}>{x.room_name}</span>
-                      <span style={{ color: C.inkSoft }}>{String(x.hot_days_list || "").split(",").filter(Boolean).map(d => d.slice(5)).join(" · ")}</span>
-                      <span className="font-semibold" style={{ color: C.red }}>{x.hot_days} días</span>
+                      <span style={{ color: C.inkSoft }}>{x._days.map(d => d.slice(5)).join(" · ")}</span>
+                      <span className="font-semibold" style={{ color: C.red }}>{x._days.length} días</span>
                     </div>
                   ))}
                 </div>

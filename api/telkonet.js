@@ -376,7 +376,8 @@ async function scanOneRoom(room, knownDeviceId) {
     d.n += 1;
     if (r.temperature - r.userSetPoint >= SCAN_OUT_OF_RANGE_DELTA) d.hot += 1;
   }
-  const hotDayKeys = Object.keys(perDay).filter(k => perDay[k].n >= 4 && perDay[k].hot / perDay[k].n >= 0.25).sort();
+  const cutoffDay = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10); // solo los últimos 7 días
+  const hotDayKeys = Object.keys(perDay).filter(k => k >= cutoffDay && perDay[k].n >= 4 && perDay[k].hot / perDay[k].n >= 0.25).sort();
   const needsMaintenance = totalReadings >= 20 && outOfRangePct != null && outOfRangePct >= 25;
   return {
     roomId, roomName: room.RoomName, deviceId, totalReadings, outOfRangeCount, outOfRangePct,

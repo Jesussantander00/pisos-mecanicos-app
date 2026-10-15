@@ -6767,8 +6767,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestValues]);
   const aiContextSummary = useMemo(
-    () => buildAiContextSummary({ equipos: mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical: criticalFuelTanks }),
-    [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks]
+    () => buildAiContextSummary({ equipos: mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical: criticalFuelTanks, roundsIndex, tourHistory, coldRoundsIndex, meterRoundsIndex, nameOfUser: (u) => profiles?.[u]?.display_name || u || "sin responsable" }),
+    [mttoEquipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, criticalFuelTanks, roundsIndex, tourHistory, coldRoundsIndex, meterRoundsIndex, profiles]
   );
   const hotsosExistingOrderIds = useMemo(() => new Set(tasks.filter(t => t.hotsosOrderId).map(t => t.hotsosOrderId)), [tasks]);
   const hotsosTaskCount = useMemo(() => tasks.filter(t => t.origen === "hotsos").length, [tasks]);

@@ -850,7 +850,7 @@ export function computeUpcoming7Days(equipos, mttoLog, mttoCronograma, now = new
  * la operación ahora mismo — esto es lo que se le manda a la IA junto con la pregunta, para que
  * responda con datos reales de este hotel y no con información genérica.
  */
-export function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical }) {
+export function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activeIssues, mttoCronograma, fuelTanksCritical, roundsIndex, tourHistory, coldRoundsIndex, meterRoundsIndex, nameOfUser }) {
   const L = [];
   L.push(`Fecha y hora actual: ${fmtDT(nowIso())}`);
 
@@ -880,6 +880,45 @@ export function buildAiContextSummary({ equipos, mttoLog, tasks, invItems, activ
 
   const mtto30 = (mttoLog || []).filter(m => hoursBetween(m.fecha, nowIso()) / 24 <= 30);
   L.push(`Mantenimientos registrados en los últimos 30 días: ${mtto30.length} (${mtto30.filter(m => m.tipo === "preventivo").length} preventivos, ${mtto30.filter(m => m.tipo === "correctivo").length} correctivos)`);
+
+  // ── Personal y recorridos (quién hizo qué) ──
+  const cutoff14 = Date.now() - 14 * 86400000;
+  const recent = (iso) => { const t = new Date(iso || 0).getTime(); return t >= cutoff14; };
+  const roundGroups = {};
+  (roundsIndex || []).forEach(r => {
+    if (!recent(r.savedAt)) return;
+    const k = `${r.date}|${r.shift}|${r.user}`;
+    (roundGroups[k] ||= { date: r.date, shift: r.shift, user: r.user, floors: new Set(), at: r.savedAt }).floors.add(r.floorId);
+  });
+  const doneKeys = new Set((tourHistory || []).map(t => `${t.date}|${t.shift}|${t.user}`));
+  const tours = Object.entries(roundGroups).map(([k, g]) => ({ ...g, done: doneKeys.has(k) })).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  L.push(`RECORRIDOS (ronda de revisión por pisos) de los últimos 14 días: ${tours.length} (${tours.filter(t => t.done).length} completos, ${tours.filter(t => !t.done).length} incompletos). Hay ${FLOORS.length} pisos por recorrido.`);
+  tours.slice(0, 60).forEach(t => L.push(`  - ${t.date} · turno ${t.shift} · ${t.user}: ${t.floors.size} de ${FLOORS.length} pisos${t.done ? ", COMPLETO" : ", incompleto"}`));
+  const porPersona = {};
+  tours.forEach(t => { const x = (porPersona[t.user] ||= { n: 0, ok: 0 }); x.n++; if (t.done) x.ok++; });
+  const pp = Object.entries(porPersona).sort((a, b) => b[1].n - a[1].n);
+  if (pp.length) { L.push("Recorridos por persona (últimos 14 días):"); pp.forEach(([u, x]) => L.push(`  - ${u}: ${x.n} recorridos (${x.ok} completos)`)); }
+  const simpleRounds = (label, idx) => {
+    const g = {};
+    (idx || []).forEach(r => { if (!recent(r.savedAt || r.date)) return; const k = `${r.date}|${r.shift}|${r.user}`; g[k] = { date: r.date, shift: r.shift, user: r.user }; });
+    const arr = Object.values(g);
+    if (arr.length) { L.push(`${label} (últimos 14 días): ${arr.length}`); arr.slice(0, 30).forEach(x => L.push(`  - ${x.date} · turno ${x.shift} · ${x.user}`)); }
+  };
+  simpleRounds("Rondas de cuartos fríos", coldRoundsIndex);
+  simpleRounds("Lecturas de medidores", meterRoundsIndex);
+  const cutoff30 = Date.now() - 30 * 86400000;
+  const cerradas = {};
+  (tasks || []).forEach(t => {
+    if (normalizeTaskState(t.estado) !== "finalizada" || !t.finishedAt || new Date(t.finishedAt).getTime() < cutoff30) return;
+    const who = nameOfUser ? nameOfUser(t.asignadoA) : (t.asignadoA || "sin responsable");
+    cerradas[who] = (cerradas[who] || 0) + 1;
+  });
+  const ce = Object.entries(cerradas).sort((a, b) => b[1] - a[1]);
+  if (ce.length) { L.push("Tareas finalizadas por persona (últimos 30 días):"); ce.forEach(([u, n]) => L.push(`  - ${u}: ${n}`)); }
+  const mttoPor = {};
+  (mttoLog || []).forEach(m => { if (!recent(m.fecha)) return; const k = m.tecnico || "sin nombre"; mttoPor[k] = (mttoPor[k] || 0) + 1; });
+  const mp = Object.entries(mttoPor).sort((a, b) => b[1] - a[1]);
+  if (mp.length) { L.push("Mantenimientos registrados por persona (últimos 14 días):"); mp.forEach(([u, n]) => L.push(`  - ${u}: ${n}`)); }
 
   return L.join("\n");
 }

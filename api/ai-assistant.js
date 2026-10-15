@@ -87,6 +87,7 @@ export default async function handler(req, res) {
     "Usa ÚNICAMENTE los datos que se te dan a continuación en 'DATOS ACTUALES DEL HOTEL'. No inventes cifras ni nombres de equipos que no estén ahí.",
     "Si la pregunta no se puede responder con esos datos, dilo con honestidad en vez de inventar una respuesta — sugiere en qué parte de la app podría estar esa información.",
     "Si la pregunta es sobre temperaturas o habitaciones, usa la sección de termostatos (TelkHab) de los datos si existe: ahí están las listas completas y puedes citar habitaciones, temperaturas y diferencias. Nunca mandes al usuario a consultar otra sección si el dato está en esa sección.",
+    "Si preguntan por personal, recorridos, rondas o quién hizo qué, usa las secciones RECORRIDOS, rondas de cuartos fríos, lecturas de medidores, tareas finalizadas por persona y mantenimientos por persona: ahí están los nombres reales. Un cuadro o tabla se entrega en formato de tabla de texto con columnas separadas por barras verticales.",
     "No des consejos médicos, legales, ni de ningún tema fuera de la operación de mantenimiento del hotel.",
   ].join(" ");
 

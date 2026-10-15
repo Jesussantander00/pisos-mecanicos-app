@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { saveRecordWithPhotos } from "../lib/storage";
 import * as XLSX from "xlsx";
 import { AlertTriangle, Camera, ClipboardCheck, Download, PlusCircle, Trash2, Wrench, X } from "lucide-react";
-import { C, KANBAN_COLUMNS, KANBAN_WIP_LIMIT, SHIFTS, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, computeMaintenanceSuggestions, employeesOnShift, employeesWorkingNow, fmtDT, generateTaskReportPdf, hoursBetween, isTaskSnoozed, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, showToast, suggestsHighPriority } from "../shared/core";
-import { Avatar, Badge, Button, Lightbox, MiniDonut, MiniGauge, NavBadge, PhotoPicker, Sparkline, TaskTimer, VoiceInputButton } from "../shared/components";
+import { C, KANBAN_COLUMNS, KANBAN_WIP_LIMIT, SHIFTS, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, computeMaintenanceSuggestions, employeesOnShift, employeesWorkingNow, fmtDT, generateTaskReportPdf, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, showToast, suggestsHighPriority } from "../shared/core";
+import { Avatar, Badge, Button, HardHatAvatar, Lightbox, MiniDonut, MiniGauge, NavBadge, PhotoPicker, Sparkline, TaskTimer, VoiceInputButton } from "../shared/components";
 import { TaskKanbanCard } from "./TaskKanbanCard";
 import { TaskDrawer } from "./TaskDrawer";
 import { __pmState } from "../shared/core";
@@ -1193,7 +1193,8 @@ function WorkloadStrip({ tasks, accounts, onAssign }) {
             onDragLeave={() => setOver(o => (o === p.u ? null : o))}
             onDrop={e => { e.preventDefault(); setOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) onAssign(id, p.u, p.name); }}
             className="rounded-lg px-2.5 py-1.5" style={{ minWidth: 112, background: over === p.u ? C.amberSoft : C.bg, border: `1px solid ${over === p.u ? C.amber : C.line}` }}>
-            <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.ink }}><span className="truncate font-semibold">{p.name.split(" ")[0]}</span><b>{p.n}</b></div>
+            <div className="flex items-center justify-between gap-2 text-xs" style={{ color: C.ink }}><span className="flex items-center gap-1.5 min-w-0"><HardHatAvatar role={hatRoleFor(accounts[p.u], null)} size={20} label={p.name} /><span className="truncate font-semibold">{p.name.split(" ")[0]}</span></span><b>{p.n}</b></div>
+            <div className="text-[10px] mt-0.5" style={{ color: p.n >= 8 ? C.red : p.n >= 5 ? "#8a5a00" : C.green }}>{p.n >= 8 ? "saturado" : p.n >= 5 ? "normal" : "libre"}</div>
             <div className="h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: C.line }}><div className="h-full" style={{ width: `${Math.round((p.n / max) * 100)}%`, background: p.n >= 8 ? C.red : p.n >= 5 ? C.amber : C.green }} /></div>
           </div>
         ))}

@@ -1,10 +1,34 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { Camera, Download, X } from "lucide-react";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
-import { Avatar, Badge, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, SignaturePad, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, hatRoleFor, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
+import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, SignaturePad, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
+
+/** Línea de avance de una tarea: Creada → Asignada → En curso → Cerrada. Muestra de un vistazo en qué paso va. */
+function TaskProgressLine({ estado, assigned }) {
+  const idx = estado === "finalizada" ? 3 : (estado === "en-proceso" || estado === "pausada") ? 2 : assigned ? 1 : 0;
+  const steps = ["Creada", "Asignada", estado === "pausada" ? "Pausada" : "En curso", "Cerrada"];
+  return (
+    <div className="flex items-start" role="img" aria-label={`Avance de la tarea: ${steps[idx]}`}>
+      {steps.map((label, i) => {
+        const done = i < idx, cur = i === idx;
+        return (
+          <React.Fragment key={label}>
+            {i > 0 && <div className="flex-1 h-0.5 mt-[11px]" style={{ background: i <= idx ? C.green : C.line }} />}
+            <div className="flex flex-col items-center gap-1" style={{ minWidth: 52 }}>
+              <div className="rounded-full flex items-center justify-center" style={{ width: 22, height: 22, background: done || (cur && idx === 3) ? C.green : cur ? C.amber : C.panel, border: done || cur ? "none" : `2px solid ${C.line}`, boxShadow: cur && idx !== 3 ? `0 0 0 3px ${C.amberSoft}` : "none" }}>
+                {(done || (cur && idx === 3)) && <CheckCircle2 size={14} color="#fff" />}
+              </div>
+              <span className="text-[11px]" style={{ color: cur ? C.ink : C.gray, fontWeight: cur ? 700 : 500 }}>{label}</span>
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
@@ -143,13 +167,17 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
 
         <div className="p-4 space-y-4">
           <div className="flex items-center gap-2">
-            <Avatar name={assigneeName} cargo={cargoForUsername(task.asignadoA, accounts, employees)} size={32} />
+            {task.asignadoA
+              ? <HardHatAvatar role={hatRoleFor(accounts[task.asignadoA], cargoForUsername(task.asignadoA, accounts, employees))} size={40} label={`${assigneeName} con casco`} />
+              : <Avatar name={assigneeName} size={32} />}
             <div>
               <div className="text-sm font-semibold" style={{ color: C.ink }}>{assigneeName}</div>
               <Badge tone={badgeToneFor("prioridad", task.prioridad)}>{TASK_PRIORITIES.find(p => p.code === task.prioridad)?.label}</Badge>
             </div>
             <div className="ml-auto"><TaskTimer assignedAt={task.assignedAt} finishedAt={task.finishedAt} estado={estado} /></div>
           </div>
+
+          <TaskProgressLine estado={estado} assigned={!!task.asignadoA} />
 
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Descripción</div>

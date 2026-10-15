@@ -2,7 +2,7 @@ import { AlertTriangle, Camera, ClipboardList, Clock, Download, Image as ImageIc
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { exportFullBackup } from "../lib/storage";
-import { BADGE_TONES, C, PCB_CONFIGS, fmtDT, fmtHours, getMaintenanceTemplates, hoursBetween, isTaskSnoozed, normalizeSearchText, normalizeTaskState, nowIso, scrollToItem, showToast, todayStr, useBackCloseModal } from "./core";
+import { BADGE_TONES, C, PCB_CONFIGS, PM_HAT_STYLE, fmtDT, fmtHours, getMaintenanceTemplates, hoursBetween, isTaskSnoozed, normalizeSearchText, normalizeTaskState, nowIso, scrollToItem, showToast, todayStr, useBackCloseModal } from "./core";
 import { TitleIco } from "../App";
 
 
@@ -825,6 +825,77 @@ export function Avatar({ name, cargo, size = 28 }) {
       style={{ width: size, height: size, background: bg, fontSize: size * 0.4 }}>
       {initials}
     </div>
+  );
+}
+
+/** Avatar con casco por rol: técnico (casco amarillo, chaleco naranja), ingeniero/admin (casco blanco,
+ * chaleco azul marino), supervisor (casco azul, gafas) y gerencia (sin casco, saco y corbata).
+ * `waving` = levanta la mano y saluda una vez (al entrar a la app). `bob` = flota suave. */
+export function HardHatAvatar({ role = "tec", size = 36, waving = false, bob = false, label }) {
+  const aria = label || { tec: "Técnico con casco amarillo", ing: "Ingeniero con casco blanco", sup: "Supervisor con casco azul", ger: "Gerencia" }[role];
+  const wrap = { width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "none", display: "block" };
+  const cls = `${waving ? "pm-waving" : ""} ${bob ? "pm-bob" : ""}`.trim() || undefined;
+  if (role === "ger") {
+    return (
+      <svg viewBox="0 0 120 120" role="img" aria-label={aria} style={wrap} className={cls}>
+        <circle cx="60" cy="60" r="60" fill="url(#pm-bg)" />
+        <path d="M12 124C12 94 34 84 60 84S108 94 108 124Z" fill="url(#pmv-s)" />
+        <path d="M48 84L60 112L72 84Z" fill="#f7f9fb" />
+        <path d="M48 84L38 100L52 108L60 112Z" fill="#1d2e41" /><path d="M72 84L82 100L68 108L60 112Z" fill="#1d2e41" />
+        <path d="M57 88h6l2 6l-5 18l-5-18Z" fill="#d98e04" />
+        <rect x="51" y="72" width="18" height="16" rx="6" fill="#bf8960" />
+        <g className="pm-arm"><rect x="92" y="74" width="12" height="26" rx="6" fill="#1d2e41" /><circle cx="98" cy="68" r="6.5" fill="#d09a70" /><circle cx="94.5" cy="63.5" r="2.4" fill="#d09a70" /><circle cx="98" cy="62" r="2.4" fill="#d09a70" /><circle cx="101.5" cy="63.5" r="2.4" fill="#d09a70" /><ellipse cx="91.8" cy="68.5" rx="2.4" ry="4" fill="#d09a70" transform="rotate(20 91.8 68.5)" /></g>
+        <ellipse cx="40.5" cy="52" rx="4.5" ry="6" fill="url(#pmsk-d)" /><ellipse cx="79.5" cy="52" rx="4.5" ry="6" fill="url(#pmsk-d)" />
+        <ellipse cx="60" cy="50" rx="20" ry="23" fill="url(#pmsk-d)" />
+        <path d="M39 46C36 28 46 20 61 20S85 28 81 46C79 38 74 33 60 33S42 38 39 46Z" fill="#2a1d14" />
+        <path d="M45 47q5-3 10 0M65 47q5-3 10 0" stroke="#2a1d14" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+        <ellipse className="pm-eye" cx="51" cy="54" rx="2.4" ry="3" fill="#1d130c" /><ellipse className="pm-eye" cx="69" cy="54" rx="2.4" ry="3" fill="#1d130c" />
+        <path d="M60 56q-2 5 1 6" stroke="#a9754e" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <path d="M52 65q8 5 16 0" stroke="#7a3b25" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  const s = PM_HAT_STYLE[role] || PM_HAT_STYLE.tec;
+  return (
+    <svg viewBox="0 0 120 120" role="img" aria-label={aria} style={wrap} className={cls}>
+      <circle cx="60" cy="60" r="60" fill="url(#pm-bg)" />
+      <path d="M12 124C12 94 34 84 60 84S108 94 108 124Z" fill={`url(#${s.vg})`} />
+      <path d="M47 84L60 100L73 84Z" fill="#f2f5f8" />
+      <path d="M30 93L40 89L40 124L28 124Z" fill={s.stripe} /><path d="M90 93L80 89L80 124L92 124Z" fill={s.stripe} />
+      <rect x="14" y="108" width="92" height="6" fill={s.stripe} opacity=".9" />
+      <rect x="51" y="72" width="18" height="16" rx="6" fill={s.neck} />
+      <g className="pm-arm"><rect x="92" y="74" width="12" height="26" rx="6" fill={s.vest} /><circle cx="98" cy="68" r="6.5" fill={s.skFlat} /><circle cx="94.5" cy="63.5" r="2.4" fill={s.skFlat} /><circle cx="98" cy="62" r="2.4" fill={s.skFlat} /><circle cx="101.5" cy="63.5" r="2.4" fill={s.skFlat} /><ellipse cx="91.8" cy="68.5" rx="2.4" ry="4" fill={s.skFlat} transform="rotate(20 91.8 68.5)" /></g>
+      <ellipse cx="40.5" cy="58" rx="4.5" ry="6" fill={`url(#${s.sk})`} /><ellipse cx="79.5" cy="58" rx="4.5" ry="6" fill={`url(#${s.sk})`} />
+      <ellipse cx="60" cy="54" rx="20" ry="22" fill={`url(#${s.sk})`} />
+      {role === "sup" ? (
+        <>
+          <rect x="45" y="61" width="12" height="9" rx="4" fill="none" stroke="#2a3744" strokeWidth="1.8" /><rect x="63" y="61" width="12" height="9" rx="4" fill="none" stroke="#2a3744" strokeWidth="1.8" /><path d="M57 65h6" stroke="#2a3744" strokeWidth="1.8" />
+          <ellipse className="pm-eye" cx="51" cy="65.5" rx="2.2" ry="2.8" fill={s.eye} /><ellipse className="pm-eye" cx="69" cy="65.5" rx="2.2" ry="2.8" fill={s.eye} />
+          <path d="M53 74q7 4 14 0" stroke="#8a3f2a" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <ellipse className="pm-eye" cx="52" cy="64" rx="2.4" ry="3" fill={s.eye} /><ellipse className="pm-eye" cx="68" cy="64" rx="2.4" ry="3" fill={s.eye} />
+          <path d="M60 65q-2 5 1 6" stroke="#b9794f" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+          {role === "ing" ? (
+            <>
+              <path d="M51 71q9 6 18 0" stroke="#fff" strokeWidth="3.4" fill="none" strokeLinecap="round" />
+              <path d="M44 74Q60 86 76 74Q76 80 60 83Q44 80 44 74Z" fill="#2a1b12" opacity=".85" />
+            </>
+          ) : (
+            <>
+              <path d="M52 72q8 6 16 0" stroke="#7a3b25" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+              <ellipse cx="47" cy="70" rx="4" ry="2.4" fill="#f08a6a" opacity=".35" /><ellipse cx="73" cy="70" rx="4" ry="2.4" fill="#f08a6a" opacity=".35" />
+            </>
+          )}
+        </>
+      )}
+      <path d="M33 54C32 31 44 20 60 20S88 31 87 54Z" fill={`url(#${s.helm})`} />
+      <path d="M54 20H66V54H54Z" fill={s.helmDk} opacity=".55" />
+      <path d="M45 24C40 29 37 37 37 48" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" opacity={s.hi} />
+      <path d="M26 54C26 49 94 49 94 54V58C94 61 26 61 26 58Z" fill={s.brim} />
+      <path d="M26 54C26 49 94 49 94 54" stroke={s.brimHi} strokeWidth="1.5" fill="none" />
+    </svg>
   );
 }
 

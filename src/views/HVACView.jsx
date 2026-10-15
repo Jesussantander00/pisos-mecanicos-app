@@ -486,6 +486,54 @@ export function HVACView({ isAdmin, isGerencia, tasks = [], onCreateTask, onCrea
             </div>
           )}
 
+          {rooms.length > 0 && (() => {
+            const hotIds = new Set(dashboard.tempIssues.map(x => x.r.RoomID));
+            const byFloor = {};
+            rooms.forEach(r => {
+              const m = String(r.RoomName || "").match(/^(\d{1,2})\d{2}/);
+              const f = m ? m[1] : "otro";
+              (byFloor[f] = byFloor[f] || []).push(r);
+            });
+            const floorsDesc = Object.keys(byFloor).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+            const cellOf = (r) => {
+              const occ = !!(r.Occupied && r.Occupied !== "0"), hot = hotIds.has(r.RoomID);
+              if (occ && hot) return { bg: C.red, fg: "#fff", mark: "!", name: "ocupada y caliente" };
+              if (occ) return { bg: "#3b6fa0", fg: "#fff", mark: "", name: "ocupada" };
+              if (hot) return { bg: C.amberSoft, fg: "#8a5a00", mark: "!", name: "vacía y caliente", border: `1.5px solid ${C.amber}` };
+              return { bg: C.line, fg: C.gray, mark: "", name: "vacía" };
+            };
+            const hotOcc = rooms.filter(r => hotIds.has(r.RoomID) && r.Occupied && r.Occupied !== "0").length;
+            const hotEmpty = rooms.filter(r => hotIds.has(r.RoomID) && !(r.Occupied && r.Occupied !== "0")).length;
+            return (
+              <div className="rounded-lg border p-4" style={{ borderColor: C.line, background: C.panel }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: C.inkSoft }}>Mapa de calor de habitaciones</div>
+                <p className="text-[11px] mb-3" style={{ color: C.gray }}>Un cuadro por habitación. Toca uno para ver su historial. Se ve en un segundo dónde hay calor con huésped y dónde se gasta energía en vacías.</p>
+                <div className="space-y-1">
+                  {floorsDesc.map(f => (
+                    <div key={f} className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-semibold shrink-0" style={{ width: 28, color: C.inkSoft }}>P{f}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {byFloor[f].sort((a, b) => String(a.RoomName).localeCompare(String(b.RoomName), "es", { numeric: true })).map(r => {
+                          const c = cellOf(r);
+                          return (
+                            <button key={r.RoomID} onClick={() => openHistory(r)} aria-label={`Habitación ${r.RoomName}, ${c.name}`} title={`${r.RoomName} · ${c.name}`}
+                              className="rounded flex items-center justify-center text-[10px] font-bold" style={{ width: 22, height: 22, background: c.bg, color: c.fg, border: c.border || "none" }}>{c.mark}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[11px]" style={{ color: C.ink }}>
+                  <span className="flex items-center gap-1.5"><span className="inline-block rounded" style={{ width: 12, height: 12, background: "#3b6fa0" }} /> Ocupada</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block rounded" style={{ width: 12, height: 12, background: C.red }} /> Ocupada y caliente ({hotOcc})</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block rounded" style={{ width: 12, height: 12, background: C.amberSoft, border: `1.5px solid ${C.amber}` }} /> Vacía y caliente ({hotEmpty})</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block rounded" style={{ width: 12, height: 12, background: C.line }} /> Vacía</span>
+                </div>
+              </div>
+            );
+          })()}
+
           {dashboard.tempIssues.length > 0 && (() => {
             const isOccRow = ({ r }) => !!(r.Occupied && r.Occupied !== "0");
             const occ = dashboard.tempIssues.filter(isOccRow);

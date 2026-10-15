@@ -113,6 +113,23 @@ export function StockAlertsView({ invItems, invMovements, bodegas, shelves, repo
       ) : (
         <>
           <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.inkSoft }}>Lo más crítico primero</div>
+            <p className="text-[11px] mb-3" style={{ color: C.gray }}>La raya negra marca el mínimo recomendado. Lo que está a la izquierda de la raya ya está por debajo.</p>
+            <div className="space-y-3">
+              {[...low].sort((a, b) => a.pct - b.pct).slice(0, 6).map(it => (
+                <div key={it.id} className="grid items-center gap-2" style={{ gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.4fr) auto" }}>
+                  <div className="min-w-0"><div className="text-sm font-semibold truncate">{it.name}</div><div className="text-[11px]" style={{ color: C.inkSoft }}>{it.quantity} de {it.minThreshold} mínimo{it.unit ? ` · ${it.unit}` : ""}</div></div>
+                  <div className="relative h-3.5 rounded-full" style={{ background: C.bg }} role="img" aria-label={`${it.name}: ${it.pct}% del mínimo`}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, it.pct / 2)}%`, background: it.critical ? C.red : C.amber }} />
+                    <i className="absolute" style={{ left: "50%", top: -3, bottom: -3, width: 2, background: C.ink }} />
+                  </div>
+                  <span className="text-[11px] font-bold rounded-full px-2 py-0.5 text-center" style={{ background: it.critical ? C.redSoft : C.amberSoft, color: it.critical ? "#8a2a12" : "#7a4e00" }}>{it.critical ? "Pedir ya" : "Por agotarse"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
             <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Lista de compras</div>
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <Button variant="ghost" icon={Download} disabled={downloading} onClick={doDownloadExcel}>{downloading ? "Generando…" : "Descargar Excel"}</Button>

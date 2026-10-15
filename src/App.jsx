@@ -5,8 +5,8 @@ import * as XLSX from "xlsx";
 import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingCount, getPendingPhotoQueue, getPendingPhotoRecordsCount, sGet, sSet, uploadPhoto } from "./lib/storage";
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
-import { Avatar, BackupButton, Badge, Button, ConfirmDialog, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, PM_HAT_STYLE, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { Avatar, BackupButton, Badge, Button, ConfirmDialog, HardHatAvatar, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VerticalBarChart, VoiceInputButton, VoiceTextarea } from "./shared/components";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, fmtHours, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -1691,6 +1691,16 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onN
     "Check List Caldera": "fichas-tecnicas", "Equipos de Lavandería": "fichas-tecnicas",
   };
   const totalCount = alerts.length + (maintenanceDue?.items?.length ? 1 : 0) + (staleIssues?.length || 0) + (fuelAlerts?.length || 0);
+  // Los avisos se agrupan por urgencia: "Ahora" (rojo) y "Hoy" (ámbar), cada uno con su botón de acción.
+  const urgentItems = [
+    ...(fuelAlerts || []).map(t => ({ tone: "red", title: `Combustible crítico: ${t.nombre}`, sub: `${t.pct}% · mínimo 20%, reabastecer ya`, go: "fuel" })),
+    ...(staleIssues || []).map(iss => ({ tone: "red", title: `#${iss.code} ${iss.name}`, sub: `${iss.floorName} · lleva ${iss.daysOpen} días sin resolverse`, go: "issues" })),
+    ...((maintenanceDue?.items || []).filter(it => it.estado === "atrasado").map(it => ({ tone: "red", title: it.equipo, sub: `${it.sistema} · mantenimiento atrasado`, go: "maintenance-schedule" }))),
+  ];
+  const todayItems = [
+    ...alerts.flatMap(a => a.missing.map(m => ({ tone: "amber", title: `${m} sin registrar`, sub: a.turno, go: shortcuts[m] || "home" }))),
+    ...((maintenanceDue?.items || []).filter(it => it.estado !== "atrasado").map(it => ({ tone: "amber", title: it.equipo, sub: `${it.sistema} · mantenimiento por vencer este mes`, go: "maintenance-schedule" }))),
+  ];
   return (
     <div className="relative">
       <button onClick={() => setOpen(v => !v)} aria-label="Notificaciones" title="Notificaciones" className="relative p-1.5 rounded-md" style={{ background: C.bg }}>
@@ -1712,70 +1722,26 @@ function NotificationBell({ alerts, maintenanceDue, staleIssues, fuelAlerts, onN
               <button onClick={() => setOpen(false)} className="p-0.5"><X size={14} color={C.gray} /></button>
             </div>
 
-            {fuelAlerts && fuelAlerts.length > 0 && (
-              <>
-                <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.red }}>⚠ Combustible crítico — reabastecer ya</div>
-                <div className="px-3 pb-3">
-                  {fuelAlerts.map((t, i) => (
-                    <button key={i} onClick={() => { onNavigate("fuel"); setOpen(false); }}
-                      className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
-                      · {t.nombre} — {t.pct}% <span style={{ color: C.gray }}>(mínimo 20%)</span>
+            <div className="p-3 space-y-2">
+              {[["Ahora", urgentItems, "Nada urgente por ahora."], ["Hoy", todayItems, "Todo al día — ningún turno tiene pendientes por ahora."]].map(([title, items, empty]) => (
+                <div key={title}>
+                  <div className="text-[11px] font-bold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>{title}{items.length > 0 ? ` · ${items.length}` : ""}</div>
+                  {items.length === 0 ? (
+                    <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2" style={{ background: C.greenSoft, color: C.green }}><CheckCircle2 size={14} /> {empty}</div>
+                  ) : items.map((it, i) => (
+                    <button key={i} onClick={() => { onNavigate(it.go); setOpen(false); }}
+                      className="w-full text-left rounded-lg px-3 py-2 mb-1.5 flex items-start gap-2" style={{ background: it.tone === "red" ? C.redSoft : C.amberSoft, minHeight: 44 }}>
+                      {it.tone === "red" ? <AlertTriangle size={15} color={C.red} className="shrink-0 mt-0.5" /> : <Clock size={15} color="#8a5a00" className="shrink-0 mt-0.5" />}
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-semibold" style={{ color: C.ink }}>{it.title}</span>
+                        <span className="block text-[11px]" style={{ color: it.tone === "red" ? "#8a2a12" : "#7a5405" }}>{it.sub}</span>
+                      </span>
+                      <ChevronRight size={14} color={C.gray} className="shrink-0 mt-1" />
                     </button>
                   ))}
                 </div>
-              </>
-            )}
-
-            <div className="p-3 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.inkSoft }}>Recorridos pendientes de hoy</div>
-            {alerts.length === 0 ? (
-              <div className="px-3 pb-3 text-xs" style={{ color: C.gray }}>Todo al día — ningún turno tiene pendientes por ahora.</div>
-            ) : alerts.map((a, i) => (
-              <div key={i} className="p-3 border-b last:border-0" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
-                <div className="text-xs font-semibold mb-1" style={{ color: C.red }}>{a.turno}</div>
-                {a.missing.map((m, j) => (
-                  <button key={j} onClick={() => { onNavigate(shortcuts[m] || "home"); setOpen(false); }}
-                    className="block text-xs text-left w-full py-0.5" style={{ color: C.ink }}>
-                    · {m} — sin registrar
-                  </button>
-                ))}
-              </div>
-            ))}
-
-            {staleIssues && staleIssues.length > 0 && (
-              <>
-                <div className="p-3 pb-1 border-t text-xs font-semibold uppercase tracking-wide" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
-                  Llevan mucho tiempo sin resolverse
-                </div>
-                <div className="px-3 pb-3">
-                  {staleIssues.map((iss, i) => (
-                    <button key={i} onClick={() => { onNavigate("issues"); setOpen(false); }}
-                      className="block text-xs text-left w-full py-1" style={{ color: C.red }}>
-                      · #{iss.code} {iss.name} <span style={{ color: C.gray }}>({iss.floorName})</span> — lleva {iss.daysOpen} días
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {maintenanceDue && (
-              <>
-                <div className="p-3 pb-1 border-t text-xs font-semibold uppercase tracking-wide" style={{ borderColor: C.line, background: C.panel, color: C.inkSoft }}>
-                  Mantenimiento por vencer este mes {maintenanceDue.daysLeft <= 10 ? `(quedan ${maintenanceDue.daysLeft} días)` : ""}
-                </div>
-                {maintenanceDue.items.length === 0 ? (
-                  <div className="px-3 pb-3 text-xs" style={{ color: C.gray }}>Nada urgente por ahora.</div>
-                ) : (
-                  <div className="px-3 pb-3">
-                    {maintenanceDue.items.map((it, i) => (
-                      <button key={i} onClick={() => { onNavigate("maintenance-schedule"); setOpen(false); }}
-                        className="block text-xs text-left w-full py-1" style={{ color: it.estado === "atrasado" ? C.red : C.ink }}>
-                        · {it.equipo} <span style={{ color: C.gray }}>({it.sistema})</span> — {it.estado === "atrasado" ? "atrasado" : "pendiente"}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -1932,77 +1898,6 @@ function PmArtDefs() {
         <radialGradient id="pmc-sun" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#ffe27a" /><stop offset="1" stopColor="#f5a800" /></radialGradient>
         <radialGradient id="pmc-glow" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#ffd54a" stopOpacity=".55" /><stop offset="1" stopColor="#ffd54a" stopOpacity="0" /></radialGradient>
       </defs>
-    </svg>
-  );
-}
-
-/** Avatar con casco por rol: técnico (casco amarillo, chaleco naranja), ingeniero/admin (casco blanco,
- * chaleco azul marino), supervisor (casco azul, gafas) y gerencia (sin casco, saco y corbata).
- * `waving` = levanta la mano y saluda una vez (al entrar a la app). `bob` = flota suave. */
-function HardHatAvatar({ role = "tec", size = 36, waving = false, bob = false, label }) {
-  const aria = label || { tec: "Técnico con casco amarillo", ing: "Ingeniero con casco blanco", sup: "Supervisor con casco azul", ger: "Gerencia" }[role];
-  const wrap = { width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "none", display: "block" };
-  const cls = `${waving ? "pm-waving" : ""} ${bob ? "pm-bob" : ""}`.trim() || undefined;
-  if (role === "ger") {
-    return (
-      <svg viewBox="0 0 120 120" role="img" aria-label={aria} style={wrap} className={cls}>
-        <circle cx="60" cy="60" r="60" fill="url(#pm-bg)" />
-        <path d="M12 124C12 94 34 84 60 84S108 94 108 124Z" fill="url(#pmv-s)" />
-        <path d="M48 84L60 112L72 84Z" fill="#f7f9fb" />
-        <path d="M48 84L38 100L52 108L60 112Z" fill="#1d2e41" /><path d="M72 84L82 100L68 108L60 112Z" fill="#1d2e41" />
-        <path d="M57 88h6l2 6l-5 18l-5-18Z" fill="#d98e04" />
-        <rect x="51" y="72" width="18" height="16" rx="6" fill="#bf8960" />
-        <g className="pm-arm"><rect x="92" y="74" width="12" height="26" rx="6" fill="#1d2e41" /><circle cx="98" cy="68" r="6.5" fill="#d09a70" /><circle cx="94.5" cy="63.5" r="2.4" fill="#d09a70" /><circle cx="98" cy="62" r="2.4" fill="#d09a70" /><circle cx="101.5" cy="63.5" r="2.4" fill="#d09a70" /><ellipse cx="91.8" cy="68.5" rx="2.4" ry="4" fill="#d09a70" transform="rotate(20 91.8 68.5)" /></g>
-        <ellipse cx="40.5" cy="52" rx="4.5" ry="6" fill="url(#pmsk-d)" /><ellipse cx="79.5" cy="52" rx="4.5" ry="6" fill="url(#pmsk-d)" />
-        <ellipse cx="60" cy="50" rx="20" ry="23" fill="url(#pmsk-d)" />
-        <path d="M39 46C36 28 46 20 61 20S85 28 81 46C79 38 74 33 60 33S42 38 39 46Z" fill="#2a1d14" />
-        <path d="M45 47q5-3 10 0M65 47q5-3 10 0" stroke="#2a1d14" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-        <ellipse className="pm-eye" cx="51" cy="54" rx="2.4" ry="3" fill="#1d130c" /><ellipse className="pm-eye" cx="69" cy="54" rx="2.4" ry="3" fill="#1d130c" />
-        <path d="M60 56q-2 5 1 6" stroke="#a9754e" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-        <path d="M52 65q8 5 16 0" stroke="#7a3b25" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  const s = PM_HAT_STYLE[role] || PM_HAT_STYLE.tec;
-  return (
-    <svg viewBox="0 0 120 120" role="img" aria-label={aria} style={wrap} className={cls}>
-      <circle cx="60" cy="60" r="60" fill="url(#pm-bg)" />
-      <path d="M12 124C12 94 34 84 60 84S108 94 108 124Z" fill={`url(#${s.vg})`} />
-      <path d="M47 84L60 100L73 84Z" fill="#f2f5f8" />
-      <path d="M30 93L40 89L40 124L28 124Z" fill={s.stripe} /><path d="M90 93L80 89L80 124L92 124Z" fill={s.stripe} />
-      <rect x="14" y="108" width="92" height="6" fill={s.stripe} opacity=".9" />
-      <rect x="51" y="72" width="18" height="16" rx="6" fill={s.neck} />
-      <g className="pm-arm"><rect x="92" y="74" width="12" height="26" rx="6" fill={s.vest} /><circle cx="98" cy="68" r="6.5" fill={s.skFlat} /><circle cx="94.5" cy="63.5" r="2.4" fill={s.skFlat} /><circle cx="98" cy="62" r="2.4" fill={s.skFlat} /><circle cx="101.5" cy="63.5" r="2.4" fill={s.skFlat} /><ellipse cx="91.8" cy="68.5" rx="2.4" ry="4" fill={s.skFlat} transform="rotate(20 91.8 68.5)" /></g>
-      <ellipse cx="40.5" cy="58" rx="4.5" ry="6" fill={`url(#${s.sk})`} /><ellipse cx="79.5" cy="58" rx="4.5" ry="6" fill={`url(#${s.sk})`} />
-      <ellipse cx="60" cy="54" rx="20" ry="22" fill={`url(#${s.sk})`} />
-      {role === "sup" ? (
-        <>
-          <rect x="45" y="61" width="12" height="9" rx="4" fill="none" stroke="#2a3744" strokeWidth="1.8" /><rect x="63" y="61" width="12" height="9" rx="4" fill="none" stroke="#2a3744" strokeWidth="1.8" /><path d="M57 65h6" stroke="#2a3744" strokeWidth="1.8" />
-          <ellipse className="pm-eye" cx="51" cy="65.5" rx="2.2" ry="2.8" fill={s.eye} /><ellipse className="pm-eye" cx="69" cy="65.5" rx="2.2" ry="2.8" fill={s.eye} />
-          <path d="M53 74q7 4 14 0" stroke="#8a3f2a" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-        </>
-      ) : (
-        <>
-          <ellipse className="pm-eye" cx="52" cy="64" rx="2.4" ry="3" fill={s.eye} /><ellipse className="pm-eye" cx="68" cy="64" rx="2.4" ry="3" fill={s.eye} />
-          <path d="M60 65q-2 5 1 6" stroke="#b9794f" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-          {role === "ing" ? (
-            <>
-              <path d="M51 71q9 6 18 0" stroke="#fff" strokeWidth="3.4" fill="none" strokeLinecap="round" />
-              <path d="M44 74Q60 86 76 74Q76 80 60 83Q44 80 44 74Z" fill="#2a1b12" opacity=".85" />
-            </>
-          ) : (
-            <>
-              <path d="M52 72q8 6 16 0" stroke="#7a3b25" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-              <ellipse cx="47" cy="70" rx="4" ry="2.4" fill="#f08a6a" opacity=".35" /><ellipse cx="73" cy="70" rx="4" ry="2.4" fill="#f08a6a" opacity=".35" />
-            </>
-          )}
-        </>
-      )}
-      <path d="M33 54C32 31 44 20 60 20S88 31 87 54Z" fill={`url(#${s.helm})`} />
-      <path d="M54 20H66V54H54Z" fill={s.helmDk} opacity=".55" />
-      <path d="M45 24C40 29 37 37 37 48" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" opacity={s.hi} />
-      <path d="M26 54C26 49 94 49 94 54V58C94 61 26 61 26 58Z" fill={s.brim} />
-      <path d="M26 54C26 49 94 49 94 54" stroke={s.brimHi} strokeWidth="1.5" fill="none" />
     </svg>
   );
 }
@@ -2728,6 +2623,84 @@ function ActivityLogView({ log, accounts }) {
     </div>
   );
 }
+/** "Mi turno": lo primero que ve la persona — cuánto falta para terminar su turno, cuántas tareas
+ * lleva hechas hoy, cuántas tiene pendientes y cuáles están atrasadas (más de 24 h), y un botón
+ * que la lleva directo a lo siguiente que le toca. */
+function MyShiftCard({ tasks, currentUser, profiles, employees, scheduleEntries, onNavigate }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 60000); return () => clearInterval(t); }, []);
+  const now = new Date();
+  const emp = (employees || []).find(e => e.id === profiles?.[currentUser]?.linked_employee_id);
+  const se = scheduleEntries || {};
+  const left = emp ? hoursToShiftEnd(emp, se, now) : null;
+  let total = null;
+  if (emp && left != null) {
+    const y = new Date(now); y.setDate(y.getDate() - 1);
+    const hour = now.getHours() + now.getMinutes() / 60;
+    const today = se[`${emp.id}::${localDateIso(now)}`];
+    const yest = se[`${emp.id}::${localDateIso(y)}`];
+    const pick = (today && !today.code && today.entrada != null && today.salida != null && (today.salida > today.entrada ? hour >= today.entrada && hour < today.salida : hour >= today.entrada)) ? today : yest;
+    if (pick && pick.entrada != null && pick.salida != null) total = pick.salida > pick.entrada ? pick.salida - pick.entrada : 24 - pick.entrada + pick.salida;
+  }
+  const mine = (tasks || []).filter(t => t.asignadoA === currentUser);
+  const open = mine.filter(t => normalizeTaskState(t.estado) !== "finalizada" && !t.finishedAt);
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+  const doneToday = mine.filter(t => t.finishedAt && new Date(t.finishedAt) >= todayStart).length;
+  const ageH = (t) => hoursBetween(t.assignedAt || t.createdAt || nowIso(), nowIso());
+  const late = open.filter(t => ageH(t) > 24);
+  const next = [...open].sort((a, b) => (b.prioridad === "alta") - (a.prioridad === "alta") || ageH(b) - ageH(a)).slice(0, 3);
+  if (!open.length && !doneToday && left == null) return null;
+  const hh = left == null ? null : Math.floor(left);
+  const mm = left == null ? null : Math.round((left - hh) * 60);
+  const pct = total ? Math.max(0, Math.min(100, Math.round(((total - left) / total) * 100))) : null;
+  return (
+    <div className="rounded-2xl p-4 mb-3" style={{ background: C.steelDark, color: "#fff" }} data-tick={tick}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs" style={{ color: "#c9d4df" }}>Mi turno{emp ? ` · ${emp.name || ""}` : ""}</div>
+        {left != null && <span className="text-xs font-semibold rounded-full px-2.5 py-0.5" style={{ background: C.green }}>En turno</span>}
+      </div>
+      {left != null ? (
+        <>
+          <div className="flex items-baseline gap-2 mt-2">
+            <div className="text-4xl font-bold leading-none" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{hh} h {String(mm).padStart(2, "0")} min</div>
+            <div className="text-sm" style={{ color: "#c9d4df" }}>para terminar</div>
+          </div>
+          {pct != null && <div className="mt-3"><div className="h-2 rounded" style={{ background: "#2c4258" }}><div className="h-2 rounded" style={{ width: `${pct}%`, background: C.amber }} /></div><div className="text-[11px] mt-1" style={{ color: "#c9d4df" }}>{pct}% del turno transcurrido</div></div>}
+        </>
+      ) : <div className="text-sm mt-2" style={{ color: "#c9d4df" }}>Hoy no tienes un turno en curso.</div>}
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        {[["Hechas hoy", doneToday, "#7be08f"], ["Pendientes", open.length, "#9fc2e4"], ["Atrasadas", late.length, late.length ? "#ff9b82" : "#c9d4df"]].map(([label, n, color]) => (
+          <div key={label} className="rounded-xl py-2 text-center" style={{ background: "#1b2d40" }}>
+            <div className="text-2xl font-bold" style={{ color, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{n}</div>
+            <div className="text-[11px]" style={{ color: "#c9d4df" }}>{label}</div>
+          </div>
+        ))}
+      </div>
+      {next.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          <div className="text-xs font-semibold" style={{ color: "#c9d4df" }}>Lo que sigue</div>
+          {next.map(t => {
+            const isLate = ageH(t) > 24;
+            return (
+              <div key={t.id} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm" style={{ background: isLate ? "#4a2418" : "#1b2d40" }}>
+                <Clock size={14} color={isLate ? "#ff9b82" : "#9fc2e4"} className="shrink-0" />
+                <span className="flex-1 truncate">{t.titulo}</span>
+                <span className="text-[11px] shrink-0" style={{ color: isLate ? "#ffb4a0" : "#c9d4df" }}>{isLate ? "atrasada" : fmtHours(ageH(t))}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {open.length > 0 && (
+        <button onClick={() => { if (late.length) __pmState.__pmTasksEntryFilter = "vencidas"; onNavigate && onNavigate("tasks"); }}
+          className="w-full mt-3 rounded-xl font-bold text-base" style={{ minHeight: 48, background: C.amber, color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
+          {late.length ? "Ver mis tareas atrasadas" : "Ver mis tareas"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MyBoardCard({ tasks, equipos, mttoLog, oosCount, lowStockCount, currentUser, onNavigate }) {
   const key = `pm-local:myboard:${currentUser}`;
   const [cfg, setCfg] = useState(() => { try { const v = JSON.parse(localStorage.getItem(key) || "null"); if (v && Array.isArray(v.order)) return v; } catch { /* noop */ } return { order: MYBOARD_WIDGETS.map(w => w.id), off: ["stock"] }; });
@@ -7848,6 +7821,7 @@ export default function App() {
                     <WarrantyAlert key="wa" equipos={mttoEquipos} onOpenEquipo={goEq} />,
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
                   ] : null} />
+                {!viewerLocked && !gerenciaLocked && <MyShiftCard tasks={tasks} currentUser={currentUser} profiles={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} />}
                 <MyWeekCard tasks={tasks} currentUser={currentUser} />
                 <MyBoardCard tasks={tasks} equipos={mttoEquipos} mttoLog={mttoLog} oosCount={Object.keys(activeIssues || {}).length} lowStockCount={lowStockItems.length} currentUser={currentUser} onNavigate={setView} />
               </>

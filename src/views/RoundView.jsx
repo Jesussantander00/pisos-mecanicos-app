@@ -10,6 +10,13 @@ import { EquipmentRow } from "./EquipmentRow";
    VISTA: RONDA DE REVISIÓN
    ============================================================ */
 export function RoundView({ floor, currentUser, shift, activeIssues, latestValues, onResolveIssue, onSaveRound, floorIndex, floorCount, onGoFloor, tourProgressCount, resumedTour, onDismissResumed }) {
+  // Modo "con guantes": botones y campos más grandes para usar con guantes o con poca luz. Se
+  // recuerda en este celular y arranca activado en el turno de noche.
+  const [gloves, setGloves] = useState(() => {
+    try { const v = localStorage.getItem("pm-local:round-gloves"); if (v != null) return v === "1"; } catch { /* noop */ }
+    return String(shift).startsWith("22");
+  });
+  const toggleGloves = () => setGloves(g => { const n = !g; try { localStorage.setItem("pm-local:round-gloves", n ? "1" : "0"); } catch { /* noop */ } return n; });
   const [entries, setEntries] = useState({});
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
@@ -75,7 +82,13 @@ export function RoundView({ floor, currentUser, shift, activeIssues, latestValue
   };
 
   return (
-    <div>
+    <div className={gloves ? "pm-gloves" : undefined}>
+      <div className="flex justify-end mb-1">
+        <button type="button" role="switch" aria-checked={gloves} onClick={toggleGloves}
+          className="text-xs font-semibold rounded-full px-3 flex items-center gap-1.5" style={{ minHeight: 36, border: `1px solid ${gloves ? C.amber : C.line}`, background: gloves ? C.amberSoft : C.panel, color: gloves ? "#7a5405" : C.inkSoft }}>
+          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 4, background: gloves ? C.amber : C.gray }} /> Modo con guantes {gloves ? "activado" : "apagado"}
+        </button>
+      </div>
       {resumedTour && (
         <div className="rounded-md p-2 mb-2 flex items-center justify-between gap-2 flex-wrap" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
           <span className="text-xs" style={{ color: C.amber }}>

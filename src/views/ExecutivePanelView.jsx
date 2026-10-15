@@ -37,8 +37,36 @@ function ShiftComplianceTable({ roundsIndex, coldRoundsIndex, meterRoundsIndex }
     if (users.length) return <span style={{ color: C.green }}>✓ {users.join(", ")}</span>;
     return over ? <span className="font-semibold" style={{ color: C.red }}>✗ Falta</span> : <span style={{ color: C.gray }}>pendiente</span>;
   };
+  // Resumen: % de rondas hechas en los turnos que ya terminaron (7 días), en total y por turno.
+  const stat = (list) => { const done = list.filter(r => r.ronda.length > 0).length; return { done, n: list.length, pct: list.length ? Math.round((done / list.length) * 100) : null }; };
+  const overRows = rows.filter(r => r.over);
+  const overall = stat(overRows);
+  const perShift = SHIFTS.map(sh => ({ sh, ...stat(overRows.filter(r => r.shift === sh)) }));
+  const tone = (pct) => pct == null ? C.gray : pct >= 90 ? C.green : pct >= 75 ? C.amber : C.red;
   return (
     <>
+      {overall.pct != null && (
+        <div className="grid sm:grid-cols-[170px_1fr] gap-3 mb-4">
+          <div className="rounded-lg border p-3 flex flex-col items-center" style={{ borderColor: C.line, background: C.panel }}>
+            <svg width="130" height="80" viewBox="0 0 120 76" role="img" aria-label={`Cumplimiento de rondas: ${overall.pct} por ciento`}>
+              <path d="M10 66A50 50 0 0 1 110 66" fill="none" stroke={C.line} strokeWidth="12" strokeLinecap="round" />
+              {overall.pct > 0 && <path d={`M10 66A50 50 0 0 1 ${60 - 50 * Math.cos(Math.PI * overall.pct / 100)} ${66 - 50 * Math.sin(Math.PI * overall.pct / 100)}`} fill="none" stroke={tone(overall.pct)} strokeWidth="12" strokeLinecap="round" />}
+              <text x="60" y="64" textAnchor="middle" fontFamily="Space Grotesk, sans-serif" fontWeight="700" fontSize="24" fill={C.ink}>{overall.pct}%</text>
+            </svg>
+            <div className="text-xs" style={{ color: C.inkSoft }}>Rondas hechas · 7 días</div>
+          </div>
+          <div className="rounded-lg border p-3 space-y-2.5" style={{ borderColor: C.line, background: C.panel }}>
+            {perShift.map(x => (
+              <div key={x.sh} className="flex items-center gap-2 text-xs">
+                <span className="shrink-0" style={{ width: 92, color: C.inkSoft }}>{x.sh}</span>
+                <div className="flex-1 h-3.5 rounded-full overflow-hidden" style={{ background: C.bg }}><div className="h-full" style={{ width: `${x.pct || 0}%`, background: tone(x.pct) }} /></div>
+                <b className="shrink-0 text-right" style={{ width: 36, color: C.ink }}>{x.pct == null ? "—" : `${x.pct}%`}</b>
+              </div>
+            ))}
+            <div className="text-[11px]" style={{ color: C.gray }}>Verde desde 90%, ámbar desde 75%, rojo por debajo.</div>
+          </div>
+        </div>
+      )}
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cumplimiento por turno (últimos 7 días)</div>
       <div className="rounded-lg border mb-5 overflow-x-auto" style={{ borderColor: C.line, background: C.panel }}>
         <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>

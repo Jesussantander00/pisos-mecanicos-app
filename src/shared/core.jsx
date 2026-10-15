@@ -2217,6 +2217,33 @@ export function computeStaleIssues(activeIssues, thresholdDays = 15) {
     .sort((a, b) => b.daysOpen - a.daysOpen);
 }
 
+/**
+ * Estado de red en la barra superior: verde "En línea" cuando hay conexión de verdad con
+ * internet, ámbar "Guardando localmente" cuando no — para que quede claro que lo que se registre
+ * ahora se sube solo apenas vuelva la señal, sin que nadie se quede con la duda.
+ */
+/**
+ * Asistente conversacional con IA: un botón flotante que abre un chat donde cualquiera pregunta
+ * algo en español simple sobre la operación ("¿qué equipos llevan más de 60 días sin
+ * mantenimiento?") y la IA responde usando los datos reales de este hotel (ver
+ * buildAiContextSummary), no información genérica.
+ */
+/** Separa del texto de la IA el bloque "ACCION: {json}" (si lo hay): devuelve el texto visible y la acción propuesta. */
+export function splitAiAction(raw) {
+  const text = String(raw || "");
+  const i = text.indexOf("ACCION:");
+  if (i < 0) return { text, action: null };
+  const visible = text.slice(0, i).trim();
+  const m = text.slice(i).match(/\{[\s\S]*\}/);
+  if (!m) return { text: visible, action: null };
+  try {
+    const a = JSON.parse(m[0]);
+    if (a && (a.tipo === "crear_tarea" || a.tipo === "asignar_tarea")) return { text: visible, action: a };
+  } catch { /* JSON incompleto mientras llega */ }
+  return { text: visible, action: null };
+}
+export const aiNorm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
 /** Panel de uso y respaldo (item 20): cuánto espacio ocupan los datos, actividad del equipo y
  * descargas (respaldo completo y tareas en Excel). Solo administrador. */
 /* ===== Archivo en Google Drive ("memoria" por mes) =====

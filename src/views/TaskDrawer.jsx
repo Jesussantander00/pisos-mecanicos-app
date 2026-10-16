@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
 import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
-import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, SignaturePad, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
+import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
 
@@ -34,8 +34,8 @@ function BeforeAfterCompare({ before, after, onZoom, duration }) {
 
 /** Línea de avance de una tarea: Creada → Asignada → En curso → Cerrada. Muestra de un vistazo en qué paso va. */
 function TaskProgressLine({ estado, assigned }) {
-  const idx = estado === "finalizada" ? 3 : (estado === "en-proceso" || estado === "pausada") ? 2 : assigned ? 1 : 0;
-  const steps = ["Creada", "Asignada", estado === "pausada" ? "Pausada" : "En curso", "Cerrada"];
+  const idx = estado === "finalizada" ? 4 : estado === "en-revision" ? 3 : (estado === "en-proceso" || estado === "pausada") ? 2 : assigned ? 1 : 0;
+  const steps = ["Creada", "Asignada", estado === "pausada" ? "Pausada" : "En curso", "En revisión", "Cerrada"];
   return (
     <div className="flex items-start" role="img" aria-label={`Avance de la tarea: ${steps[idx]}`}>
       {steps.map((label, i) => {
@@ -44,8 +44,8 @@ function TaskProgressLine({ estado, assigned }) {
           <React.Fragment key={label}>
             {i > 0 && <div className="flex-1 h-0.5 mt-[11px]" style={{ background: i <= idx ? C.green : C.line }} />}
             <div className="flex flex-col items-center gap-1" style={{ minWidth: 52 }}>
-              <div className="rounded-full flex items-center justify-center" style={{ width: 22, height: 22, background: done || (cur && idx === 3) ? C.green : cur ? C.amber : C.panel, border: done || cur ? "none" : `2px solid ${C.line}`, boxShadow: cur && idx !== 3 ? `0 0 0 3px ${C.amberSoft}` : "none" }}>
-                {(done || (cur && idx === 3)) && <CheckCircle2 size={14} color="#fff" />}
+              <div className="rounded-full flex items-center justify-center" style={{ width: 22, height: 22, background: done || (cur && idx === 4) ? C.green : cur ? C.amber : C.panel, border: done || cur ? "none" : `2px solid ${C.line}`, boxShadow: cur && idx !== 4 ? `0 0 0 3px ${C.amberSoft}` : "none" }}>
+                {(done || (cur && idx === 4)) && <CheckCircle2 size={14} color="#fff" />}
               </div>
               <span className="text-[11px]" style={{ color: cur ? C.ink : C.gray, fontWeight: cur ? 700 : 500 }}>{label}</span>
             </div>
@@ -56,12 +56,14 @@ function TaskProgressLine({ estado, assigned }) {
   );
 }
 
-export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile }) {
+export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile, canReview, canCloseDirect, onReviewTask }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
-  const [closeWitness, setCloseWitness] = useState("");
-  const [closeWitnessSignature, setCloseWitnessSignature] = useState(null);
+  const [tab, setTab] = useState(() => { const e0 = normalizeTaskState(task.estado); return (e0 === "finalizada" || e0 === "en-revision") ? "resumen" : canAct ? "trabajo" : "resumen"; });
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewMsg, setReviewMsg] = useState(null);
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
   const [closeParts, setCloseParts] = useState([]);
@@ -94,10 +96,6 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
 
   const doClose = async () => {
     if (closePhotos.length === 0) { setCloseMsg({ ok: false, text: "Necesitas al menos una foto de cómo quedó, para poder cerrarla." }); return; }
-    if (estado !== "finalizada" && task.prioridad === "alta" && !closeWitness.trim()) {
-      setCloseMsg({ ok: false, text: "Por ser Prioridad Alta, necesitas el nombre de un testigo que verificó cómo quedó, antes de cerrarla." });
-      return;
-    }
     const pasosSinMarcar = (task.checklist || []).filter(c => !c.done).length;
     if (pasosSinMarcar > 0 && !closeWarned) {
       setCloseWarned(true);
@@ -106,7 +104,9 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
     }
     setCloseSaving(true); setCloseMsg(null);
     try {
-      await onCloseTask(task, closePhotos, closeNote.trim(), closeWitness.trim(), closeWitnessSignature, closeParts);
+      const lecturaTxt = (task.lecturas || []).filter(l => String(l.value || "").trim()).map(l => `${l.name}: ${String(l.value).trim()}${l.unit ? " " + l.unit : ""}`).join("; ");
+      const notaFinal = [closeNote.trim(), lecturaTxt ? `Lecturas: ${lecturaTxt}` : ""].filter(Boolean).join(". ");
+      await onCloseTask(task, closePhotos, notaFinal, closeParts, !!canCloseDirect);
       onClose();
     } catch (e) {
       setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo." });
@@ -128,7 +128,10 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
   const sugerido = estado !== "finalizada" && canAct && !(task.checklist || []).length ? suggestChecklist(task) : null;
   const loadSuggestedChecklist = () => {
     if (!sugerido) return;
-    onUpdateTask(task.id, { checklist: sugerido.steps.map(text => ({ id: uid("chk"), text, done: false })) });
+    const pasos = [...(sugerido.safety || []).map(t => "Seguridad: " + t), ...sugerido.steps];
+    const patch = { checklist: pasos.map(text => ({ id: uid("chk"), text, done: false })) };
+    if ((sugerido.readings || []).length && !(task.lecturas || []).length) patch.lecturas = sugerido.readings.map(r => ({ id: uid("lec"), name: r.name, unit: r.unit, ref: r.ref, value: "" }));
+    onUpdateTask(task.id, patch);
   };
   const removeChecklistItem = (id) => {
     onUpdateTask(task.id, { checklist: (task.checklist || []).filter(c => c.id !== id) });
@@ -205,12 +208,19 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
 
           <TaskProgressLine estado={estado} assigned={!!task.asignadoA} />
 
+          <div className="flex border-b" role="tablist" style={{ borderColor: C.line }}>
+            {[["resumen", "Resumen"], ["trabajo", "Trabajo"], ["historial", "Historial"]].map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="flex-1 text-sm font-semibold"
+                style={{ minHeight: 44, color: tab === k ? C.ink : C.gray, borderBottom: `3px solid ${tab === k ? C.amber : "transparent"}`, marginBottom: -1 }}>{label}</button>
+            ))}
+          </div>
+
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Descripción</div>
             <div className="text-sm" style={{ color: C.ink }}>{task.descripcion || "Sin descripción adicional."}</div>
           </div>
 
-          {canAct && estado !== "finalizada" && (
+          {tab === "trabajo" && canAct && estado !== "finalizada" && (
             <div className="rounded-lg border p-2.5" style={{ borderColor: isTaskSnoozed(task) ? C.blue : C.line, background: isTaskSnoozed(task) ? "#eef4fb" : C.panel }}>
               {isTaskSnoozed(task) ? (
                 <div className="flex items-center justify-between gap-2">
@@ -237,12 +247,38 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
             </div>
           )}
 
+          {tab === "trabajo" && (task.lecturas || []).length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Lecturas a registrar</div>
+              <div className="rounded-lg border p-2" style={{ borderColor: C.line }}>
+                {(task.lecturas || []).map(l => (
+                  <div key={l.id} className="flex items-center gap-2 py-1.5 border-b last:border-b-0" style={{ borderColor: C.line }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold" style={{ color: C.ink }}>{l.name}</div>
+                      <div className="text-[11px]" style={{ color: C.gray }}>Referencia: {l.ref}</div>
+                    </div>
+                    <input defaultValue={l.value || ""} disabled={!canAct || estado === "finalizada" || estado === "en-revision"} inputMode="decimal" aria-label={`${l.name} (${l.unit})`}
+                      onBlur={e => { const v = e.target.value.trim(); if (v !== (l.value || "")) onUpdateTask(task.id, { lecturas: (task.lecturas || []).map(x => x.id === l.id ? { ...x, value: v } : x) }); }}
+                      className="w-20 text-sm text-center border rounded-md px-1 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }} />
+                    <span className="text-[11px] w-8" style={{ color: C.gray }}>{l.unit}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[11px] mt-1" style={{ color: C.gray }}>Referencias generales. Ajústalas con la ficha del equipo.</div>
+            </div>
+          )}
+          {tab === "trabajo" && (
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Checklist {task.checklist?.length > 0 ? `(${task.checklist.filter(c => c.done).length}/${task.checklist.length})` : ""}</div>
             {sugerido && (
               <button type="button" onClick={loadSuggestedChecklist} className="text-xs font-semibold rounded-lg px-3 mb-1.5" style={{ minHeight: 36, background: C.amberSoft, color: C.amber }}>
-                ✨ Cargar pasos sugeridos ({sugerido.label})
+                ✨ Cargar guía técnica: {sugerido.label}
               </button>
+            )}
+            {sugerido && (sugerido.tools?.length > 0 || sugerido.time) && (
+              <div className="text-[11px] mb-1.5" style={{ color: C.inkSoft }}>
+                {sugerido.tools?.length > 0 && <>Herramientas: {sugerido.tools.join(", ")}. </>}{sugerido.time && <>Tiempo típico: {sugerido.time}.</>}
+              </div>
             )}
             {(task.checklist || []).map(item => (
               <label key={item.id} className="flex items-center gap-2 py-1 text-sm cursor-pointer" style={{ color: item.done ? C.gray : C.ink, textDecoration: item.done ? "line-through" : "none" }}>
@@ -260,7 +296,10 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
               </div>
             )}
           </div>
+          )}
 
+          {tab === "resumen" && (
+          <>
           {linkedEquipo && (
             <div className="rounded-lg border p-2.5" style={{ borderColor: C.blueSoft, background: C.blueSoft }}>
               <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.blue }}>🔗 Equipo vinculado</div>
@@ -337,6 +376,8 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
             </div>
           )}
 
+          </>)}
+          {tab === "historial" && (<>
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Cronología</div>
             <div className="space-y-1.5">
@@ -398,6 +439,10 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
             </div>
           )}
 
+          </>)}
+
+          {tab === ((estado === "finalizada" || estado === "en-revision") ? "resumen" : "trabajo") && (
+          <>
           {estado === "finalizada" ? (
             <>
               {task.fotosAntes?.length > 0 && task.fotosDespues?.length > 0 && (
@@ -416,6 +461,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                   </div>
                   {task.notaCierre && <div className="text-xs mt-2 italic" style={{ color: C.inkSoft }}>"{task.notaCierre}"</div>}
                   {task.testigoCierre && <div className="text-xs mt-1 font-medium" style={{ color: C.gray }}>✓ Verificado por: {task.testigoCierre}</div>}
+                  {task.aprobadoPor && <div className="text-xs mt-1 font-medium" style={{ color: C.gray }}>✓ Revisó y cerró: {task.aprobadoPor.name}{task.aprobadoPor.at ? ` · ${fmtDT(task.aprobadoPor.at)}` : ""}</div>}
                   {hasPendingUpload && (
                     <div className="text-xs mt-1.5 font-semibold px-1.5 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>
                       <Camera size={11} /> Fotos aún esperando a subirse (sin señal)
@@ -426,6 +472,49 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
               <Button icon={Download} disabled={downloadingReport} onClick={() => onDownloadReport(task)} className="w-full justify-center">
                 {downloadingReport ? "Generando…" : "Descargar reporte de cierre"}
               </Button>
+            </>
+          ) : estado === "en-revision" ? (
+            <>
+              <div className="rounded-lg p-3" style={{ background: C.amberSoft }}>
+                <div className="text-xs font-bold uppercase tracking-wide" style={{ color: "#7a4e00" }}>En revisión</div>
+                <div className="text-sm mt-1" style={{ color: C.ink }}>
+                  {accounts[task.completedBy]?.display_name || task.completedBy || "El técnico"} la completó{task.completedAt ? ` el ${fmtDT(task.completedAt)}` : ""}. Falta el visto bueno de un supervisor o inspector.
+                </div>
+              </div>
+              {task.fotosAntes?.length > 0 && task.fotosDespues?.length > 0 && (
+                <BeforeAfterCompare before={task.fotosAntes} after={task.fotosDespues} onZoom={onZoom} duration="" />
+              )}
+              {(!(task.fotosAntes?.length > 0) && task.fotosDespues?.length > 0) && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {task.fotosDespues.map((url, pi) => (
+                    <button key={pi} onClick={() => onZoom(url)} aria-label="Ver foto ampliada"><img loading="lazy" src={url} alt="" className="w-16 h-16 object-cover rounded-md border" style={{ borderColor: C.green }} /></button>
+                  ))}
+                </div>
+              )}
+              {task.notaCierre && <div className="text-sm rounded-md p-2.5 italic" style={{ background: C.bg, color: C.inkSoft }}>"{task.notaCierre}"</div>}
+              {(task.repuestosPendientes || []).length > 0 && <div className="text-xs" style={{ color: C.inkSoft }}>Repuestos usados: {(task.repuestosPendientes || []).map(r => `${(invItems || []).find(i => i.id === r.itemId)?.name || "repuesto"} × ${r.cantidad}`).join(", ")}</div>}
+              {(task.revisiones || []).length > 0 && (
+                <div className="text-xs rounded-md p-2" style={{ background: C.redSoft, color: C.red }}>
+                  Antes fue devuelta: "{task.revisiones[task.revisiones.length - 1].nota}" ({task.revisiones[task.revisiones.length - 1].byName})
+                </div>
+              )}
+              {canReview && !viewerLocked ? (
+                task.completedBy === currentUsername && !accounts[currentUsername]?.is_admin ? (
+                  <div className="text-xs rounded-md p-2.5" style={{ background: C.bg, color: C.gray }}>Tú la completaste: otro supervisor, inspector o un administrador debe revisarla.</div>
+                ) : (
+                  <div className="rounded-md p-2.5" style={{ background: C.bg }}>
+                    <VoiceTextarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} rows={2} placeholder="Comentario (obligatorio si la devuelves)"
+                      className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
+                    {reviewMsg && <div className="text-xs mt-1.5" style={{ color: C.red }}>{reviewMsg}</div>}
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" disabled={reviewBusy} onClick={async () => { setReviewBusy(true); setReviewMsg(null); try { await onReviewTask(task, "aprobar", reviewNote.trim()); onClose(); } catch { setReviewMsg("No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo."); } setReviewBusy(false); }} className="flex-1 justify-center">✓ Aprobar y cerrar</Button>
+                      <Button size="sm" variant="ghost" disabled={reviewBusy} onClick={async () => { if (!reviewNote.trim()) { setReviewMsg("Escribe qué falta para poder devolverla."); return; } setReviewBusy(true); setReviewMsg(null); try { await onReviewTask(task, "devolver", reviewNote.trim()); onClose(); } catch { setReviewMsg("No se pudo devolver la tarea — revisa tu conexión e intenta de nuevo."); } setReviewBusy(false); }} className="flex-1 justify-center">↩ Devolver</Button>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="text-xs rounded-md p-2.5" style={{ background: C.bg, color: C.gray }}>Te avisamos cuando la cierren o si hay que corregir algo.</div>
+              )}
             </>
           ) : canAct ? (
             <>
@@ -445,7 +534,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                 </div>
               )}
               <div className="rounded-md p-2.5" style={{ background: C.bg }}>
-                <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>Cerrar tarea — sube al menos una foto de cómo quedó</div>
+                <div className="text-xs font-semibold mb-1.5" style={{ color: C.ink }}>{canCloseDirect ? "Cerrar tarea" : "Completar tarea"} — sube al menos una foto de cómo quedó</div>
                 {mySignature ? (
                   <div className="flex items-center gap-2 mb-2 p-1.5 rounded-md" style={{ background: C.greenSoft }}>
                     <img loading="lazy" src={mySignature} alt="Tu firma" className="rounded border shrink-0" style={{ borderColor: C.line, width: 60, height: 28, objectFit: "contain", background: "#fff" }} />
@@ -474,29 +563,15 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                 )}
                 <VoiceTextarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                {task.prioridad === "alta" && (
-                  <div className="mt-2">
-                    <label className="text-xs font-semibold mb-1 block" style={{ color: C.red }}>Testigo que verificó cómo quedó (obligatorio por ser Prioridad Alta) *</label>
-                    <input value={closeWitness} onChange={e => setCloseWitness(e.target.value)} placeholder="Nombre de quien verificó"
-                      className="w-full text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                    <div className="text-[11px] mt-1.5 mb-1" style={{ color: C.gray }}>Firma de conformidad del testigo (opcional, pero deja constancia más fuerte que solo el nombre):</div>
-                    {closeWitnessSignature ? (
-                      <div className="flex items-center gap-2">
-                        <img loading="lazy" src={closeWitnessSignature} alt="Firma del testigo" className="rounded border" style={{ borderColor: C.line, maxWidth: 160, background: "#fff" }} />
-                        <button onClick={() => setCloseWitnessSignature(null)} className="text-xs font-semibold" style={{ color: C.gray }}>Borrar y firmar de nuevo</button>
-                      </div>
-                    ) : (
-                      <SignaturePad onChange={setCloseWitnessSignature} />
-                    )}
-                  </div>
-                )}
                 {closeMsg && <div className="text-xs mt-1.5" style={{ color: closeMsg.ok ? C.green : C.red }}>{closeMsg.text}</div>}
-                <Button size="sm" disabled={closeSaving} onClick={doClose} className="w-full justify-center mt-2">{closeSaving ? "Guardando…" : "✓ Confirmar cierre"}</Button>
+                <Button size="sm" disabled={closeSaving} onClick={doClose} className="w-full justify-center mt-2">{closeSaving ? "Guardando…" : canCloseDirect ? "✓ Confirmar cierre" : "Completar y enviar a revisión"}</Button>
+                {!canCloseDirect && <div className="text-[11px] mt-1.5" style={{ color: C.gray }}>No necesitas testigo: un supervisor o inspector revisa y da el cierre.</div>}
               </div>
             </>
           ) : (
             <div className="text-xs rounded-md p-2.5" style={{ background: C.bg, color: C.gray }}>Solo la persona asignada (o un administrador) puede cambiar el estado de esta tarea.</div>
           )}
+          </>)}
         </div>
       </div>
     </>

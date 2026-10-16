@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, HardHatAvatar, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, fmtHours, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, canReviewTasks, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, fmtHours, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -2625,8 +2625,8 @@ function ActivityLogView({ log, accounts }) {
   const when = (iso) => { try { return new Date(iso).toLocaleString("es-CO", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
   const roles = Object.entries(accounts || {}).filter(([, a]) => a && a.approved !== false).map(([u, a]) => ({
     u, n: a.display_name || u,
-    can: [["Ver y cerrar sus tareas", true], ["Registrar mantenimiento", !a.is_viewer], ["Inventario", !!(a.is_admin || a.is_almacenista)], ["Panel ejecutivo", !!(a.is_admin || a.is_gerencia)], ["TelkHab, planos y módulos admin", !!a.is_admin], ["Gestionar horarios", !!(a.is_admin || a.can_manage_schedule)]],
-    tag: a.is_admin ? "Administrador" : a.is_gerencia ? "Gerencia" : a.is_almacenista ? "Almacenista" : a.is_viewer ? "Solo ver" : "Operador",
+    can: [["Ver y cerrar sus tareas", true], ["Registrar mantenimiento", !a.is_viewer], ["Inventario", !!(a.is_admin || a.is_almacenista)], ["Panel ejecutivo", !!(a.is_admin || a.is_gerencia)], ["TelkHab, planos y módulos admin", !!a.is_admin], ["Gestionar horarios", !!(a.is_admin || a.can_manage_schedule)], ["Revisar y cerrar tareas", canReviewTasks(a)]],
+    tag: a.is_admin ? "Administrador" : a.is_gerencia ? "Gerencia" : a.is_almacenista ? "Almacenista" : a.is_supervisor ? "Supervisor" : a.is_inspector ? "Inspector" : a.is_viewer ? "Solo ver" : "Operador",
   }));
   return (
     <div>
@@ -2667,6 +2667,28 @@ function ActivityLogView({ log, accounts }) {
 /** "Mi turno": lo primero que ve la persona — cuánto falta para terminar su turno, cuántas tareas
  * lleva hechas hoy, cuántas tiene pendientes y cuáles están atrasadas (más de 24 h), y un botón
  * que la lleva directo a lo siguiente que le toca. */
+/* ===== Cola de revisión (Inicio): lo que los técnicos completaron y espera visto bueno ===== */
+function ReviewQueueCard({ tasks, currentUser, accounts, onNavigate }) {
+  const mine = accounts?.[currentUser];
+  if (!canReviewTasks(mine)) return null;
+  const pend = (tasks || []).filter(t => normalizeTaskState(t.estado) === "en-revision" && (t.completedBy !== currentUser || mine?.is_admin));
+  if (pend.length === 0) return null;
+  const oldest = pend.reduce((m, t) => Math.min(m, new Date(t.completedAt || Date.now()).getTime()), Date.now());
+  const hrs = Math.max(0, (Date.now() - oldest) / 3600000);
+  const late = hrs >= 2;
+  return (
+    <button type="button" onClick={() => { __pmState.__pmTasksEntryFilter = "revisar"; onNavigate("tasks"); }} className="w-full text-left rounded-2xl p-4 mb-3 flex items-center gap-3"
+      style={{ background: late ? C.redSoft : C.amberSoft, border: `1px solid ${late ? C.red : C.amber}`, minHeight: 64 }}>
+      <div className="rounded-full flex items-center justify-center shrink-0 font-bold" style={{ width: 44, height: 44, background: late ? C.red : C.amber, color: late ? "#fff" : "#16212e", fontSize: 20, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{pend.length}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-bold" style={{ color: C.ink }}>{pend.length === 1 ? "1 tarea espera tu revisión" : `${pend.length} tareas esperan tu revisión`}</div>
+        <div className="text-xs" style={{ color: C.inkSoft }}>La más antigua lleva {hrs < 1 ? "menos de 1 h" : `${Math.floor(hrs)} h`} esperando.</div>
+      </div>
+      <span className="text-sm font-bold" style={{ color: C.ink }}>Revisar ›</span>
+    </button>
+  );
+}
+
 /* ===== Resumen de gerencia (celular): cómo está el hotel en 10 segundos ===== */
 function GerenciaGlance({ tasks, activeIssues, onNavigate }) {
   const [blocked, setBlocked] = useState([]);
@@ -2751,7 +2773,7 @@ function MyShiftCard({ tasks, currentUser, profiles, employees, scheduleEntries,
   const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
   const doneToday = mine.filter(t => t.finishedAt && new Date(t.finishedAt) >= todayStart).length;
   const ageH = (t) => hoursBetween(t.assignedAt || t.createdAt || nowIso(), nowIso());
-  const late = open.filter(t => ageH(t) > 24);
+  const late = open.filter(t => ageH(t) > 24 && normalizeTaskState(t.estado) !== "en-revision");
   const next = [...open].sort((a, b) => (b.prioridad === "alta") - (a.prioridad === "alta") || ageH(b) - ageH(a)).slice(0, 3);
   if (!open.length && !doneToday && left == null) return null;
   const hh = left == null ? null : Math.floor(left);
@@ -4815,6 +4837,14 @@ export default function App() {
       // se perdía en silencio — la tarea quedaba abierta para siempre aunque las fotos sí se subieran.
       "task-close": async (payload, urls) => {
         const t = tasks.find(x => x.id === payload.taskId);
+        if (payload.modo === "revision") {
+          await updateTask(payload.taskId, {
+            estado: "en-revision", completedAt: nowIso(), completedBy: payload.completedBy, fotosDespues: urls, notaCierre: payload.notaCierre,
+            repuestosPendientes: payload.repuestos || [], esperaRepuesto: null,
+            timeLog: [...((t && t.timeLog) || []), { estado: "en-revision", at: nowIso() }],
+          });
+          return;
+        }
         await updateTask(payload.taskId, {
           estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre,
           testigoCierre: payload.testigoCierre,
@@ -5242,6 +5272,8 @@ export default function App() {
   const toggleGerencia = (userId) => callAdminAction("toggle-gerencia", userId);
   const toggleViewer = (userId) => callAdminAction("toggle-viewer", userId);
   const toggleScheduleManager = (userId) => callAdminAction("toggle-schedule-manager", userId);
+  const toggleSupervisor = (userId) => callAdminAction("toggle-supervisor", userId);
+  const toggleInspector = (userId) => callAdminAction("toggle-inspector", userId);
   const resetPassword = (userId, newPassword) => callAdminAction("reset-password", userId, { newPassword });
   const deleteAccount = async (userId) => {
     const data = profiles[userId];
@@ -6264,6 +6296,29 @@ export default function App() {
     if (before && patch.asignadoA && patch.asignadoA !== before.asignadoA && pushSubscriptions.length > 0) {
       const suyas = pushSubscriptions.filter(s => s.ownerUsername === patch.asignadoA);
       if (suyas.length > 0) sendPushToSubscriptions(suyas, "📋 Te asignaron una tarea", before.titulo, "/");
+    }
+    // Flujo de revisión: avisos a quien corresponde.
+    if (before && patch.estado && pushSubscriptions.length > 0) {
+      const ne = normalizeTaskState(patch.estado), be = normalizeTaskState(before.estado);
+      const who = profiles?.[currentUser]?.display_name || currentUser;
+      if (ne === "en-revision" && be !== "en-revision") {
+        const revs = Object.keys(profiles || {}).filter(u => canReviewTasks(profiles[u]) && u !== currentUser);
+        const onShift = revs.filter(u => {
+          const emp = (employees || []).find(e => e.id === profiles[u]?.linked_employee_id);
+          return emp && hoursToShiftEnd(emp, scheduleEntries || {}, new Date()) != null;
+        });
+        const fixed = revs.filter(u => profiles[u].is_supervisor || profiles[u].is_inspector);
+        const targets = onShift.length ? onShift : fixed.length ? fixed : revs;
+        const subs = pushSubscriptions.filter(s => targets.includes(s.ownerUsername));
+        if (subs.length > 0) sendPushToSubscriptions(subs, "🔎 Tarea lista para revisar", `${before.titulo} — la completó ${who}`, "/");
+      } else if (be === "en-revision" && ne === "finalizada" && before.asignadoA && before.asignadoA !== currentUser) {
+        const suyas = pushSubscriptions.filter(s => s.ownerUsername === before.asignadoA);
+        if (suyas.length > 0) sendPushToSubscriptions(suyas, "✅ Tu tarea fue cerrada", `${before.titulo} — la revisó ${who}`, "/");
+      } else if (be === "en-revision" && ne === "en-proceso" && before.asignadoA && before.asignadoA !== currentUser) {
+        const suyas = pushSubscriptions.filter(s => s.ownerUsername === before.asignadoA);
+        const nota = (patch.revisiones || []).slice(-1)[0]?.nota;
+        if (suyas.length > 0) sendPushToSubscriptions(suyas, "↩ Te devolvieron una tarea", `${before.titulo}${nota ? ": " + nota : ""}`, "/");
+      }
     }
     if (reCierre && pushSubscriptions.length > 0) {
       const admins = pushSubscriptions.filter(s => profiles?.[s.ownerUsername]?.is_admin && s.ownerUsername !== currentUser);
@@ -7941,6 +7996,7 @@ export default function App() {
                     <WarrantyAlert key="wa" equipos={mttoEquipos} onOpenEquipo={goEq} />,
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
                   ] : null} />
+                {!viewerLocked && !gerenciaLocked && <ReviewQueueCard tasks={tasks} currentUser={currentUser} accounts={profiles} onNavigate={setView} />}
                 {gerenciaLocked && <GerenciaGlance tasks={tasks} activeIssues={activeIssues} onNavigate={setView} />}
                 {!viewerLocked && !gerenciaLocked && <MyShiftCard tasks={tasks} currentUser={currentUser} profiles={profiles} employees={employees} scheduleEntries={scheduleEntries} onNavigate={setView} />}
                 <MyWeekCard tasks={tasks} currentUser={currentUser} profiles={profiles} employees={employees} scheduleEntries={scheduleEntries} />
@@ -8125,7 +8181,7 @@ export default function App() {
           {view === "admin" && isAdmin && (
             <AdminView accounts={profiles} tasks={tasks} reportEmail={reportEmail} reportWhatsapp={reportWhatsapp}
               onSaveEmail={saveReportEmail} onSaveWhatsapp={saveReportWhatsapp}
-              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onToggleViewer={toggleViewer} onToggleScheduleManager={toggleScheduleManager} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
+              onToggleAdmin={toggleAdmin} onToggleAlmacenista={toggleAlmacenista} onToggleGerencia={toggleGerencia} onToggleViewer={toggleViewer} onToggleScheduleManager={toggleScheduleManager} onToggleSupervisor={toggleSupervisor} onToggleInspector={toggleInspector} onDeleteAccount={deleteAccount} onResetPassword={resetPassword}
               onApproveAccount={approveAccount} onRejectAccount={rejectAccount} onTransferTasks={transferTasks} loginLog={loginLog} currentUsername={currentUser} aiUsageStats={aiUsageStats} />
           )}
           {view === "trash" && isAdmin && (

@@ -1418,9 +1418,11 @@ export const TASK_STATES = [
   { code: "asignada", label: "Asignada" },
   { code: "en-proceso", label: "En proceso" },
   { code: "pausada", label: "Pausada" },
+  { code: "en-revision", label: "En revisión" },
   { code: "finalizada", label: "Finalizada" },
 ];
 export const TASK_STATE_COLORS = {
+  "en-revision": { bg: "#fbeed4", fg: "#7a4e00" },
   "asignada": { bg: "#eef1f4", fg: "#5c6b7a" },
   "en-proceso": { bg: "#e3f0ff", fg: "#1a4f8a" },
   "pausada": { bg: "#fff3d6", fg: "#8a5a00" },
@@ -2021,11 +2023,34 @@ export function cargoForUsername(username, accounts, employees) {
 
 /** Pasos sugeridos según el tipo de orden (item 1): se detecta por palabras del título/descripción. */
 const CHECKLIST_TEMPLATES = [
-  { label: "Aire acondicionado", re: /aire|fan ?coil|clima|enfri|termostato|a\/c/, steps: ["Revisar y limpiar el filtro", "Revisar drenaje (sin goteo ni obstrucción)", "Probar enfriamiento y termostato", "Revisar ruido o vibración", "Confirmar con el huésped/recepción que quedó bien"] },
-  { label: "Fuga de agua", re: /fuga|gote|lavamanos|ducha|grifo|llave|sanitario|inodoro|tuber|desag|ca[ñn]er/, steps: ["Cerrar la llave de paso si hace falta", "Ubicar el origen de la fuga", "Reparar o cambiar empaque/pieza", "Probar 5 minutos sin fuga", "Secar y dejar limpia la zona"] },
-  { label: "Televisor", re: /\btv\b|televis|se[ñn]al|canales|control remoto/, steps: ["Revisar cable y fuente de poder", "Probar con otro control", "Reiniciar y volver a sintonizar canales", "Confirmar imagen y sonido"] },
-  { label: "Iluminación", re: /luz|luces|l[aá]mpara|bombill|luminaria|apagador|interruptor/, steps: ["Verificar bombillo/balastro", "Revisar breaker y conexiones", "Cambiar la pieza dañada", "Probar encendido"] },
-  { label: "Cerradura / puerta", re: /cerradura|chapa|puerta|tarjeta|bisagra/, steps: ["Revisar batería de la cerradura", "Probar tarjeta/llave", "Ajustar o cambiar mecanismo", "Probar apertura y cierre 3 veces"] },
+  { label: "Aire acondicionado (fan coil)", re: /aire|fan ?coil|clima|enfri|termostato|a\/c/,
+    safety: ["Cortar energía en el breaker y confirmar ausencia de tensión con multímetro", "Etiquetar y bloquear el breaker mientras se trabaja", "Cerrar la válvula de agua helada antes de abrir el equipo"],
+    steps: ["Revisar y limpiar filtro y serpentín", "Verificar drenaje y bandeja sin obstrucción ni goteo", "Medir capacitor del motor y su consumo", "Probar válvula de control y termostato", "Revisar ruido o vibración del ventilador", "Confirmar enfriamiento y dejar el equipo funcionando"],
+    readings: [{ name: "Temperatura de retorno", unit: "°C", ref: "22 a 25" }, { name: "Temperatura de salida", unit: "°C", ref: "8 a 12 menos que el retorno" }, { name: "Amperaje del motor", unit: "A", ref: "según placa, ±10 %" }, { name: "Capacitor", unit: "µF", ref: "según placa, ±5 %" }],
+    tools: ["Multímetro", "Pinza amperimétrica", "Termómetro", "Aspiradora"], time: "45 a 90 min" },
+  { label: "Fuga de agua", re: /fuga|gote|lavamanos|ducha|grifo|llave|sanitario|inodoro|tuber|desag|ca[ñn]er/,
+    safety: ["Cerrar la llave de paso y aliviar la presión", "Proteger piso y muebles; avisar a la habitación o al área"],
+    steps: ["Ubicar el origen exacto de la fuga siguiendo el recorrido del agua", "Reparar o cambiar empaque, sello o pieza dañada", "Reabrir la llave despacio y revisar uniones", "Prueba sin goteo", "Secar, dejar limpia la zona y revisar humedad en pared o techo"],
+    readings: [{ name: "Tiempo de prueba sin fuga", unit: "min", ref: "10 o más" }],
+    tools: ["Llave ajustable", "Cinta teflón", "Empaques surtidos"], time: "30 a 60 min" },
+  { label: "Bomba o motor", re: /bomba|motor|hidroneum|presi[oó]n|vibraci/,
+    safety: ["Bloqueo y etiquetado del arranque de la bomba", "Cerrar válvulas de succión y descarga si se abre la bomba"],
+    steps: ["Revisar ruido, vibración y temperatura", "Medir amperaje y compararlo con la placa", "Revisar sello mecánico y fugas", "Revisar presión de succión y de descarga", "Probar arranque y paro"],
+    readings: [{ name: "Amperaje", unit: "A", ref: "según placa, ±10 %" }, { name: "Presión de descarga", unit: "psi", ref: "según la ficha del equipo" }, { name: "Temperatura de carcasa", unit: "°C", ref: "según la ficha del equipo" }],
+    tools: ["Pinza amperimétrica", "Manómetro", "Termómetro infrarrojo"], time: "60 a 120 min" },
+  { label: "Televisor y señal", re: /\btv\b|televis|se[ñn]al|canales|control remoto/,
+    safety: ["Desconectar el televisor antes de revisar conexiones"],
+    steps: ["Revisar cable y fuente de poder", "Probar con otro control", "Reiniciar y volver a sintonizar canales", "Confirmar imagen y sonido"], readings: [], tools: ["Control de prueba", "Cable coaxial de repuesto"], time: "15 a 30 min" },
+  { label: "Iluminación y eléctrico", re: /luz|luces|l[aá]mpara|bombill|luminaria|apagador|interruptor|toma|corriente|breaker|el[eé]ctric/,
+    safety: ["Cortar el breaker y confirmar sin tensión con multímetro", "Etiquetar y bloquear el breaker"],
+    steps: ["Verificar bombillo, balastro o driver", "Revisar conexiones y borneras", "Medir continuidad y voltaje de alimentación", "Cambiar la pieza dañada", "Probar encendido y apagado"],
+    readings: [{ name: "Voltaje de alimentación", unit: "V", ref: "según la instalación" }],
+    tools: ["Multímetro", "Destornilladores aislados"], time: "20 a 40 min" },
+  { label: "Cerradura y puerta", re: /cerradura|chapa|puerta|tarjeta|bisagra/,
+    safety: [],
+    steps: ["Revisar batería de la cerradura", "Probar tarjeta o llave", "Ajustar o cambiar mecanismo", "Revisar holgura del marco", "Probar apertura y cierre 3 veces"],
+    readings: [{ name: "Voltaje de batería", unit: "V", ref: "según el modelo" }],
+    tools: ["Baterías de repuesto", "Destornilladores"], time: "15 a 30 min" },
 ];
 export function suggestChecklist(task) {
   const txt = normalizeSearchText(`${task?.titulo || ""} ${task?.descripcion || ""}`);
@@ -2164,7 +2189,7 @@ export function badgeToneFor(kind, value) {
   if (kind === "taskEstado") {
     const e = normalizeTaskState(value);
     if (e === "finalizada") return "green";
-    if (e === "en-proceso" || e === "pausada") return "amber";
+    if (e === "en-proceso" || e === "pausada" || e === "en-revision") return "amber";
     return "gray";
   }
   if (kind === "cronograma") return value === "ejecutado" ? "green" : value === "atrasado" ? "red" : "amber";
@@ -2410,9 +2435,12 @@ export function median(nums) {
 }
 
 /** Qué avatar le toca a cada persona según su cuenta y su cargo. */
+/** Quién puede revisar y cerrar tareas completadas: administrador, supervisor o inspector. */
+export function canReviewTasks(account) { return !!(account && account.approved !== false && (account.is_admin || account.is_supervisor || account.is_inspector)); }
 export function hatRoleFor(account, cargo) {
   if (account?.is_gerencia && !account?.is_admin && !account?.is_almacenista) return "ger";
-  if (/supervis|jefe|coordin/i.test(cargo || "")) return "sup";
+  if (account?.is_supervisor || /supervis|jefe|coordin/i.test(cargo || "")) return "sup";
+  if (account?.is_inspector) return "ing";
   if (account?.is_admin || /ingenier/i.test(cargo || "")) return "ing";
   return "tec";
 }

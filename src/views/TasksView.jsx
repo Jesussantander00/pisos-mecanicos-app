@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { saveRecordWithPhotos } from "../lib/storage";
 import * as XLSX from "xlsx";
 import { AlertTriangle, Camera, ClipboardCheck, Download, PlusCircle, Trash2, Wrench, X } from "lucide-react";
-import { C, KANBAN_COLUMNS, KANBAN_WIP_LIMIT, SHIFTS, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, computeMaintenanceSuggestions, employeesOnShift, employeesWorkingNow, fmtDT, generateTaskReportPdf, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, showToast, suggestsHighPriority } from "../shared/core";
+import { C, KANBAN_COLUMNS, KANBAN_WIP_LIMIT, SHIFTS, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, canReviewTasks, cargoForUsername, computeMaintenanceSuggestions, employeesOnShift, employeesWorkingNow, fmtDT, generateTaskReportPdf, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, showToast, suggestsHighPriority } from "../shared/core";
 import { Avatar, Badge, Button, HardHatAvatar, Lightbox, MiniDonut, MiniGauge, NavBadge, PhotoPicker, Sparkline, TaskTimer, VoiceInputButton } from "../shared/components";
 import { TaskKanbanCard } from "./TaskKanbanCard";
 import { TaskDrawer } from "./TaskDrawer";
@@ -279,6 +279,18 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
   const hasAdvancedFilters = dateFrom || dateTo || filterTurno || filterPrioridad || filterEtiqueta;
   const clearAdvancedFilters = () => { setDateFrom(""); setDateTo(""); setFilterTurno(""); setFilterOperario(""); setFilterPrioridad(""); setFilterOrigen(""); setFilterEtiqueta(""); };
 
+  const iCanReview = !viewerLocked && canReviewTasks(accounts?.[currentUsername]);
+  const [panelTab, setPanelTab] = useState(() => {
+    if (__pmState.__pmTasksEntryFilter === "revisar") { __pmState.__pmTasksEntryFilter = null; return "revisar"; }
+    return (myWorkMode || !isAdmin) ? "mias" : "todas";
+  });
+  const [onlyHoy, setOnlyHoy] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  useEffect(() => {
+    // Si se llegó desde "Por revisar" en Inicio, arranca ya filtrando lo que espera revisión.
+    if (panelTab === "revisar") { setFilterEstado("en-revision"); setOnlyMine(!!myWorkMode || !iCanReview); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [onlyMine, setOnlyMine] = useState(() => {
     if (myWorkMode) return true; // técnico: "Mi trabajo" siempre muestra solo lo suyo
     try { const saved = localStorage.getItem(`pm-local:tasks-only-mine:${currentUsername}`); return saved != null ? saved === "1" : !isAdmin; } catch { return !isAdmin; }
@@ -327,6 +339,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
     .filter(t => !onlyMine || t.asignadoA === currentUsername)
     .filter(t => !onlyVencidas || (normalizeTaskState(t.estado) !== "finalizada" && t.assignedAt && hoursBetween(t.assignedAt, nowIso()) > 24))
     .filter(t => showSnoozed || !isTaskSnoozed(t))
+    .filter(t => !onlyHoy || [t.createdAt, t.assignedAt, t.updatedAt, t.finishedAt, t.completedAt].some(x => x && new Date(x).toDateString() === new Date().toDateString()))
     .filter(t => !filterEstado || normalizeTaskState(t.estado) === filterEstado)
     .filter(t => {
       const d = new Date(t.createdAt);
@@ -343,7 +356,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
       return true;
     })
     .sort((a, b) => (priorityOrder[a.prioridad] - priorityOrder[b.prioridad]) || (new Date(b.createdAt) - new Date(a.createdAt))),
-    [tasks, onlyMine, onlyVencidas, showSnoozed, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad, filterEtiqueta]
+    [tasks, onlyMine, onlyVencidas, onlyHoy, showSnoozed, currentUsername, filterEstado, dateFrom, dateTo, filterTurno, filterOperario, filterOrigen, filterPrioridad, filterEtiqueta]
   );
   const snoozedCount = useMemo(() => tasks.filter(isTaskSnoozed).length, [tasks]);
 
@@ -454,17 +467,27 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
     onUpdateTask(t.id, { vistoPor: next });
   };
 
-  const doCloseTask = async (t, photos, note, witness, witnessSignature, parts = []) => {
+  /** Cierre de una tarea. Un técnico "completa" y la tarea pasa a En revisión; un administrador, supervisor
+   *  o inspector que la trabajó él mismo (direct = true) la cierra de una vez. */
+  const doCloseTask = async (t, photos, note, parts = [], direct = false) => {
     try {
       const repuestosUsados = (parts || []).filter(r => r.itemId && Number(r.cantidad) > 0).map(r => ({ itemId: r.itemId, cantidad: Number(r.cantidad) }));
       const res = await saveRecordWithPhotos(
         "task-close",
-        { taskId: t.id, notaCierre: note, testigoCierre: witness || null, repuestos: repuestosUsados },
+        { taskId: t.id, notaCierre: note, repuestos: repuestosUsados, modo: direct ? "directo" : "revision", completedBy: currentUsername },
         photos,
         async (payload, urls) => {
+          if (!direct) {
+            await onUpdateTask(payload.taskId, {
+              estado: "en-revision", completedAt: nowIso(), completedBy: payload.completedBy, fotosDespues: urls, notaCierre: payload.notaCierre,
+              repuestosPendientes: payload.repuestos || [], esperaRepuesto: null,
+              timeLog: [...(t.timeLog || []), { estado: "en-revision", at: nowIso() }],
+            });
+            return;
+          }
           await onUpdateTask(payload.taskId, {
             estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre, esperaRepuesto: null,
-            testigoCierre: payload.testigoCierre, testigoFirma: witnessSignature || null,
+            aprobadoPor: { username: currentUsername, name: accounts[currentUsername]?.display_name || currentUsername, at: nowIso() },
             timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
           });
           // Si la tarea está vinculada a un equipo, el cierre también queda como su mantenimiento
@@ -483,11 +506,47 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
       // El drawer se cierra apenas se llama a esto, así que un mensaje que solo viva dentro del
       // panel "Nueva tarea" nunca se llega a ver — por eso el aviso va por toast, que se ve sin
       // importar qué pantalla esté abierta.
-      if (res.queued) showToast("✓ Cierre guardado en este celular — no había señal. Se sube solo apenas vuelva.", true);
-      else showToast("✓ Tarea cerrada.", true);
+      if (res.queued) showToast("✓ Guardado en este celular — no había señal. Se sube solo apenas vuelva.", true);
+      else showToast(direct ? "✓ Tarea cerrada." : "✓ Enviada a revisión. Te avisamos cuando la cierren.", true);
     } catch (e) {
-      showToast("✗ No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo.", false);
+      showToast("✗ No se pudo guardar — revisa tu conexión e intenta de nuevo.", false);
       throw e; // el drawer (TaskDrawer.doClose) también atrapa esto para no cerrarse solo y mostrar su propio mensaje
+    }
+  };
+
+  /** Revisión de una tarea completada: el supervisor/inspector/administrador la aprueba (queda cerrada, con su nombre
+   *  y hora como constancia) o la devuelve al técnico con un comentario. */
+  const doReviewTask = async (t, action, comment) => {
+    const byName = accounts[currentUsername]?.display_name || currentUsername;
+    const at = nowIso();
+    const revisiones = [...(t.revisiones || []), { accion: action === "aprobar" ? "aprobada" : "devuelta", by: currentUsername, byName, at, nota: comment || "", fotos: action === "devolver" ? (t.fotosDespues || []) : undefined }];
+    try {
+      if (action === "aprobar") {
+        await onUpdateTask(t.id, {
+          estado: "finalizada", finishedAt: at, aprobadoPor: { username: currentUsername, name: byName, at }, revisiones,
+          timeLog: [...(t.timeLog || []), { estado: "finalizada", at, nota: comment ? `Revisada y cerrada: ${comment}` : "Revisada y cerrada" }],
+        });
+        const repuestos = t.repuestosPendientes || [];
+        if (t.equipoId && onLogMaintenance) {
+          await onLogMaintenance(t.equipoId, {
+            tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
+            descripcion: `${t.titulo}${t.notaCierre ? " — " + t.notaCierre : ""}`,
+            fotos: t.fotosDespues || [], repuestos, taskId: t.id,
+          });
+        } else if (repuestos.length > 0 && onConsumeParts) {
+          await onConsumeParts(repuestos, `Usado en la orden: ${t.titulo}`, t.id);
+        }
+        showToast("✓ Tarea revisada y cerrada.", true);
+      } else {
+        await onUpdateTask(t.id, {
+          estado: "en-proceso", completedAt: null, fotosDespues: [], revisiones,
+          timeLog: [...(t.timeLog || []), { estado: "en-proceso", at, nota: `Devuelta: ${comment}` }],
+        });
+        showToast("↩ Tarea devuelta al técnico.", true);
+      }
+    } catch (e) {
+      showToast("✗ No se pudo guardar la revisión — revisa tu conexión e intenta de nuevo.", false);
+      throw e;
     }
   };
 
@@ -547,6 +606,38 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
           <p className="text-sm" style={{ color: C.inkSoft }}>{myWorkMode ? "Lo que tienes asignado hoy y lo que está pendiente, listo para ejecutar y hacer seguimiento." : "El buzón de lo que va saliendo en el día a día — cualquiera puede agregar, y se le da prioridad y seguimiento."}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {!viewerLocked && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>}
+        </div>
+      </div>
+
+      {(() => {
+        const porRevisar = tasks.filter(t => normalizeTaskState(t.estado) === "en-revision" && ((myWorkMode || !iCanReview) ? t.asignadoA === currentUsername : true)).length;
+        const pick = (k) => {
+          setPanelTab(k);
+          if (k === "mias") { setOnlyMine(true); setFilterEstado(""); setOnlyHoy(false); }
+          else if (k === "hoy") { setOnlyMine(!!myWorkMode); setFilterEstado(""); setOnlyHoy(true); }
+          else if (k === "revisar") { setOnlyMine(!!myWorkMode || !iCanReview); setFilterEstado("en-revision"); setOnlyHoy(false); }
+          else { setOnlyMine(false); setFilterEstado(""); setOnlyHoy(false); }
+        };
+        const items = [["mias", "Mías"], ["hoy", "Hoy"], ["revisar", iCanReview ? "Por revisar" : "En revisión"], ...(myWorkMode ? [] : [["todas", "Todas"]])];
+        return (
+          <div className="flex rounded-xl p-1 gap-1 mb-3" role="tablist" style={{ background: C.line }}>
+            {items.map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={panelTab === k} onClick={() => pick(k)} className="flex-1 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5"
+                style={{ minHeight: 40, background: panelTab === k ? C.panel : "transparent", color: panelTab === k ? C.ink : C.inkSoft, boxShadow: panelTab === k ? "0 1px 2px rgba(0,0,0,.12)" : "none" }}>
+                {label}
+                {k === "revisar" && porRevisar > 0 && <span className="text-[11px] font-bold rounded-full px-1.5" style={{ background: C.amber, color: "#16212e" }}>{porRevisar}</span>}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button type="button" onClick={() => setShowMore(v => !v)} aria-expanded={showMore} className="text-xs font-semibold" style={{ color: C.inkSoft, minHeight: 32 }}>{showMore ? "▾" : "▸"} Vista y filtros</button>
+        <button type="button" onClick={() => setShowStats(v => !v)} aria-expanded={showStats} className="text-xs font-semibold" style={{ color: C.inkSoft, minHeight: 32 }}>{showStats ? "▾" : "▸"} Indicadores</button>
+      </div>
+      {showMore && (
+        <div className="flex items-center gap-2 flex-wrap mb-4">
           {!myWorkMode && <button onClick={toggleOnlyMine} className="text-xs font-semibold px-3 rounded-md border transition" style={{ background: onlyMine ? C.steelDark : C.panel, color: onlyMine ? "#fff" : C.inkSoft, borderColor: onlyMine ? C.steelDark : C.line, minHeight: 36 }}>
             {onlyMine ? "✓ Solo lo mío" : "Solo lo mío"}
           </button>}
@@ -567,10 +658,11 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
               ↺ Repetir última
             </button>
           )}
-          {!viewerLocked && <Button icon={PlusCircle} onClick={() => setShowNew(v => !v)}>{showNew ? "Cancelar" : "Nueva tarea"}</Button>}
         </div>
-      </div>
+      )}
 
+
+      {showStats && (<>
       {/* Analytics Ribbon — KPIs con tendencia a la izquierda, quién está resolviendo qué a la derecha */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-4">
         {/* Bloque izquierdo (40%) — KPIs compactos con sparkline de fondo */}
@@ -653,6 +745,8 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
           </div>
         </div>
       </div>
+
+      </>)}
 
       {workloadImbalance && (
         <div className="rounded-lg p-2.5 mb-4 flex items-center gap-2 text-xs" style={{ background: C.amberSoft, color: C.amber }}>
@@ -1106,6 +1200,9 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
                 {canAct && estado === "pausada" && (
                   <Button size="sm" onClick={() => transitionTask(t, "en-proceso")}>▶ Reanudar</Button>
                 )}
+                {estado === "en-revision" && iCanReview && (
+                  <Button size="sm" onClick={() => setDrawerTaskId(t.id)}>🔎 Revisar</Button>
+                )}
                 {estado === "finalizada" && (
                   <Button size="sm" variant="ghost" icon={Download} disabled={downloadingReportId === t.id} onClick={() => doDownloadReport(t)}>
                     {downloadingReportId === t.id ? "Generando…" : "Reporte"}
@@ -1162,6 +1259,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
         <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={!viewerLocked && (isAdmin || drawerTask.asignadoA === currentUsername)}
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask} onMarkViewed={markTaskViewed}
+          canReview={iCanReview} canCloseDirect={isAdmin || (iCanReview && drawerTask.asignadoA === currentUsername)} onReviewTask={doReviewTask}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl}
           hasPendingUpload={pendingTaskCloseIds && pendingTaskCloseIds.has(drawerTask.id)}
           onUpdateTask={onUpdateTask} onAddComment={onAddTaskComment} currentUsername={currentUsername} currentUser={currentUser}

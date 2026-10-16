@@ -122,7 +122,7 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, warning: "El perfil se eliminó, pero no se pudo borrar la cuenta de acceso del todo. Si esa persona tenía la app abierta, se le va a cerrar la sesión sola en menos de un minuto." });
         return;
       }
-    } else if (action === "toggle-admin" || action === "toggle-almacenista" || action === "toggle-gerencia" || action === "toggle-schedule-manager" || action === "toggle-viewer") {
+    } else if (action === "toggle-admin" || action === "toggle-almacenista" || action === "toggle-gerencia" || action === "toggle-schedule-manager" || action === "toggle-viewer" || action === "toggle-supervisor" || action === "toggle-inspector") {
       // Las casillas de rol/permiso comparten la misma forma: leer el valor actual y
       // apagarlo/prenderlo. Antes esto no revisaba errores de Supabase (por ejemplo si la columna
       // no existiera, o la fila no se encontrara) y respondía "ok" igual, dejando el checkbox del
@@ -130,7 +130,7 @@ export default async function handler(req, res) {
       // cualquiera de los dos pasos, se lo decimos al que llama en vez de fingir que funcionó.
       // "toggle-viewer" es el rol "Solo ver": puede navegar y ver todos los módulos, pero la app
       // le esconde los botones de crear/editar/cerrar en las pantallas principales de captura.
-      const column = { "toggle-admin": "is_admin", "toggle-almacenista": "is_almacenista", "toggle-gerencia": "is_gerencia", "toggle-schedule-manager": "can_manage_schedule", "toggle-viewer": "is_viewer" }[action];
+      const column = { "toggle-admin": "is_admin", "toggle-almacenista": "is_almacenista", "toggle-gerencia": "is_gerencia", "toggle-schedule-manager": "can_manage_schedule", "toggle-viewer": "is_viewer", "toggle-supervisor": "is_supervisor", "toggle-inspector": "is_inspector" }[action];
       const { data: t, error: selErr } = await supabaseAdmin.from("profiles").select(column).eq("id", targetUserId).maybeSingle();
       if (selErr) {
         res.status(500).json({ ok: false, message: `No se pudo leer el estado actual (${selErr.message}). Si la columna "${column}" no existe todavía en la tabla "profiles" de Supabase, hay que agregarla primero.` });

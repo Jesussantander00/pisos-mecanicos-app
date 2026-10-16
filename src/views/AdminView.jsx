@@ -6,7 +6,7 @@ import { UserEditModal } from "./UserEditModal";
 
 
 
-export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
+export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onToggleSupervisor, onToggleInspector, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
   const [saved, setSaved] = useState(false);
   const [wa, setWa] = useState(reportWhatsapp || "");
@@ -171,6 +171,8 @@ export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSave
               {acc.is_almacenista && <Pill tone="blue">Almacenista</Pill>}
               {acc.is_gerencia && <Pill tone="green">Gerencia</Pill>}
               {acc.is_viewer && <Pill tone="gray">Solo ver</Pill>}
+              {acc.is_supervisor && <Pill tone="amber">Supervisor</Pill>}
+              {acc.is_inspector && <Pill tone="amber">Inspector</Pill>}
               {!acc.is_admin && acc.can_manage_schedule && <Pill tone="blue">Gestiona horarios</Pill>}
               <Button size="sm" variant="ghost" icon={SettingsIcon} onClick={() => setEditingUser(uid)}>Editar usuario</Button>
             </div>
@@ -192,6 +194,7 @@ export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSave
           onToggleGerencia={onToggleGerencia}
           onToggleViewer={onToggleViewer}
           onToggleScheduleManager={onToggleScheduleManager}
+          onToggleSupervisor={onToggleSupervisor} onToggleInspector={onToggleInspector}
           onDeleteAccount={onDeleteAccount}
           onResetPassword={onResetPassword}
           onTransferTasks={onTransferTasks}

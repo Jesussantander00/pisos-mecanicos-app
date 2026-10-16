@@ -11,7 +11,7 @@ import { Button } from "../shared/components";
  * admin no es "un rol más" sino que ve y hace de todo. La sección de Permisos Específicos vive
  * ahí mismo para cuando se agreguen más permisos finos (hoy solo hay uno real: editar horarios). */
 export function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers, currentUsername, onClose,
-  onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onDeleteAccount, onResetPassword, onTransferTasks }) {
+  onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onToggleSupervisor, onToggleInspector, onDeleteAccount, onResetPassword, onTransferTasks }) {
   useBackCloseModal(true, onClose); // se desmonta solo cuando el padre deja de mostrarlo
   const [newPw, setNewPw] = useState("");
   const [resetMsg, setResetMsg] = useState("");
@@ -140,6 +140,20 @@ export function UserEditModal({ uid, acc, adminCount, openTaskCount, otherUsers,
           <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
             <span className="text-sm" style={{ color: C.ink }}>Editar horarios (sin ser admin)</span>
             <input type="checkbox" checked={!!acc.can_manage_schedule} disabled={acc.is_admin || busy} onChange={() => runRoleAction(onToggleScheduleManager, uid)} />
+          </label>
+          <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
+            <div>
+              <div className="text-sm" style={{ color: C.ink }}>Supervisor</div>
+              <div className="text-[11px]" style={{ color: C.gray }}>Revisa lo que los técnicos completan y da el cierre (o lo devuelve). Recibe el aviso si está en turno.</div>
+            </div>
+            <input type="checkbox" checked={!!acc.is_supervisor} disabled={acc.is_admin || busy} onChange={() => runRoleAction(onToggleSupervisor, uid)} />
+          </label>
+          <label className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none">
+            <div>
+              <div className="text-sm" style={{ color: C.ink }}>Inspector</div>
+              <div className="text-[11px]" style={{ color: C.gray }}>Igual que supervisor: revisa en sitio y da el cierre de las tareas.</div>
+            </div>
+            <input type="checkbox" checked={!!acc.is_inspector} disabled={acc.is_admin || busy} onChange={() => runRoleAction(onToggleInspector, uid)} />
           </label>
           {roleMsg && <div className="text-xs mt-1" style={{ color: roleMsg.ok === false ? C.red : C.green }}>{roleMsg.text}</div>}
 

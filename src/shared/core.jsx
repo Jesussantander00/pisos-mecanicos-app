@@ -2052,6 +2052,51 @@ const CHECKLIST_TEMPLATES = [
     readings: [{ name: "Voltaje de batería", unit: "V", ref: "según el modelo" }],
     tools: ["Baterías de repuesto", "Destornilladores"], time: "15 a 30 min" },
 ];
+/** Plantillas por equipo del hotel (con la redacción real de los reportes de mantenimiento). `{n}` = nombre del equipo. */
+const EQUIPO_PLANTILLAS = [
+  { label: "Sistema VRF", re: /\bvrf\b|kokau/,
+    safety: ["Cortar energía y bloquear el breaker de las unidades", "Confirmar ausencia de tensión con multímetro"],
+    steps: ["Lavar y limpiar filtros de aire de las unidades interiores", "Lavar y desincrustar serpentines con desengrasante", "Limpiar bandeja y verificar drenaje", "Verificar parámetros de funcionamiento y dejar operativo"],
+    readings: [{ name: "Temperatura de retorno", unit: "°C", ref: "22 a 25", min: 22, max: 25 }, { name: "Temperatura de salida", unit: "°C", ref: "8 a 12 menos que el retorno" }],
+    tools: ["Hidrolavadora", "Desengrasante para serpentín", "Aspiradora", "Multímetro"], time: "60 a 120 min",
+    cierre: "Se realizó mantenimiento preventivo al {n}. Las labores incluyeron el lavado y limpieza de filtros de aire en las unidades interiores, así como el lavado y desincrustado de serpentines utilizando productos desengrasantes. Asimismo, se realizó la limpieza de la bandeja." },
+  { label: "Aire de precisión", re: /precisi[oó]n|crac|subestaci[oó]n/,
+    safety: ["Cortar energía del equipo y bloquear el breaker", "Confirmar ausencia de tensión antes de abrir tableros"],
+    steps: ["Limpiar filtros de aire", "Lavar y desincrustar el serpentín", "Limpiar bandeja y desobstruir la línea de drenaje de condensados", "Inspeccionar mecánicamente el motoventilador", "Reapretar terminales del tablero eléctrico de control y potencia", "Verificar parámetros de funcionamiento e inspección general de componentes"],
+    readings: [{ name: "Amperaje del motoventilador", unit: "A", ref: "según placa, ±10 %" }, { name: "Temperatura de suministro", unit: "°C", ref: "según el set point" }],
+    tools: ["Multímetro", "Pinza amperimétrica", "Termómetro", "Torquímetro o destornilladores aislados"], time: "90 a 150 min",
+    cierre: "Se realizó mantenimiento preventivo al {n}. Las labores incluyeron la limpieza de filtros de aire, el lavado y desincrustado del serpentín, así como la limpieza de la bandeja y desobstrucción de la línea de drenaje de condensados para asegurar una evacuación fluida. Asimismo, se efectuó la inspección mecánica del motoventilador, el reapriete de terminales en el tablero eléctrico de control y potencia, la verificación de parámetros de funcionamiento y la inspección general de componentes, dejando el equipo limpio, operativo y en óptimas condiciones de funcionamiento." },
+  { label: "Mini split", re: /mini ?split|minisplit/,
+    safety: ["Cortar energía del equipo antes de abrir la unidad interior"],
+    steps: ["Lavar y limpiar filtros de aire de la unidad interior", "Lavar y desincrustar serpentines con desengrasante", "Limpiar bandeja y verificar drenaje", "Probar enfriamiento y control remoto"],
+    readings: [{ name: "Temperatura de salida", unit: "°C", ref: "8 a 12 menos que el retorno" }],
+    tools: ["Desengrasante para serpentín", "Aspiradora", "Termómetro"], time: "30 a 60 min",
+    cierre: "Se realizó mantenimiento preventivo al {n}. Las labores incluyeron el lavado y limpieza de filtros de aire en la unidad interior, así como el lavado y desincrustado de serpentines utilizando productos desengrasantes. Asimismo, se realizó la limpieza de la bandeja." },
+  { label: "Fan coil desnudo", re: /fan ?coil|fancoil/,
+    safety: ["Cortar energía del fan coil y bloquear el breaker", "Cerrar la válvula de agua helada"],
+    steps: ["Lavar y limpiar filtros de aire", "Lavar y desincrustar serpentines con desengrasante", "Limpiar bandeja y verificar drenaje", "Reabrir válvula y probar enfriamiento"],
+    readings: [{ name: "Temperatura de retorno", unit: "°C", ref: "22 a 25", min: 22, max: 25 }, { name: "Amperaje del motor", unit: "A", ref: "según placa, ±10 %" }],
+    tools: ["Desengrasante para serpentín", "Aspiradora", "Multímetro", "Termómetro"], time: "30 a 60 min",
+    cierre: "Se realizó mantenimiento preventivo al {n}. Las labores incluyeron el lavado y limpieza de filtros de aire, así como el lavado y desincrustado de serpentines utilizando productos desengrasantes. Asimismo, se realizó la limpieza de la bandeja." },
+  { label: "Aire paquete", re: /paquete/,
+    safety: ["Cortar energía y bloquear el breaker", "Confirmar ausencia de tensión con multímetro"],
+    steps: ["Lavar y limpiar filtros de aire de las unidades interiores", "Lavar y desincrustar serpentines con desengrasante", "Limpiar bandeja y verificar drenaje", "Verificar funcionamiento"],
+    readings: [{ name: "Amperaje del compresor", unit: "A", ref: "según placa, ±10 %" }],
+    tools: ["Desengrasante para serpentín", "Aspiradora", "Pinza amperimétrica"], time: "60 a 120 min",
+    cierre: "Se realizó mantenimiento preventivo a {n}. Las labores incluyeron el lavado y limpieza de filtros de aire en las unidades interiores, así como el lavado y desincrustado de serpentines utilizando productos desengrasantes. Asimismo, se realizó la limpieza de la bandeja." },
+  { label: "Neveras", re: /nevera|refrigerad|congelador|c[aá]mara fr/,
+    safety: ["Desconectar o cortar energía del equipo antes de limpiar el serpentín"],
+    steps: ["Limpieza general del equipo", "Lavar y desincrustar el serpentín con desengrasante", "Limpiar el interior", "Limpiar el sistema de drenaje", "Probar temperatura de operación"],
+    readings: [{ name: "Temperatura interior", unit: "°C", ref: "según el tipo de producto" }],
+    tools: ["Desengrasante para serpentín", "Aspiradora", "Termómetro"], time: "30 a 60 min",
+    cierre: "Se realizó mantenimiento preventivo a {n}. Las labores incluyeron la limpieza general, el lavado y desincrustado del serpentín utilizando productos desengrasantes, así como la limpieza interior y del sistema de drenaje." },
+];
+/** Plantilla propia del equipo (por su nombre o sistema); null si no hay una que coincida. */
+export function plantillaEquipo(equipo) {
+  if (!equipo) return null;
+  const txt = normalizeSearchText(`${equipo.nombre || ""} ${equipo.sistema || ""}`);
+  return EQUIPO_PLANTILLAS.find(t => t.re.test(txt)) || null;
+}
 /** true si la lectura tiene rango numérico y el valor escrito queda fuera de él. */
 export function lecturaFueraDeRango(l) {
   const v = parseFloat(String(l?.value ?? "").replace(",", "."));
@@ -2067,8 +2112,8 @@ export function splitCloseUrls(t, payload, urls) {
   return out;
 }
 /** Frases de cierre con redacción técnica (estilo "Reportes de Mantenimiento"), según el tipo de trabajo. */
-export function cierreFrases(task, lugar, checklist) {
-  const t = suggestChecklist(task);
+export function cierreFrases(task, lugar, checklist, plantillaEq) {
+  const t = plantillaEq || suggestChecklist(task);
   const L = t?.label || "";
   const sitio = lugar || task?.titulo || "el equipo";
   const out = [];
@@ -2076,7 +2121,9 @@ export function cierreFrases(task, lugar, checklist) {
   if (hechos.length >= 2) {
     out.push({ label: "Armar con mi checklist", text: `Se realizó la intervención en ${sitio}. Las labores incluyeron: ${hechos.map((h, i) => i === 0 ? h.charAt(0).toLowerCase() + h.slice(1) : h.charAt(0).toLowerCase() + h.slice(1)).join("; ")}. El equipo queda operativo.` });
   }
-  if (/Aire/.test(L)) {
+  if (plantillaEq && plantillaEq.cierre) {
+    out.push({ label: `Plantilla: ${plantillaEq.label}`, text: plantillaEq.cierre.replace(/\{n\}/g, sitio) });
+  } else if (/Aire/.test(L)) {
     out.push({ label: "Preventivo fan coil / aire", text: `Se realizó mantenimiento preventivo a ${sitio}. Las labores incluyeron el lavado y limpieza de filtros de aire, así como el lavado y desincrustado de serpentines utilizando productos desengrasantes. Asimismo, se realizó la limpieza de la bandeja.` });
     out.push({ label: "Drenaje y motoventilador", text: `Se realizó la desobstrucción de la línea de drenaje de condensados para asegurar una evacuación fluida, la inspección mecánica del motoventilador, el reapriete de terminales en el tablero eléctrico de control y potencia y la verificación de parámetros de funcionamiento, dejando el equipo limpio y operativo.` });
     out.push({ label: "Falla eléctrica (capacitor)", text: `Se diagnosticó falla en el sistema de arranque del motor; se midió el consumo y el capacitor, se reemplazó el componente defectuoso y se verificó el amperaje de operación y el enfriamiento posterior a la reparación.` });

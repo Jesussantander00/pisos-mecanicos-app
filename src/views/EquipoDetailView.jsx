@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { saveRecordWithPhotos, uploadPhoto, uploadVideo } from "../lib/storage";
 import { AlertTriangle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Download, Upload, Video, Wrench } from "lucide-react";
-import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, showToast } from "../shared/core";
+import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, normalizeTaskState, showToast } from "../shared/core";
 import { Avatar, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, PhotoSourceButtons, Pill, VoiceInputButton } from "../shared/components";
 
 
@@ -189,6 +189,34 @@ export function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onL
           }}>➕ Nueva tarea para este equipo</Button>
         )}
       </div>
+      {(() => {
+        const mine = (tasks || []).filter(t => t.equipoId === equipo.id);
+        const ult = [...(records || [])].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")))[0];
+        const dias = ult?.fecha ? Math.floor((Date.now() - new Date(ult.fecha).getTime()) / 86400000) : null;
+        const fallas60 = mine.filter(t => t.origen !== "cronograma" && Date.now() - new Date(t.createdAt || t.assignedAt || 0).getTime() < 60 * 86400000).length;
+        const notas = mine.filter(t => normalizeTaskState(t.estado) === "finalizada" && t.notaCierre).sort((a, b) => String(b.finishedAt || "").localeCompare(String(a.finishedAt || ""))).slice(0, 3);
+        const abiertas = mine.filter(t => normalizeTaskState(t.estado) !== "finalizada").length;
+        if (!ult && !mine.length) return null;
+        return (
+          <div className="rounded-xl border p-3 mt-3" style={{ borderColor: C.line, background: C.panel }}>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {[[dias == null ? "—" : dias === 0 ? "hoy" : `hace ${dias} d`, "última intervención"], [fallas60, "fallas en 60 días"], [abiertas, "tareas abiertas"]].map(([v, l]) => (
+                <div key={l} className="rounded-lg p-2" style={{ background: C.bg }}>
+                  <div className="text-sm font-bold" style={{ color: C.ink }}>{v}</div>
+                  <div className="text-[11px]" style={{ color: C.inkSoft }}>{l}</div>
+                </div>
+              ))}
+            </div>
+            {fallas60 >= 2 && <div className="text-xs rounded-lg px-2.5 py-2 mb-2" style={{ background: C.amberSoft, color: C.amber }}>Este equipo ya tuvo {fallas60} fallas en 60 días. Conviene revisar la causa de fondo.</div>}
+            {notas.length > 0 && (
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Cierres anteriores</div>
+                {notas.map(t => <div key={t.id} className="text-xs py-0.5" style={{ color: C.ink }}><span style={{ color: C.gray }}>{fmtDT(t.finishedAt)} · </span>{String(t.notaCierre).slice(0, 140)}</div>)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       <div className="flex items-start gap-3 mt-2 mb-4">
         {equipo.fotoMaestra ? (
           <img loading="lazy" src={equipo.fotoMaestra} alt="" className="w-16 h-16 rounded-lg object-cover border shrink-0" style={{ borderColor: C.line }} />

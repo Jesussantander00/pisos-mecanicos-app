@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, plantillaEquipo, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
@@ -130,7 +130,9 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
     onUpdateTask(task.id, { checklist });
     setChecklistDraft("");
   };
-  const sugerido = estado !== "finalizada" && canAct && !(task.checklist || []).length ? suggestChecklist(task) : null;
+  const eqDeTarea = (equipos || []).find(e => e.id === task.equipoId) || null;
+  const plantillaEq = plantillaEquipo(eqDeTarea);
+  const sugerido = estado !== "finalizada" && canAct && !(task.checklist || []).length ? (plantillaEq || suggestChecklist(task)) : null;
   const loadSuggestedChecklist = () => {
     if (!sugerido) return;
     const pasos = [...(sugerido.safety || []).map(t => "Seguridad: " + t), ...sugerido.steps];
@@ -594,7 +596,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                 )}
                 <div className="text-xs font-semibold mt-2 mb-1" style={{ color: C.ink }}>Redacción técnica — toca para agregar a la nota</div>
                 <div className="flex gap-1.5 flex-col">
-                  {cierreFrases(task, (equipos || []).find(e => e.id === task.equipoId)?.nombre, task.checklist).map(fr => (
+                  {cierreFrases(task, eqDeTarea?.nombre, task.checklist, plantillaEq).map(fr => (
                     <button key={fr.label} type="button" onClick={() => setCloseNote(prev => (prev && !prev.includes(fr.text) ? prev.replace(/\s+$/, "") + " " + fr.text : (prev || fr.text)))}
                       className="text-left text-xs rounded-lg border px-3 py-2" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }}>
                       <span className="font-semibold">{fr.label}</span>

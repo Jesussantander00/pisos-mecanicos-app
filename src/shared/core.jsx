@@ -2026,12 +2026,12 @@ const CHECKLIST_TEMPLATES = [
   { label: "Aire acondicionado (fan coil)", re: /aire|fan ?coil|clima|enfri|termostato|a\/c/,
     safety: ["Cortar energía en el breaker y confirmar ausencia de tensión con multímetro", "Etiquetar y bloquear el breaker mientras se trabaja", "Cerrar la válvula de agua helada antes de abrir el equipo"],
     steps: ["Revisar y limpiar filtro y serpentín", "Verificar drenaje y bandeja sin obstrucción ni goteo", "Medir capacitor del motor y su consumo", "Probar válvula de control y termostato", "Revisar ruido o vibración del ventilador", "Confirmar enfriamiento y dejar el equipo funcionando"],
-    readings: [{ name: "Temperatura de retorno", unit: "°C", ref: "22 a 25" }, { name: "Temperatura de salida", unit: "°C", ref: "8 a 12 menos que el retorno" }, { name: "Amperaje del motor", unit: "A", ref: "según placa, ±10 %" }, { name: "Capacitor", unit: "µF", ref: "según placa, ±5 %" }],
+    readings: [{ name: "Temperatura de retorno", unit: "°C", ref: "22 a 25", min: 22, max: 25 }, { name: "Temperatura de salida", unit: "°C", ref: "8 a 12 menos que el retorno" }, { name: "Amperaje del motor", unit: "A", ref: "según placa, ±10 %" }, { name: "Capacitor", unit: "µF", ref: "según placa, ±5 %" }],
     tools: ["Multímetro", "Pinza amperimétrica", "Termómetro", "Aspiradora"], time: "45 a 90 min" },
   { label: "Fuga de agua", re: /fuga|gote|lavamanos|ducha|grifo|llave|sanitario|inodoro|tuber|desag|ca[ñn]er/,
     safety: ["Cerrar la llave de paso y aliviar la presión", "Proteger piso y muebles; avisar a la habitación o al área"],
     steps: ["Ubicar el origen exacto de la fuga siguiendo el recorrido del agua", "Reparar o cambiar empaque, sello o pieza dañada", "Reabrir la llave despacio y revisar uniones", "Prueba sin goteo", "Secar, dejar limpia la zona y revisar humedad en pared o techo"],
-    readings: [{ name: "Tiempo de prueba sin fuga", unit: "min", ref: "10 o más" }],
+    readings: [{ name: "Tiempo de prueba sin fuga", unit: "min", ref: "10 o más", min: 10 }],
     tools: ["Llave ajustable", "Cinta teflón", "Empaques surtidos"], time: "30 a 60 min" },
   { label: "Bomba o motor", re: /bomba|motor|hidroneum|presi[oó]n|vibraci/,
     safety: ["Bloqueo y etiquetado del arranque de la bomba", "Cerrar válvulas de succión y descarga si se abre la bomba"],
@@ -2052,6 +2052,12 @@ const CHECKLIST_TEMPLATES = [
     readings: [{ name: "Voltaje de batería", unit: "V", ref: "según el modelo" }],
     tools: ["Baterías de repuesto", "Destornilladores"], time: "15 a 30 min" },
 ];
+/** true si la lectura tiene rango numérico y el valor escrito queda fuera de él. */
+export function lecturaFueraDeRango(l) {
+  const v = parseFloat(String(l?.value ?? "").replace(",", "."));
+  if (!Number.isFinite(v)) return false;
+  return (l.min != null && v < l.min) || (l.max != null && v > l.max);
+}
 export function suggestChecklist(task) {
   const txt = normalizeSearchText(`${task?.titulo || ""} ${task?.descripcion || ""}`);
   return CHECKLIST_TEMPLATES.find(t => t.re.test(txt)) || null;

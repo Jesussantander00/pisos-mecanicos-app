@@ -7010,6 +7010,17 @@ export default function App() {
             await sendPushToSubscriptions(adminSubs, `🛎️ ${list.length} orden(es) de HotSOS sin técnico (más de 3 h)`, titles, "/");
           }
         }
+        // (c) Revisión pendiente más de 2 h: recordatorio a quien revisa y aviso a administración
+        const REV_H = 2;
+        const revLate = openTk.filter(t => normalizeTaskState(t.estado) === "en-revision" && t.completedAt && hoursBetween(t.completedAt, nowIso()) >= REV_H && !next["rv:" + t.id]);
+        if (revLate.length) {
+          revLate.forEach(t => { next["rv:" + t.id] = nowIso(); changed = true; });
+          const titles = revLate.slice(0, 3).map(t => t.titulo).join(" · ");
+          const revSubs = subs.filter(s => canReviewTasks(pf?.[s.ownerUsername]) && !pf?.[s.ownerUsername]?.is_admin);
+          const adminSubs = subs.filter(s => pf?.[s.ownerUsername]?.is_admin);
+          await sendPushToSubscriptions(revSubs, `🔎 ${revLate.length} tarea(s) llevan más de ${REV_H} h sin revisar`, titles, "/");
+          await sendPushToSubscriptions(adminSubs, `⏳ Revisión atrasada: ${revLate.length} tarea(s) con más de ${REV_H} h`, titles, "/");
+        }
         // (b) Fin de turno
         const now = new Date();
         for (const emp of (emps || [])) {

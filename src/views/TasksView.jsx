@@ -1259,7 +1259,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
         <TaskDrawer task={drawerTask} accounts={accounts} employees={employees} canAct={!viewerLocked && (isAdmin || drawerTask.asignadoA === currentUsername)}
           equipos={equipos} mttoLog={mttoLog} invItems={invItems} onLogMaintenance={onLogMaintenance}
           onClose={() => setDrawerTaskId(null)} onTransition={transitionTask} onCloseTask={doCloseTask} onMarkViewed={markTaskViewed}
-          canReview={iCanReview} canCloseDirect={isAdmin || (iCanReview && drawerTask.asignadoA === currentUsername)} onReviewTask={doReviewTask}
+          canReview={iCanReview} canCloseDirect={isAdmin || (iCanReview && drawerTask.asignadoA === currentUsername)} onReviewTask={doReviewTask} allTasks={tasks}
           onDownloadReport={doDownloadReport} downloadingReport={downloadingReportId === drawerTask.id} onZoom={setLightboxUrl}
           hasPendingUpload={pendingTaskCloseIds && pendingTaskCloseIds.has(drawerTask.id)}
           onUpdateTask={onUpdateTask} onAddComment={onAddTaskComment} currentUsername={currentUsername} currentUser={currentUser}

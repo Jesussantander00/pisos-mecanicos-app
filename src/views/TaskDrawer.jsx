@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
@@ -56,7 +56,7 @@ function TaskProgressLine({ estado, assigned }) {
   );
 }
 
-export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile, canReview, canCloseDirect, onReviewTask }) {
+export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile, canReview, canCloseDirect, onReviewTask, allTasks }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
   const [closeNote, setCloseNote] = useState("");
@@ -104,7 +104,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
     }
     setCloseSaving(true); setCloseMsg(null);
     try {
-      const lecturaTxt = (task.lecturas || []).filter(l => String(l.value || "").trim()).map(l => `${l.name}: ${String(l.value).trim()}${l.unit ? " " + l.unit : ""}`).join("; ");
+      const lecturaTxt = (task.lecturas || []).filter(l => String(l.value || "").trim()).map(l => `${l.name}: ${String(l.value).trim()}${l.unit ? " " + l.unit : ""}${lecturaFueraDeRango(l) ? " ⚠ fuera de rango" : ""}`).join("; ");
       const notaFinal = [closeNote.trim(), lecturaTxt ? `Lecturas: ${lecturaTxt}` : ""].filter(Boolean).join(". ");
       await onCloseTask(task, closePhotos, notaFinal, closeParts, !!canCloseDirect);
       onClose();
@@ -130,7 +130,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
     if (!sugerido) return;
     const pasos = [...(sugerido.safety || []).map(t => "Seguridad: " + t), ...sugerido.steps];
     const patch = { checklist: pasos.map(text => ({ id: uid("chk"), text, done: false })) };
-    if ((sugerido.readings || []).length && !(task.lecturas || []).length) patch.lecturas = sugerido.readings.map(r => ({ id: uid("lec"), name: r.name, unit: r.unit, ref: r.ref, value: "" }));
+    if ((sugerido.readings || []).length && !(task.lecturas || []).length) patch.lecturas = sugerido.readings.map(r => ({ id: uid("lec"), name: r.name, unit: r.unit, ref: r.ref, min: r.min ?? null, max: r.max ?? null, value: "" }));
     onUpdateTask(task.id, patch);
   };
   const removeChecklistItem = (id) => {
@@ -247,6 +247,17 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
             </div>
           )}
 
+          {tab === "trabajo" && task.equipoId && (() => {
+            const prev = (allTasks || []).filter(t => t.id !== task.id && t.equipoId === task.equipoId && normalizeTaskState(t.estado) === "finalizada" && t.notaCierre)
+              .sort((a, b) => String(b.finishedAt || b.completedAt || "").localeCompare(String(a.finishedAt || a.completedAt || ""))).slice(0, 3);
+            if (!prev.length) return null;
+            return (
+              <div className="rounded-lg px-3 py-2" style={{ background: C.blueSoft }}>
+                <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.blue }}>Lo que se hizo antes en este equipo</div>
+                {prev.map(t => <div key={t.id} className="text-xs py-0.5" style={{ color: C.ink }}><span style={{ color: C.gray }}>{fmtDT(t.finishedAt || t.completedAt)} · </span>{String(t.notaCierre).slice(0, 140)}</div>)}
+              </div>
+            );
+          })()}
           {tab === "trabajo" && (task.lecturas || []).length > 0 && (
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: C.gray }}>Lecturas a registrar</div>
@@ -255,11 +266,11 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                   <div key={l.id} className="flex items-center gap-2 py-1.5 border-b last:border-b-0" style={{ borderColor: C.line }}>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold" style={{ color: C.ink }}>{l.name}</div>
-                      <div className="text-[11px]" style={{ color: C.gray }}>Referencia: {l.ref}</div>
+                      <div className="text-[11px]" style={{ color: lecturaFueraDeRango(l) ? C.red : C.gray }}>{lecturaFueraDeRango(l) ? "⚠ Fuera de rango — referencia: " : "Referencia: "}{l.ref}</div>
                     </div>
                     <input defaultValue={l.value || ""} disabled={!canAct || estado === "finalizada" || estado === "en-revision"} inputMode="decimal" aria-label={`${l.name} (${l.unit})`}
                       onBlur={e => { const v = e.target.value.trim(); if (v !== (l.value || "")) onUpdateTask(task.id, { lecturas: (task.lecturas || []).map(x => x.id === l.id ? { ...x, value: v } : x) }); }}
-                      className="w-20 text-sm text-center border rounded-md px-1 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }} />
+                      className="w-20 text-sm text-center border rounded-md px-1 py-1.5 outline-none" style={{ borderColor: lecturaFueraDeRango(l) ? C.red : C.line, background: C.panel, color: C.ink, minHeight: 40 }} />
                     <span className="text-[11px] w-8" style={{ color: C.gray }}>{l.unit}</span>
                   </div>
                 ))}

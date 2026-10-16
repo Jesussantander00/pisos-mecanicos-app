@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabaseClient";
 import { sGet, sSet } from "../lib/storage";
 import * as XLSX from "xlsx";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { FLOORS } from "./seeds";
 
@@ -2152,6 +2152,63 @@ export function suggestChecklist(task) {
   return CHECKLIST_TEMPLATES.find(t => t.re.test(txt)) || null;
 }
 export const ROOM_PREVENTIVE_STEPS = ["Limpiar o cambiar el filtro del fan coil", "Revisar drenaje y ausencia de goteo", "Probar enfriamiento y termostato", "Revisar ruido o vibración", "Revisar sensor/control de temperatura"];
+
+/* ===== Habilidades del equipo, tendencias de lecturas y diagnóstico guiado ===== */
+export const TECH_SKILL_AREAS = ["Aires", "Eléctrico", "Agua", "Bombas", "Otros"];
+export function skillAreaOfTask(task, equipo) {
+  const tpl = plantillaEquipo(equipo) || suggestChecklist(task);
+  const L = tpl?.label || "";
+  if (/Aire|VRF|Mini|Fan coil|Neveras|precisi/i.test(L)) return "Aires";
+  if (/Fuga/.test(L)) return "Agua";
+  if (/Bomba/.test(L)) return "Bombas";
+  if (/Iluminaci/.test(L)) return "Eléctrico";
+  return "Otros";
+}
+export function useTechSkills() {
+  const [skills, setSkills] = useState(null);
+  useEffect(() => { let off = false; sGet("tech-skills", true).then(v => { if (!off) setSkills(v && typeof v === "object" ? v : {}); }).catch(() => { if (!off) setSkills({}); }); return () => { off = true; }; }, []);
+  const setLevel = async (user, area, level) => {
+    const next = { ...(skills || {}), [user]: { ...((skills || {})[user] || {}), [area]: level } };
+    setSkills(next);
+    try { await sSet("tech-skills", next, true); } catch { showToast("No se pudo guardar la habilidad. Revisa tu conexión.", false); }
+  };
+  return [skills, setLevel];
+}
+/** Lecturas de un equipo que van subiendo en las últimas tareas (aviso temprano antes de la falla). */
+export function tendenciasLecturas(equipoId, tasks) {
+  const series = {};
+  (tasks || []).filter(t => t.equipoId === equipoId && (t.lecturas || []).length).forEach(t => {
+    const at = new Date(t.completedAt || t.finishedAt || t.startedAt || t.createdAt || 0).getTime();
+    (t.lecturas || []).forEach(l => {
+      const v = parseFloat(String(l.value ?? "").replace(",", "."));
+      if (!Number.isFinite(v)) return;
+      (series[l.name] ||= { unit: l.unit, pts: [] }).pts.push({ at, v });
+    });
+  });
+  return Object.entries(series).map(([name, { unit, pts }]) => {
+    pts.sort((a, b) => a.at - b.at);
+    const vals = pts.map(p => p.v).slice(-5);
+    const sube = vals.length >= 3 && vals.every((v, i) => i === 0 || v >= vals[i - 1]) && vals[vals.length - 1] >= vals[0] * 1.1 && vals[0] > 0;
+    return { name, unit, vals, sube };
+  }).filter(x => x.vals.length >= 2);
+}
+/** Pide al asistente causas probables, apoyándose en el historial real del equipo. */
+export async function requestDiagnostico(task, equipo, allTasks, mttoLog) {
+  const mine = (allTasks || []).filter(t => equipo && t.equipoId === equipo.id && t.id !== task.id);
+  const notas = mine.filter(t => t.notaCierre).sort((a, b) => String(b.finishedAt || b.completedAt || "").localeCompare(String(a.finishedAt || a.completedAt || ""))).slice(0, 4)
+    .map(t => `- ${fmtDT(t.finishedAt || t.completedAt)}: ${String(t.notaCierre).slice(0, 160)}`);
+  const mtto = (mttoLog || []).filter(r => equipo && r.equipoId === equipo.id).slice(0, 4).map(r => `- ${String(r.fecha || "").slice(0, 10)} (${r.tipo}): ${String(r.descripcion || "").slice(0, 140)}`);
+  const lecs = (task.lecturas || []).filter(l => String(l.value || "").trim()).map(l => `${l.name}: ${l.value} ${l.unit || ""} (referencia ${l.ref})`);
+  const ctx = [
+    `TAREA: ${task.titulo}. ${String(task.descripcion || "").slice(0, 300)}`,
+    equipo ? `EQUIPO: ${equipo.nombre} (${equipo.sistema})` : "EQUIPO: no vinculado",
+    notas.length ? `CIERRES ANTERIORES DE ESTE EQUIPO:\n${notas.join("\n")}` : "",
+    mtto.length ? `MANTENIMIENTOS REGISTRADOS:\n${mtto.join("\n")}` : "",
+    lecs.length ? `LECTURAS DE ESTA TAREA: ${lecs.join("; ")}` : "",
+  ].filter(Boolean).join("\n");
+  const res = await requestAiAssistant("Con los datos de esta tarea y el historial del equipo, dime las 3 causas más probables de la falla, de la más a la menos probable, y qué medir primero. Máximo 5 líneas cortas. Sin saludo ni línea de Fuente. Si el historial no alcanza, dilo.", ctx, "");
+  return String(res.answer || "").replace(/^\s*Fuente:.*$/gim, "").trim();
+}
 
 /* ============================================================
    MANTENIMIENTO — componentes de vista

@@ -1,10 +1,34 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, plantillaEquipo, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, plantillaEquipo, requestDiagnostico, showToast, skillAreaOfTask, suggestChecklist, uid, useBackCloseModal, useTechSkills } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
+/** Para quien revisa o administra: sugiere a quién asignar según habilidad y carga actual. */
+function SuggestedTechs({ task, equipo, accounts, allTasks, onAssign }) {
+  const [skills] = useTechSkills();
+  if (!skills) return null;
+  const area = skillAreaOfTask(task, equipo);
+  const open = {};
+  (allTasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t)) open[t.asignadoA] = (open[t.asignadoA] || 0) + 1; });
+  const ranked = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia && !a.is_admin; })
+    .map(u => ({ u, lv: Number(skills?.[u]?.[area] || 0), n: open[u] || 0 }))
+    .filter(x => x.lv > 0).sort((a, b) => b.lv - a.lv || a.n - b.n).slice(0, 3);
+  if (!ranked.length) return null;
+  return (
+    <div className="rounded-lg px-3 py-2" style={{ background: C.blueSoft }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.blue }}>Sugeridos para esta tarea ({area})</div>
+      <div className="flex gap-1.5 flex-wrap">
+        {ranked.map(x => (
+          <button key={x.u} type="button" onClick={() => onAssign(x.u)} className="text-xs font-semibold rounded-full border px-3" style={{ minHeight: 36, borderColor: C.line, background: C.panel, color: C.ink }}>
+            {accounts[x.u]?.display_name || x.u} · nivel {x.lv} · {x.n} abiertas
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Antes y después lado a lado (se muestra al cerrar la tarea, si hay fotos de las dos etapas). */
 function BeforeAfterCompare({ before, after, onZoom, duration }) {
@@ -133,6 +157,12 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
   const eqDeTarea = (equipos || []).find(e => e.id === task.equipoId) || null;
   const plantillaEq = plantillaEquipo(eqDeTarea);
   const sugerido = estado !== "finalizada" && canAct && !(task.checklist || []).length ? (plantillaEq || suggestChecklist(task)) : null;
+  const [diag, setDiag] = useState({ busy: false, text: "", err: "" });
+  const runDiagnostico = async () => {
+    setDiag({ busy: true, text: "", err: "" });
+    try { const text = await requestDiagnostico(task, eqDeTarea, allTasks, mttoLog); setDiag({ busy: false, text: text || "No hubo respuesta.", err: "" }); }
+    catch (e) { setDiag({ busy: false, text: "", err: e.message || "No se pudo consultar al asistente." }); }
+  };
   const loadSuggestedChecklist = () => {
     if (!sugerido) return;
     const pasos = [...(sugerido.safety || []).map(t => "Seguridad: " + t), ...sugerido.steps];
@@ -254,6 +284,23 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
             </div>
           )}
 
+          {tab === "trabajo" && canAct && estado !== "finalizada" && estado !== "en-revision" && (
+            <div>
+              <button type="button" onClick={runDiagnostico} disabled={diag.busy} className="text-xs font-semibold rounded-lg px-3" style={{ minHeight: 40, background: C.blueSoft, color: C.blue }}>
+                {diag.busy ? "Consultando…" : "🔍 Sugerir causas probables"}
+              </button>
+              {diag.text && (
+                <div className="mt-1.5 rounded-lg px-3 py-2 text-xs whitespace-pre-line" style={{ background: C.blueSoft, color: C.ink }}>
+                  {diag.text}
+                  <div className="mt-1" style={{ color: C.gray }}>Es una sugerencia con base en el historial: confírmala en sitio. No cierra ni aprueba nada.</div>
+                </div>
+              )}
+              {diag.err && <div className="mt-1 text-xs" style={{ color: C.red }}>{diag.err}</div>}
+            </div>
+          )}
+          {tab === "resumen" && canReview && estado !== "finalizada" && estado !== "en-revision" && !task.asignadoA && (
+            <SuggestedTechs task={task} equipo={eqDeTarea} accounts={accounts} allTasks={allTasks} onAssign={(u) => onUpdateTask(task.id, { asignadoA: u })} />
+          )}
           {tab === "trabajo" && task.equipoId && (() => {
             const prev = (allTasks || []).filter(t => t.id !== task.id && t.equipoId === task.equipoId && normalizeTaskState(t.estado) === "finalizada" && t.notaCierre)
               .sort((a, b) => String(b.finishedAt || b.completedAt || "").localeCompare(String(a.finishedAt || a.completedAt || ""))).slice(0, 3);

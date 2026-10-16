@@ -1,10 +1,40 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Gauge, Settings as SettingsIcon } from "lucide-react";
-import { C, fmtDT, looksLikeGhostAccount, normalizeTaskState } from "../shared/core";
+import { C, TECH_SKILL_AREAS, fmtDT, looksLikeGhostAccount, normalizeTaskState, useTechSkills } from "../shared/core";
 import { BackupButton, Button, Pill } from "../shared/components";
 import { UserEditModal } from "./UserEditModal";
 
 
+/** Matriz de habilidades (solo administradores): toca una celda para subir el nivel 0 → 3. */
+function TechSkillsCard({ accounts }) {
+  const [skills, setLevel] = useTechSkills();
+  const people = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia; });
+  const bg = ["#eef1f4", "#cfe0ee", "#7fb0d1", "#24496b"], fg = ["#8a96a3", "#24496b", "#10304a", "#ffffff"];
+  if (!people.length) return null;
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-semibold" style={{ color: C.ink }}>Habilidades del equipo</div>
+      <div className="text-xs mb-2" style={{ color: C.inkSoft }}>Toca para cambiar el nivel: 0 sin experiencia · 1 básico · 2 autónomo · 3 puede enseñar. Se usa para sugerir a quién asignar cada tarea.</div>
+      {skills === null ? <div className="text-xs" style={{ color: C.gray }}>Cargando…</div> : (
+        <div className="overflow-x-auto">
+          <div className="grid gap-1 items-center text-[11px]" style={{ gridTemplateColumns: `minmax(90px,1.4fr) repeat(${TECH_SKILL_AREAS.length}, minmax(52px,1fr))`, minWidth: 360 }}>
+            <span />{TECH_SKILL_AREAS.map(a => <span key={a} className="text-center font-bold" style={{ color: C.gray }}>{a}</span>)}
+            {people.map(u => (
+              <React.Fragment key={u}>
+                <span className="truncate font-semibold text-xs" style={{ color: C.ink }}>{accounts[u]?.display_name || u}</span>
+                {TECH_SKILL_AREAS.map(a => {
+                  const lv = Number(skills?.[u]?.[a] || 0);
+                  return <button key={a} type="button" aria-label={`${accounts[u]?.display_name || u}, ${a}: nivel ${lv}`} onClick={() => setLevel(u, a, (lv + 1) % 4)}
+                    className="rounded-md text-xs font-bold" style={{ minHeight: 36, background: bg[lv], color: fg[lv] }}>{lv}</button>;
+                })}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSaveEmail, onSaveWhatsapp, onToggleAdmin, onToggleAlmacenista, onToggleGerencia, onToggleViewer, onToggleScheduleManager, onToggleSupervisor, onToggleInspector, onDeleteAccount, onResetPassword, onApproveAccount, onRejectAccount, onTransferTasks, loginLog, currentUsername, aiUsageStats }) {
   const [email, setEmail] = useState(reportEmail || "");
@@ -30,6 +60,8 @@ export function AdminView({ accounts, tasks, reportEmail, reportWhatsapp, onSave
         </p>
         <BackupButton />
       </div>
+
+      <TechSkillsCard accounts={accounts} />
 
       {(() => {
         const limite = Date.now() - 30 * 86400000;

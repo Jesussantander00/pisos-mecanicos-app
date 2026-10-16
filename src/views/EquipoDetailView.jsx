@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { saveRecordWithPhotos, uploadPhoto, uploadVideo } from "../lib/storage";
 import { AlertTriangle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Download, Upload, Video, Wrench } from "lucide-react";
-import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, normalizeTaskState, showToast } from "../shared/core";
+import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, normalizeTaskState, showToast, tendenciasLecturas } from "../shared/core";
 import { Avatar, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, PhotoSourceButtons, Pill, VoiceInputButton } from "../shared/components";
 
 
@@ -214,6 +214,22 @@ export function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onL
                 {notas.map(t => <div key={t.id} className="text-xs py-0.5" style={{ color: C.ink }}><span style={{ color: C.gray }}>{fmtDT(t.finishedAt)} · </span>{String(t.notaCierre).slice(0, 140)}</div>)}
               </div>
             )}
+          </div>
+        );
+      })()}
+      {(() => {
+        const tend = tendenciasLecturas(equipo.id, tasks);
+        if (!tend.length) return null;
+        return (
+          <div className="rounded-xl border p-3 mt-3" style={{ borderColor: tend.some(x => x.sube) ? C.amber : C.line, background: C.panel }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Tendencia de lecturas</div>
+            {tend.map(x => (
+              <div key={x.name} className="flex items-center justify-between gap-2 text-xs py-0.5">
+                <span style={{ color: C.ink }}>{x.name}</span>
+                <span className="font-semibold tabular-nums" style={{ color: x.sube ? C.red : C.inkSoft }}>{x.vals.join(" → ")} {x.unit}{x.sube ? " ↑ viene subiendo" : ""}</span>
+              </div>
+            ))}
+            {tend.some(x => x.sube) && <div className="text-xs rounded-lg px-2.5 py-2 mt-1.5" style={{ background: C.amberSoft, color: C.amber }}>Alguna lectura viene subiendo tarea tras tarea. Conviene una revisión preventiva antes de que falle.</div>}
           </div>
         );
       })()}

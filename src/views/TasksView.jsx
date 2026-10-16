@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { saveRecordWithPhotos } from "../lib/storage";
 import * as XLSX from "xlsx";
 import { AlertTriangle, Camera, ClipboardCheck, Download, PlusCircle, Trash2, Wrench, X } from "lucide-react";
-import { C, KANBAN_COLUMNS, KANBAN_WIP_LIMIT, SHIFTS, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, canReviewTasks, cargoForUsername, computeMaintenanceSuggestions, employeesOnShift, employeesWorkingNow, fmtDT, generateTaskReportPdf, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, showToast, suggestsHighPriority } from "../shared/core";
+import { C, KANBAN_COLUMNS, KANBAN_WIP_LIMIT, SHIFTS, TASK_PRIORITIES, TASK_RECURRENCES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, canReviewTasks, cargoForUsername, computeMaintenanceSuggestions, employeesOnShift, employeesWorkingNow, fmtDT, generateTaskReportPdf, hatRoleFor, hoursBetween, isTaskSnoozed, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, showToast, splitCloseUrls, suggestsHighPriority } from "../shared/core";
 import { Avatar, Badge, Button, HardHatAvatar, Lightbox, MiniDonut, MiniGauge, NavBadge, PhotoPicker, Sparkline, TaskTimer, VoiceInputButton } from "../shared/components";
 import { TaskKanbanCard } from "./TaskKanbanCard";
 import { TaskDrawer } from "./TaskDrawer";
@@ -469,24 +469,24 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
 
   /** Cierre de una tarea. Un técnico "completa" y la tarea pasa a En revisión; un administrador, supervisor
    *  o inspector que la trabajó él mismo (direct = true) la cierra de una vez. */
-  const doCloseTask = async (t, photos, note, parts = [], direct = false) => {
+  const doCloseTask = async (t, photos, note, parts = [], direct = false, nAntes = 0) => {
     try {
       const repuestosUsados = (parts || []).filter(r => r.itemId && Number(r.cantidad) > 0).map(r => ({ itemId: r.itemId, cantidad: Number(r.cantidad) }));
       const res = await saveRecordWithPhotos(
         "task-close",
-        { taskId: t.id, notaCierre: note, repuestos: repuestosUsados, modo: direct ? "directo" : "revision", completedBy: currentUsername },
+        { taskId: t.id, notaCierre: note, repuestos: repuestosUsados, modo: direct ? "directo" : "revision", completedBy: currentUsername, nAntes },
         photos,
         async (payload, urls) => {
           if (!direct) {
             await onUpdateTask(payload.taskId, {
-              estado: "en-revision", completedAt: nowIso(), completedBy: payload.completedBy, fotosDespues: urls, notaCierre: payload.notaCierre,
+              estado: "en-revision", completedAt: nowIso(), completedBy: payload.completedBy, ...splitCloseUrls(t, payload, urls), notaCierre: payload.notaCierre,
               repuestosPendientes: payload.repuestos || [], esperaRepuesto: null,
               timeLog: [...(t.timeLog || []), { estado: "en-revision", at: nowIso() }],
             });
             return;
           }
           await onUpdateTask(payload.taskId, {
-            estado: "finalizada", finishedAt: nowIso(), fotosDespues: urls, notaCierre: payload.notaCierre, esperaRepuesto: null,
+            estado: "finalizada", finishedAt: nowIso(), ...splitCloseUrls(t, payload, urls), notaCierre: payload.notaCierre, esperaRepuesto: null,
             aprobadoPor: { username: currentUsername, name: accounts[currentUsername]?.display_name || currentUsername, at: nowIso() },
             timeLog: [...(t.timeLog || []), { estado: "finalizada", at: nowIso() }],
           });
@@ -496,7 +496,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
             await onLogMaintenance(t.equipoId, {
               tipo: t.origen === "cronograma" ? "preventivo" : "correctivo",
               descripcion: `${t.titulo}${payload.notaCierre ? " — " + payload.notaCierre : ""}`,
-              fotos: urls, repuestos: payload.repuestos || [], taskId: t.id,
+              fotos: splitCloseUrls(t, payload, urls).fotosDespues, repuestos: payload.repuestos || [], taskId: t.id,
             });
           } else if ((payload.repuestos || []).length > 0 && onConsumeParts) {
             await onConsumeParts(payload.repuestos, `Usado en la orden: ${t.titulo}`, t.id);

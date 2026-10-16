@@ -2058,6 +2058,48 @@ export function lecturaFueraDeRango(l) {
   if (!Number.isFinite(v)) return false;
   return (l.min != null && v < l.min) || (l.max != null && v > l.max);
 }
+/** Separa las fotos subidas al cerrar: las primeras nAntes son "antes" (se suman a las que ya tenía), el resto "después". */
+export function splitCloseUrls(t, payload, urls) {
+  const n = Math.min(Number(payload?.nAntes) || 0, (urls || []).length);
+  const antes = (urls || []).slice(0, n), despues = (urls || []).slice(n);
+  const out = { fotosDespues: despues };
+  if (antes.length) out.fotosAntes = [...((t && t.fotosAntes) || []), ...antes];
+  return out;
+}
+/** Frases de cierre con redacción técnica (estilo "Reportes de Mantenimiento"), según el tipo de trabajo. */
+export function cierreFrases(task, lugar, checklist) {
+  const t = suggestChecklist(task);
+  const L = t?.label || "";
+  const sitio = lugar || task?.titulo || "el equipo";
+  const out = [];
+  const hechos = (checklist || []).filter(c => c.done).map(c => String(c.text).replace(/^Seguridad:\s*/i, "").replace(/[.\s]+$/, ""));
+  if (hechos.length >= 2) {
+    out.push({ label: "Armar con mi checklist", text: `Se realizó la intervención en ${sitio}. Las labores incluyeron: ${hechos.map((h, i) => i === 0 ? h.charAt(0).toLowerCase() + h.slice(1) : h.charAt(0).toLowerCase() + h.slice(1)).join("; ")}. El equipo queda operativo.` });
+  }
+  if (/Aire/.test(L)) {
+    out.push({ label: "Preventivo fan coil / aire", text: `Se realizó mantenimiento preventivo a ${sitio}. Las labores incluyeron el lavado y limpieza de filtros de aire, así como el lavado y desincrustado de serpentines utilizando productos desengrasantes. Asimismo, se realizó la limpieza de la bandeja.` });
+    out.push({ label: "Drenaje y motoventilador", text: `Se realizó la desobstrucción de la línea de drenaje de condensados para asegurar una evacuación fluida, la inspección mecánica del motoventilador, el reapriete de terminales en el tablero eléctrico de control y potencia y la verificación de parámetros de funcionamiento, dejando el equipo limpio y operativo.` });
+    out.push({ label: "Falla eléctrica (capacitor)", text: `Se diagnosticó falla en el sistema de arranque del motor; se midió el consumo y el capacitor, se reemplazó el componente defectuoso y se verificó el amperaje de operación y el enfriamiento posterior a la reparación.` });
+  } else if (/Fuga/.test(L)) {
+    out.push({ label: "Fuga reparada", text: `Se ubicó el origen de la fuga en ${sitio}, se cerró el suministro, se reemplazó el empaque o sello deteniorado y se realizó prueba de presión sin goteo durante 10 minutos. Se secó y dejó limpia la zona afectada.`.replace("deteniorado", "deteriorado") });
+    out.push({ label: "Revisión de humedad", text: `Se inspeccionó la pared y el cielo raso adyacentes en busca de humedad residual; no se evidencian filtraciones adicionales.` });
+  } else if (/Bomba/.test(L)) {
+    out.push({ label: "Revisión de bomba / motor", text: `Se realizó inspección de ${sitio}: revisión de ruido, vibración y temperatura, medición de amperaje contra placa, verificación del sello mecánico y de las presiones de succión y descarga, con pruebas de arranque y paro satisfactorias.` });
+  } else if (/Iluminaci/.test(L)) {
+    out.push({ label: "Eléctrico corregido", text: `Se realizó bloqueo y etiquetado del breaker, medición de voltaje y continuidad, reemplazo de la pieza defectuosa y prueba de encendido y apagado, dejando el circuito operativo y seguro.` });
+  } else if (/Cerradura/.test(L)) {
+    out.push({ label: "Cerradura intervenida", text: `Se revisó la batería y el lector de la cerradura, se ajustó el mecanismo y la holgura del marco y se verificó la apertura y el cierre en tres pruebas consecutivas con tarjeta y llave.` });
+  } else if (/Televisor/.test(L)) {
+    out.push({ label: "Señal restablecida", text: `Se revisaron cable y fuente de poder, se reinició el equipo y se resintonizaron los canales; se confirma imagen y sonido correctos.` });
+  }
+  if (/nevera|refriger|congel|cuarto fr/i.test(normalizeSearchText(`${task?.titulo || ""} ${lugar || ""}`))) {
+    out.push({ label: "Preventivo neveras", text: `Se realizó mantenimiento preventivo a ${sitio}. Las labores incluyeron la limpieza general, el lavado y desincrustado del serpentín utilizando productos desengrasantes, así como la limpieza interior y del sistema de drenaje.` });
+  }
+  out.push({ label: "Correctivo general", text: `Se realizó el diagnóstico en ${sitio}, se identificó y corrigió la falla y se verificó el funcionamiento posterior a la intervención, dejando el equipo operativo y el área limpia.` });
+  out.push({ label: "Cambio de repuesto", text: `Se reemplazó el repuesto defectuoso, se realizaron pruebas de funcionamiento y se dejó el equipo operativo. Se registra el repuesto utilizado.` });
+  out.push({ label: "Queda en observación", text: `El equipo queda en funcionamiento pero en observación: se recomienda seguimiento en las próximas 24 horas para confirmar que la falla no se repite.` });
+  return out;
+}
 export function suggestChecklist(task) {
   const txt = normalizeSearchText(`${task?.titulo || ""} ${task?.descripcion || ""}`);
   return CHECKLIST_TEMPLATES.find(t => t.re.test(txt)) || null;

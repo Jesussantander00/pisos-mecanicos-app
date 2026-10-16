@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, showToast, suggestChecklist, uid, useBackCloseModal } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
@@ -59,6 +59,9 @@ function TaskProgressLine({ estado, assigned }) {
 export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog, invItems, onLogMaintenance, onClose, onTransition, onCloseTask, onDownloadReport, downloadingReport, onZoom, onMarkViewed, hasPendingUpload, onUpdateTask, onAddComment, currentUsername, currentUser, allUsernames, mySignature, signerCargo, viewerLocked, onGoToProfile, canReview, canCloseDirect, onReviewTask, allTasks }) {
   useBackCloseModal(true, onClose); // este drawer, al estar montado, siempre está "abierto"
   const [closePhotos, setClosePhotos] = useState([]);
+  const [closeBefore, setCloseBefore] = useState([]);
+  const [photoCaps, setPhotoCaps] = useState(() => new Map());
+  const setCap = (f, v) => setPhotoCaps(m => { const n = new Map(m); n.set(f, v); return n; });
   const [closeNote, setCloseNote] = useState("");
   const [tab, setTab] = useState(() => { const e0 = normalizeTaskState(task.estado); return (e0 === "finalizada" || e0 === "en-revision") ? "resumen" : canAct ? "trabajo" : "resumen"; });
   const [reviewNote, setReviewNote] = useState("");
@@ -105,8 +108,10 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
     setCloseSaving(true); setCloseMsg(null);
     try {
       const lecturaTxt = (task.lecturas || []).filter(l => String(l.value || "").trim()).map(l => `${l.name}: ${String(l.value).trim()}${l.unit ? " " + l.unit : ""}${lecturaFueraDeRango(l) ? " ⚠ fuera de rango" : ""}`).join("; ");
-      const notaFinal = [closeNote.trim(), lecturaTxt ? `Lecturas: ${lecturaTxt}` : ""].filter(Boolean).join(". ");
-      await onCloseTask(task, closePhotos, notaFinal, closeParts, !!canCloseDirect);
+      const capsTxt = [...closeBefore.map((f, i) => [`Antes ${i + 1}`, photoCaps.get(f)]), ...closePhotos.map((f, i) => [`Después ${i + 1}`, photoCaps.get(f)])]
+        .filter(([, v]) => v && v.trim()).map(([k, v]) => `${k}: ${v.trim()}`).join("; ");
+      const notaFinal = [closeNote.trim(), lecturaTxt ? `Lecturas: ${lecturaTxt}` : "", capsTxt ? `Fotos — ${capsTxt}` : ""].filter(Boolean).join(". ");
+      await onCloseTask(task, [...closeBefore, ...closePhotos], notaFinal, closeParts, !!canCloseDirect, closeBefore.length);
       onClose();
     } catch (e) {
       setCloseMsg({ ok: false, text: e.message || "No se pudo cerrar la tarea — revisa tu conexión e intenta de nuevo." });
@@ -559,11 +564,42 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                     )}
                   </div>
                 )}
-                <PhotoPicker photos={closePhotos} onChange={setClosePhotos} max={4} />
-                <div className="flex gap-1.5 flex-wrap mt-2">
-                  {["Reparado", "Repuesto cambiado", "Limpieza y ajuste", "Sin falla, se ajustó", "Queda en observación"].map(chip => (
-                    <button key={chip} type="button" onClick={() => setCloseNote(prev => (prev && !prev.includes(chip) ? prev.replace(/\s+$/, "") + ". " + chip : (prev || chip)))}
-                      className="text-xs font-semibold rounded-full border px-3" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 36 }}>{chip}</button>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-md p-2" style={{ background: C.panel }}>
+                    <div className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: C.red }}>Antes</div>
+                    {(task.fotosAntes || []).length > 0 && (
+                      <div className="flex gap-1 flex-wrap mb-1.5">
+                        {task.fotosAntes.map((u, k) => <img key={k} src={u} alt="Antes" loading="lazy" onClick={() => onZoom && onZoom(u)} className="rounded border object-cover" style={{ width: 52, height: 52, borderColor: C.line, cursor: "zoom-in" }} />)}
+                      </div>
+                    )}
+                    <PhotoPicker photos={closeBefore} onChange={setCloseBefore} max={3} />
+                    <div className="text-[10px]" style={{ color: C.gray }}>{(task.fotosAntes || []).length ? "Puedes agregar más fotos de cómo estaba." : "Agrega una foto de cómo estaba."}</div>
+                  </div>
+                  <div className="rounded-md p-2" style={{ background: C.panel }}>
+                    <div className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: C.green }}>Después (obligatoria)</div>
+                    <PhotoPicker photos={closePhotos} onChange={setClosePhotos} max={4} />
+                    <div className="text-[10px]" style={{ color: C.gray }}>Cómo quedó el trabajo.</div>
+                  </div>
+                </div>
+                {(closeBefore.length > 0 || closePhotos.length > 0) && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    {[...closeBefore.map((f, i) => ({ f, k: `Antes ${i + 1}` })), ...closePhotos.map((f, i) => ({ f, k: `Después ${i + 1}` }))].map(({ f, k }) => (
+                      <label key={k} className="flex items-center gap-2 text-[11px]" style={{ color: C.inkSoft }}>
+                        <span className="w-16 shrink-0 font-semibold">{k}</span>
+                        <input value={photoCaps.get(f) || ""} onChange={e => setCap(f, e.target.value)} placeholder="Comentario de esta foto (opcional)"
+                          className="flex-1 min-w-0 text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 36 }} />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="text-xs font-semibold mt-2 mb-1" style={{ color: C.ink }}>Redacción técnica — toca para agregar a la nota</div>
+                <div className="flex gap-1.5 flex-col">
+                  {cierreFrases(task, (equipos || []).find(e => e.id === task.equipoId)?.nombre, task.checklist).map(fr => (
+                    <button key={fr.label} type="button" onClick={() => setCloseNote(prev => (prev && !prev.includes(fr.text) ? prev.replace(/\s+$/, "") + " " + fr.text : (prev || fr.text)))}
+                      className="text-left text-xs rounded-lg border px-3 py-2" style={{ borderColor: C.line, background: C.panel, color: C.ink, minHeight: 40 }}>
+                      <span className="font-semibold">{fr.label}</span>
+                      <span className="block mt-0.5" style={{ color: C.gray, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{fr.text}</span>
+                    </button>
                   ))}
                 </div>
                 {invItems && invItems.length > 0 && (
@@ -572,7 +608,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                     <PartsPicker invItems={invItems} parts={closeParts} onChange={setCloseParts} />
                   </div>
                 )}
-                <VoiceTextarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2} placeholder="Nota de cierre (opcional)"
+                <VoiceTextarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={5} placeholder="Nota de cierre: describe lo que se hizo (puedes editar las frases de arriba)"
                   className="w-full text-sm border rounded-md px-2 py-1.5 outline-none resize-y mt-2" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
                 {closeMsg && <div className="text-xs mt-1.5" style={{ color: closeMsg.ok ? C.green : C.red }}>{closeMsg.text}</div>}
                 <Button size="sm" disabled={closeSaving} onClick={doClose} className="w-full justify-center mt-2">{closeSaving ? "Guardando…" : canCloseDirect ? "✓ Confirmar cierre" : "Completar y enviar a revisión"}</Button>

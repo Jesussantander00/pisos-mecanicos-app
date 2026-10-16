@@ -237,7 +237,7 @@ export function TodayBoardView({ tasks, accounts, employees, scheduleEntries, on
             {data.esperando.slice(0, 10).map(t => (
               <div key={t.id} className="flex justify-between gap-2 text-xs">
                 <span className="truncate" style={{ color: C.ink }}>{t.titulo}{lugarOf(t) ? ` — ${lugarOf(t)}` : ""}</span>
-                <span className="shrink-0 font-semibold" style={{ color: C.amber }}>Falta: {t.esperaRepuesto.texto}</span>
+                <span className="shrink-0 font-semibold" style={{ color: C.amber }}>Falta: {t.esperaRepuesto.texto} · {t.esperaRepuesto.estado === "llego" ? "llegó" : t.esperaRepuesto.estado === "pedido" ? "pedido" : "por aprobar"}</span>
               </div>
             ))}
           </div>

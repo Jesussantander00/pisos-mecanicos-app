@@ -1152,7 +1152,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
                     <Badge tone={badgeToneFor("prioridad", t.prioridad)}>{TASK_PRIORITIES.find(p => p.code === t.prioridad)?.label}</Badge>
                     <div className="text-sm font-semibold" style={{ color: C.ink }}>{t.titulo}</div>
                     <Badge tone={badgeToneFor("taskEstado", t.estado)}>{TASK_STATES.find(s => s.code === estado)?.label || estado}</Badge>
-                    {t.esperaRepuesto && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }} title={`Falta: ${t.esperaRepuesto.texto}`}>📦 Esperando repuesto</span>}
+                    {t.esperaRepuesto && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.amberSoft, color: C.amber }} title={`Falta: ${t.esperaRepuesto.texto}`}>📦 {t.esperaRepuesto.estado === "llego" ? "Repuesto llegó" : t.esperaRepuesto.estado === "pedido" ? "Repuesto pedido" : "Esperando repuesto"}</span>}
                     {t.reincidencia && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: C.redSoft, color: C.red }} title={`Mismo problema cerrado hace ${t.reincidencia.dias} día(s): ${t.reincidencia.titulo}`}>↻ Reincidencia</span>}
                     {estado === "pausada" && (
                       <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ background: C.amberSoft, color: C.amber }}>

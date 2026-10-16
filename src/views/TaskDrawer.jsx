@@ -543,12 +543,27 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                 {!task.esperaRepuesto && <Button size="sm" variant="ghost" onClick={() => setShowWaitForm(v => !v)}>📦 Esperando repuesto</Button>}
               </div>
               {task.esperaRepuesto && (
-                <div className="rounded-md p-2 text-xs" style={{ background: C.amberSoft, color: C.amber }}>📦 Esperando repuesto: <b>{task.esperaRepuesto.texto}</b> (desde {fmtDT(task.esperaRepuesto.at)}). Al reanudar se quita solo.</div>
+                <div className="rounded-md p-2 text-xs" style={{ background: C.amberSoft, color: C.amber }}>
+                  📦 Esperando repuesto: <b>{task.esperaRepuesto.texto}</b> (desde {fmtDT(task.esperaRepuesto.at)}).
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    {[["por-aprobar", "Por aprobar"], ["pedido", "Pedido"], ["llego", "Llegó"]].map(([k, l]) => {
+                      const cur = task.esperaRepuesto.estado || "por-aprobar";
+                      return <span key={k} className="text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: cur === k ? C.amber : "transparent", color: cur === k ? "#fff" : C.amber, border: `1px solid ${C.amber}` }}>{l}</span>;
+                    })}
+                  </div>
+                  {canReview && (task.esperaRepuesto.estado || "por-aprobar") !== "llego" && (
+                    <button type="button" className="mt-1.5 text-xs font-bold underline" style={{ color: C.amber }}
+                      onClick={() => { const cur = task.esperaRepuesto.estado || "por-aprobar"; const nx = cur === "por-aprobar" ? "pedido" : "llego"; onUpdateTask(task.id, { esperaRepuesto: { ...task.esperaRepuesto, estado: nx, [nx + "At"]: nowIso(), [nx + "Por"]: currentUsername } }); }}>
+                      {(task.esperaRepuesto.estado || "por-aprobar") === "por-aprobar" ? "Aprobar y marcar como pedido" : "Marcar como llegó"}
+                    </button>
+                  )}
+                  <div className="mt-1">{(task.esperaRepuesto.estado || "por-aprobar") === "llego" ? "Ya llegó: pulsa Reanudar para seguir con la tarea." : "Al reanudar se quita solo."}</div>
+                </div>
               )}
               {showWaitForm && !task.esperaRepuesto && (
                 <div className="flex items-center gap-1.5">
                   <input value={waitText} onChange={e => setWaitText(e.target.value)} placeholder="¿Qué repuesto falta?" className="flex-1 text-sm border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.panel, color: C.ink }} />
-                  <Button size="sm" disabled={!waitText.trim()} onClick={() => { const at = nowIso(); onUpdateTask(task.id, { estado: "pausada", esperaRepuesto: { texto: waitText.trim(), at }, timeLog: [...(task.timeLog || []), { estado: "pausada", at, nota: `Esperando repuesto: ${waitText.trim()}` }] }); setShowWaitForm(false); setWaitText(""); }}>Guardar</Button>
+                  <Button size="sm" disabled={!waitText.trim()} onClick={() => { const at = nowIso(); onUpdateTask(task.id, { estado: "pausada", esperaRepuesto: { texto: waitText.trim(), at, estado: "por-aprobar", by: currentUsername }, timeLog: [...(task.timeLog || []), { estado: "pausada", at, nota: `Esperando repuesto: ${waitText.trim()}` }] }); setShowWaitForm(false); setWaitText(""); }}>Guardar</Button>
                 </div>
               )}
               <div className="rounded-md p-2.5" style={{ background: C.bg }}>
@@ -618,7 +633,20 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
               </div>
             </>
           ) : (
-            <div className="text-xs rounded-md p-2.5" style={{ background: C.bg, color: C.gray }}>Solo la persona asignada (o un administrador) puede cambiar el estado de esta tarea.</div>
+            <>
+              {canReview && task.esperaRepuesto && estado !== "finalizada" && (
+                <div className="rounded-md p-2 text-xs mb-2" style={{ background: C.amberSoft, color: C.amber }}>
+                  📦 Repuesto: <b>{task.esperaRepuesto.texto}</b> — {(task.esperaRepuesto.estado || "por-aprobar") === "llego" ? "llegó" : (task.esperaRepuesto.estado || "por-aprobar") === "pedido" ? "pedido" : "por aprobar"}
+                  {(task.esperaRepuesto.estado || "por-aprobar") !== "llego" && (
+                    <button type="button" className="ml-2 text-xs font-bold underline" style={{ color: C.amber }}
+                      onClick={() => { const cur = task.esperaRepuesto.estado || "por-aprobar"; const nx = cur === "por-aprobar" ? "pedido" : "llego"; onUpdateTask(task.id, { esperaRepuesto: { ...task.esperaRepuesto, estado: nx, [nx + "At"]: nowIso(), [nx + "Por"]: currentUsername } }); }}>
+                      {(task.esperaRepuesto.estado || "por-aprobar") === "por-aprobar" ? "Aprobar y marcar como pedido" : "Marcar como llegó"}
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className="text-xs rounded-md p-2.5" style={{ background: C.bg, color: C.gray }}>Solo la persona asignada (o un administrador) puede cambiar el estado de esta tarea.</div>
+            </>
           )}
           </>)}
         </div>

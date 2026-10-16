@@ -3516,6 +3516,54 @@ export async function requestWeeklySummary({ weekLabel, resolved, pending, corre
   return resp.json();
 }
 
+/** Informe mensual de mantenimiento: tareas cerradas en el mes, agrupadas por sistema/equipo, con la nota de cierre aprobada. */
+export async function generateMonthlyMaintenancePdf({ tasks, equipos, month, accounts }, generatedBy) {
+  const jsPDFCtor = await loadPdfLibs();
+  const doc = new jsPDFCtor({ unit: "mm", format: "a4", orientation: "portrait" });
+  const [yy, mm] = String(month).split("-").map(Number);
+  const label = new Date(yy, mm - 1, 1).toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+  const inMonth = (tasks || []).filter(t => {
+    if (normalizeTaskState(t.estado) !== "finalizada" || !t.finishedAt) return false;
+    const d = new Date(t.finishedAt);
+    return d.getFullYear() === yy && d.getMonth() === mm - 1;
+  });
+  let y = pdfLetterhead(doc, "Reportes de Mantenimiento", [label.charAt(0).toUpperCase() + label.slice(1), `${inMonth.length} tareas cerradas`, `Generado por ${generatedBy || "—"}`]);
+  const pageH = doc.internal.pageSize.getHeight(), pageW = doc.internal.pageSize.getWidth();
+  if (!inMonth.length) {
+    doc.setFontSize(10); doc.text("No hay tareas cerradas en este mes.", 14, y + 4);
+    pdfFooterAll(doc); return doc;
+  }
+  const eqOf = (t) => (equipos || []).find(e => e.id === t.equipoId);
+  const groups = {};
+  inMonth.forEach(t => { const g = eqOf(t)?.sistema || "Otras tareas"; (groups[g] ||= []).push(t); });
+  for (const [sis, list] of Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (y > pageH - 40) { doc.addPage(); y = 18; }
+    doc.setFont(undefined, "bold"); doc.setFontSize(11); doc.setTextColor(...PDF_C.steelDark);
+    doc.text(`${sis} (${list.length})`, 14, y); y += 6;
+    doc.setTextColor(...PDF_C.ink);
+    for (const t of list.sort((a, b) => String(a.finishedAt).localeCompare(String(b.finishedAt)))) {
+      const nota = String(t.notaCierre || "").replace(/\s*Lecturas:.*$/s, "").replace(/\s*Fotos —.*$/s, "").trim();
+      const name = eqOf(t)?.nombre || t.titulo;
+      const body = nota || "Sin nota de cierre registrada.";
+      const lines = doc.splitTextToSize(body, pageW - 28);
+      const need = 6 + lines.length * 4.3 + 4;
+      if (y + need > pageH - 16) { doc.addPage(); y = 18; }
+      doc.setFont(undefined, "bold"); doc.setFontSize(9.5);
+      doc.text(name, 14, y);
+      doc.setFont(undefined, "normal"); doc.setFontSize(8); doc.setTextColor(...PDF_C.gray);
+      const who = accounts?.[t.asignadoA]?.display_name || t.asignadoA || "";
+      doc.text(`${fmtDT(t.finishedAt)}${who ? " · " + who : ""}${t.aprobadoPor?.name ? " · revisó " + t.aprobadoPor.name : ""}`, pageW - 14, y, { align: "right" });
+      doc.setTextColor(...PDF_C.ink); doc.setFontSize(9);
+      y += 5;
+      doc.text(lines, 14, y);
+      y += lines.length * 4.3 + 4;
+    }
+    y += 2;
+  }
+  pdfFooterAll(doc);
+  return doc;
+}
+
 /** PDF de una sola página con el resumen semanal ya redactado — es lo que se adjunta al correo. */
 async function generateWeeklySummaryPdf(summaryText, weekLabel, generatedBy) {
   const jsPDFCtor = await loadPdfLibs();

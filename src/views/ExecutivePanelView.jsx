@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, ClipboardCheck, Clock, Download, X } from "lucide-react";
-import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateDirectorWeeklyPdf, generateExecutivePdf, hoursBetween, normalizeTaskState, todayStr } from "../shared/core";
+import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateDirectorWeeklyPdf, generateExecutivePdf, generateMonthlyMaintenancePdf, hoursBetween, localDateIso, normalizeSearchText, normalizeTaskState, todayStr } from "../shared/core";
 import { Button, HorizontalBarChart, MiniDonut, MiniGauge, StatCard } from "../shared/components";
 import { SystemCoverageGrid } from "./SystemCoverageGrid";
 
@@ -102,6 +102,7 @@ function TrendBadge({ current, previous, unit = "%", goodDirection = "up" }) {
 
 export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIndex, meterRoundsIndex, currentUser, tasks, accounts, issueHistory, activeIssues }) {
   const [downloading, setDownloading] = useState(false);
+  const [repMonth, setRepMonth] = useState(() => localDateIso(new Date()).slice(0, 7));
   const [msg, setMsg] = useState(null);
   const now = new Date();
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -281,12 +282,22 @@ export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIn
             } catch { setMsg("No se pudo generar el reporte semanal — revisa la conexión e intenta de nuevo."); }
             setDownloading(false);
           }}>Reporte semanal (PDF)</Button>
+          <input type="month" value={repMonth} onChange={e => setRepMonth(e.target.value)} aria-label="Mes del informe" className="text-sm border rounded-md px-2 outline-none" style={{ minHeight: 44, borderColor: C.line, background: C.panel, color: C.ink }} />
+          <Button variant="ghost" icon={Download} disabled={downloading || !repMonth} onClick={async () => {
+            setDownloading(true); setMsg(null);
+            try {
+              const doc = await generateMonthlyMaintenancePdf({ tasks, equipos, month: repMonth, accounts }, currentUser);
+              doc.save(`informe-mantenimiento-${repMonth}.pdf`);
+            } catch { setMsg("No se pudo generar el informe mensual — revisa la conexión e intenta de nuevo."); }
+            setDownloading(false);
+          }}>Informe mensual (PDF)</Button>
           <Button icon={Download} disabled={downloading} onClick={doDownload}>{downloading ? "Generando…" : "Descargar PDF"}</Button>
         </div>
       </div>
       {msg && <div className="text-xs mb-3" style={{ color: C.red }}>{msg}</div>}
 
       <WeeklyTrendCard tasks={tasks} />
+      <ReviewQualityCard tasks={tasks} equipos={equipos} />
       {/* Pulso del mes: lo esencial en 4 números, calculado con las tareas reales */}
       {(() => {
         const all = tasks || [];
@@ -586,6 +597,69 @@ function Spark({ vals, color = "#0e2d4a", w = 84, h = 26 }) {
 }
 
 // ===== Tendencia semanal (se muestra en el Panel Ejecutivo) =====
+/** Calidad del flujo de revisión: cuánto tarda la revisión, cuántas se devuelven y por qué, y qué equipos se repiten. */
+function ReviewQualityCard({ tasks, equipos }) {
+  const data = useMemo(() => {
+    const all = tasks || [];
+    const since = Date.now() - 30 * 86400000;
+    const rev = all.filter(t => (t.revisiones || []).length || (t.completedAt && t.finishedAt));
+    const tiempos = all.filter(t => t.completedAt && t.finishedAt && new Date(t.finishedAt).getTime() >= since).map(t => hoursBetween(t.completedAt, t.finishedAt)).filter(h => h >= 0 && h < 24 * 14);
+    const prom = tiempos.length ? tiempos.reduce((a, b) => a + b, 0) / tiempos.length : null;
+    const acc = all.flatMap(t => (t.revisiones || []).filter(r => new Date(r.at).getTime() >= since));
+    const devueltas = acc.filter(r => r.accion === "devuelta");
+    const pct = acc.length ? Math.round((devueltas.length / acc.length) * 100) : null;
+    const motivos = { "Falta foto": 0, "Nota incompleta": 0, "Quedó sin probar": 0, "Repuesto sin registrar": 0, "Otro motivo": 0 };
+    devueltas.forEach(r => {
+      const n = normalizeSearchText(r.nota || "");
+      if (/foto|imagen/.test(n)) motivos["Falta foto"]++;
+      else if (/nota|descri|detall|explic/.test(n)) motivos["Nota incompleta"]++;
+      else if (/prueb|funcion|sin probar/.test(n)) motivos["Quedó sin probar"]++;
+      else if (/repuesto|pieza|material/.test(n)) motivos["Repuesto sin registrar"]++;
+      else motivos["Otro motivo"]++;
+    });
+    const fuera = all.filter(t => /fuera de rango/.test(String(t.notaCierre || "")) && new Date(t.completedAt || t.finishedAt || 0).getTime() >= since).length;
+    const sesenta = Date.now() - 60 * 86400000;
+    const porEq = {};
+    all.filter(t => t.equipoId && t.origen !== "cronograma" && new Date(t.createdAt || t.assignedAt || 0).getTime() >= sesenta).forEach(t => { porEq[t.equipoId] = (porEq[t.equipoId] || 0) + 1; });
+    const repetidos = Object.entries(porEq).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 4)
+      .map(([id, n]) => ({ nombre: (equipos || []).find(e => e.id === id)?.nombre || "Equipo", n }));
+    return { prom, pct, motivos, fuera, repetidos, hayDatos: rev.length > 0 || acc.length > 0 };
+  }, [tasks, equipos]);
+  if (!data.hayDatos) return null;
+  const maxM = Math.max(1, ...Object.values(data.motivos));
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Calidad de la revisión <span className="text-xs font-normal" style={{ color: C.gray }}>— últimos 30 días</span></div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {[[data.prom == null ? "—" : fmtHours(data.prom), "tiempo medio de revisión"], [data.pct == null ? "—" : data.pct + " %", "devueltas"], [data.fuera, "lecturas fuera de rango"]].map(([v, l]) => (
+          <div key={l} className="rounded-lg p-2" style={{ background: C.bg }}>
+            <div className="text-lg font-extrabold tabular-nums" style={{ color: C.ink, fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>{v}</div>
+            <div className="text-[11px]" style={{ color: C.inkSoft }}>{l}</div>
+          </div>
+        ))}
+      </div>
+      {Object.values(data.motivos).some(v => v > 0) && (
+        <div className="mb-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Devoluciones por motivo</div>
+          {Object.entries(data.motivos).filter(([, v]) => v > 0).map(([k, v]) => (
+            <div key={k} className="flex items-center gap-2 text-xs py-0.5">
+              <span className="w-36 shrink-0" style={{ color: C.inkSoft }}>{k}</span>
+              <div className="flex-1 rounded-full overflow-hidden" style={{ height: 8, background: C.line }}><div style={{ width: `${(v / maxM) * 100}%`, height: "100%", background: C.steel, borderRadius: 4 }} /></div>
+              <span className="w-6 text-right font-bold" style={{ color: C.ink }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {data.repetidos.length > 0 && (
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Equipos que se repiten (60 días)</div>
+          {data.repetidos.map(r => <div key={r.nombre} className="text-xs py-0.5" style={{ color: C.ink }}>{r.nombre}: <b>{r.n}</b> fallas</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WeeklyTrendCard({ tasks }) {
   const weeks = useMemo(() => {
     const out = []; const end = new Date(); end.setHours(23, 59, 59, 999);

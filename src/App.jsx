@@ -6320,6 +6320,18 @@ export default function App() {
         if (suyas.length > 0) sendPushToSubscriptions(suyas, "↩ Te devolvieron una tarea", `${before.titulo}${nota ? ": " + nota : ""}`, "/");
       }
     }
+    if (before && patch.esperaRepuesto && pushSubscriptions.length > 0) {
+      const nuevo = patch.esperaRepuesto, viejo = before.esperaRepuesto;
+      if (!viejo) {
+        const dest = Object.keys(profiles || {}).filter(u => (canReviewTasks(profiles[u]) || profiles[u]?.is_almacenista) && u !== currentUser);
+        const subs = pushSubscriptions.filter(s => dest.includes(s.ownerUsername));
+        if (subs.length > 0) sendPushToSubscriptions(subs, "📦 Solicitud de repuesto", `${before.titulo}: ${nuevo.texto}`, "/");
+      } else if (nuevo.estado && nuevo.estado !== viejo.estado && before.asignadoA && before.asignadoA !== currentUser) {
+        const suyas = pushSubscriptions.filter(s => s.ownerUsername === before.asignadoA);
+        const msg = nuevo.estado === "llego" ? "Llegó el repuesto: ya puedes retomar la tarea" : nuevo.estado === "pedido" ? "Aprobaron y pidieron el repuesto" : "";
+        if (msg && suyas.length > 0) sendPushToSubscriptions(suyas, "📦 Repuesto", `${before.titulo} — ${msg}`, "/");
+      }
+    }
     if (reCierre && pushSubscriptions.length > 0) {
       const admins = pushSubscriptions.filter(s => profiles?.[s.ownerUsername]?.is_admin && s.ownerUsername !== currentUser);
       if (admins.length > 0) sendPushToSubscriptions(admins, "✅ Orden devuelta, cerrada de nuevo", before.titulo, "/");

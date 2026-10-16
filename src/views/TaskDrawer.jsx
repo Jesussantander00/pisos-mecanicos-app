@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, normalizeTaskState, nowIso, plantillaEquipo, requestDiagnostico, showToast, skillAreaOfTask, suggestChecklist, uid, useBackCloseModal, useTechSkills } from "../shared/core";
+import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, plantillaEquipo, requestDiagnostico, showToast, skillAreaOfTask, suggestChecklist, uid, useBackCloseModal, useTechSkills } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
@@ -12,7 +12,7 @@ function SuggestedTechs({ task, equipo, accounts, allTasks, onAssign }) {
   const area = skillAreaOfTask(task, equipo);
   const open = {};
   (allTasks || []).forEach(t => { if (t.asignadoA && normalizeTaskState(t.estado) !== "finalizada" && !isTaskSnoozed(t)) open[t.asignadoA] = (open[t.asignadoA] || 0) + 1; });
-  const ranked = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia && !a.is_admin; })
+  const ranked = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia && !a.is_admin && !looksLikeGhostAccount(a.display_name); })
     .map(u => ({ u, lv: Number(skills?.[u]?.[area] || 0), n: open[u] || 0 }))
     .filter(x => x.lv > 0).sort((a, b) => b.lv - a.lv || a.n - b.n).slice(0, 3);
   if (!ranked.length) return null;
@@ -87,7 +87,7 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
   const [photoCaps, setPhotoCaps] = useState(() => new Map());
   const setCap = (f, v) => setPhotoCaps(m => { const n = new Map(m); n.set(f, v); return n; });
   const [closeNote, setCloseNote] = useState("");
-  const [tab, setTab] = useState(() => { const e0 = normalizeTaskState(task.estado); return (e0 === "finalizada" || e0 === "en-revision") ? "resumen" : canAct ? "trabajo" : "resumen"; });
+  const [tab, setTab] = useState(() => { const e0 = normalizeTaskState(task.estado); return (e0 === "finalizada" || e0 === "en-revision") ? "resumen" : (canAct || (canReview && task.esperaRepuesto)) ? "trabajo" : "resumen"; });
   const [reviewNote, setReviewNote] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewMsg, setReviewMsg] = useState(null);

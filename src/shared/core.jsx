@@ -2004,6 +2004,7 @@ export const KANBAN_COLUMNS = [
   { code: "asignada", label: "Pendiente" },
   { code: "en-proceso", label: "En progreso" },
   { code: "pausada", label: "En espera de repuesto" },
+  { code: "en-revision", label: "En revisión" },
   { code: "finalizada", label: "Hecho" },
 ];
 /** Si "Pendiente" pasa de esta cantidad, la columna se resalta — es una señal de que se están

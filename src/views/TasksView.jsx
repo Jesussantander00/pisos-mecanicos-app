@@ -1085,7 +1085,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
         }} />
       )}
       {viewMode === "kanban" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
           {KANBAN_COLUMNS.map(col => {
             const colTasks = filtered.filter(t => normalizeTaskState(t.estado) === col.code);
             const overWip = col.code === "asignada" && colTasks.length > KANBAN_WIP_LIMIT;
@@ -1097,7 +1097,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
                   const task = tasks.find(t => t.id === taskId);
                   if (!task || normalizeTaskState(task.estado) === col.code) return;
                   if (!(isAdmin || task.asignadoA === currentUsername)) { showToast("Solo puedes mover tus propias tareas.", false); return; }
-                  if (col.code === "finalizada") setDrawerTaskId(task.id);
+                  if (col.code === "finalizada" || col.code === "en-revision") setDrawerTaskId(task.id);
                   else transitionTask(task, col.code);
                 }}>
                 <div className="flex items-center justify-between mb-2 px-0.5">
@@ -1111,18 +1111,19 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
                 )}
                 {colTasks.length === 0 ? (
                   <div className="flex flex-col items-center text-center py-5 gap-1.5" style={{ color: C.gray }}>
-                    {col.code === "finalizada" ? <ClipboardCheck size={22} color={C.gray} opacity={0.5} /> : <Wrench size={22} color={C.gray} opacity={0.5} />}
+                    {(col.code === "finalizada" || col.code === "en-revision") ? <ClipboardCheck size={22} color={C.gray} opacity={0.5} /> : <Wrench size={22} color={C.gray} opacity={0.5} />}
                     <span className="text-[11px]">
                       {col.code === "asignada" ? "Nada pendiente por empezar" :
                        col.code === "en-proceso" ? "¡Todo al día en tu turno!" :
                        col.code === "pausada" ? "Nada esperando repuesto" :
+                       col.code === "en-revision" ? "Nada por revisar" :
                        "Todavía no se ha cerrado nada"}
                     </span>
                   </div>
                 ) : colTasks.map(t => (
                   <TaskKanbanCard key={t.id} task={t} accounts={accounts} employees={employees} equipos={equipos} canAct={!viewerLocked && (isAdmin || t.asignadoA === currentUsername)}
                     onOpenDrawer={setDrawerTaskId}
-                    onMove={(task, code) => code === "finalizada" ? setDrawerTaskId(task.id) : transitionTask(task, code)}
+                    onMove={(task, code) => (code === "finalizada" || code === "en-revision") ? setDrawerTaskId(task.id) : transitionTask(task, code)}
                     onZoom={setLightboxUrl}
                     selectMode={selectMode} isSelected={selectedIds.has(t.id)} onToggleSelect={() => toggleSelected(t.id)} />
                 ))}
@@ -1248,7 +1249,7 @@ export function TasksView({ tasks, accounts, employees, scheduleEntries, current
           <select disabled={bulkBusy} onChange={e => { if (e.target.value) bulkMove(e.target.value); }} value=""
             className="text-xs border rounded-md px-2 py-1.5 outline-none" style={{ borderColor: C.line, background: C.bg, color: C.ink }}>
             <option value="">Mover a…</option>
-            {KANBAN_COLUMNS.filter(c => c.code !== "finalizada").map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+            {KANBAN_COLUMNS.filter(c => c.code !== "finalizada" && c.code !== "en-revision").map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
           <div className="text-[10px] w-full sm:w-auto" style={{ color: C.gray }}>Para marcar como Hecho hace falta abrir cada una — se necesita foto de evidencia.</div>
           <button onClick={exitSelectMode} className="text-xs font-semibold px-2 py-1.5" style={{ color: C.gray }}>Cancelar</button>

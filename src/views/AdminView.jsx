@@ -8,7 +8,7 @@ import { UserEditModal } from "./UserEditModal";
 /** Matriz de habilidades (solo administradores): toca una celda para subir el nivel 0 → 3. */
 function TechSkillsCard({ accounts }) {
   const [skills, setLevel] = useTechSkills();
-  const people = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia; });
+  const people = Object.keys(accounts || {}).filter(u => { const a = accounts[u]; return a && a.approved !== false && !a.is_viewer && !a.is_gerencia && !looksLikeGhostAccount(a.display_name); });
   const bg = ["#eef1f4", "#cfe0ee", "#7fb0d1", "#24496b"], fg = ["#8a96a3", "#24496b", "#10304a", "#ffffff"];
   if (!people.length) return null;
   return (

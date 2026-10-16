@@ -17,7 +17,7 @@ export function TaskKanbanCard({ task, accounts, employees, equipos, canAct, onO
   const linkedEquipo = task.equipoId && equipos ? equipos.find(e => e.id === task.equipoId) : null;
 
   const SWIPE_THRESHOLD = 80;
-  const canSwipe = canAct && estado !== "finalizada" && !selectMode;
+  const canSwipe = canAct && estado !== "finalizada" && estado !== "en-revision" && !selectMode;
 
   const onTouchStart = (e) => {
     if (!canSwipe) return;

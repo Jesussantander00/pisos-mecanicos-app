@@ -37,7 +37,8 @@ export default async function handler(req, res) {
     if (!rl.ok) { sendRateLimited(res, rl.retryAfterSeconds); return; }
   }
 
-  const { imageBase64, mediaType, previousReading, meterName } = req.body || {};
+  const { imageBase64, mediaType, previousReading, meterName, modo } = req.body || {};
+  const modoPlaca = modo === "placa";
   if (!imageBase64) {
     res.status(400).json({ ok: false, message: "Falta la foto." });
     return;
@@ -57,7 +58,12 @@ export default async function handler(req, res) {
     ? `\n\nDATO DE CONTEXTO IMPORTANTE: la última lectura registrada para este mismo medidor${meterName ? ` (${meterName})` : ""} fue ${previousReading}. Los medidores de consumo casi siempre SUBEN con el tiempo (nunca bajan, salvo casos raros de reinicio del contador) — así que la lectura nueva debería ser igual o mayor a ese número, y normalmente no muy distinta (el consumo de unos días no suele ser enorme). Usa este dato como referencia para revisar tu propia lectura: si lo que lees es mucho menor a ${previousReading}, o muchísimo mayor, vuelve a fijarte con cuidado en la foto antes de responder — es más probable que te hayas confundido de dígito que un salto así de grande.`
     : "";
 
-  const promptText = `Esta es una foto de un medidor de consumo (agua, luz o gas). Necesito que leas la lectura EXACTA que muestra, con mucho cuidado, ya que se usa para calcular consumo y facturación.
+  const promptPlaca = `Esta es una foto de la PLACA de datos (etiqueta del fabricante) de un equipo de mantenimiento de un hotel (aire acondicionado, bomba, motor, nevera, tablero, etc.). Lee con mucho cuidado y copia exactamente lo que dice, sin inventar nada.
+
+Responde ÚNICAMENTE con este JSON, sin texto antes ni después. Usa null en cualquier campo que no se alcance a leer con seguridad:
+{"marca": "fabricante", "modelo": "modelo (MODEL / MOD)", "serie": "número de serie (SERIAL / S/N)", "voltaje": "voltaje y fases, por ejemplo 208-230 V 1 fase", "capacidad": "capacidad o potencia (BTU, TR, HP, kW, amperios)", "refrigerante": "tipo y carga de refrigerante si aparece"}`;
+
+  const promptText = modoPlaca ? promptPlaca : `Esta es una foto de un medidor de consumo (agua, luz o gas). Necesito que leas la lectura EXACTA que muestra, con mucho cuidado, ya que se usa para calcular consumo y facturación.
 
 Ten en cuenta estos formatos comunes de medidores, y fíjate cuál aplica en esta foto:
 - Muchos medidores mecánicos de agua tienen una fila de RUEDAS/RODILLOS con números: las ruedas de fondo NEGRO (o blanco) son el número entero, y las últimas 1-2 ruedas de fondo ROJO son los decimales — el número completo se lee de corrido, con un punto decimal antes de las ruedas rojas. Ejemplo: si ves ruedas negras "032973" y luego ruedas rojas "59", la lectura es 32973.59 (los ceros a la izquierda del todo normalmente no se escriben).
@@ -106,6 +112,19 @@ Responde ÚNICAMENTE con este JSON, sin texto antes ni después:
       .filter(p => p && p.text && !p.thought)
       .map(p => p.text)
       .join("");
+
+    if (modoPlaca) {
+      let placa = null;
+      try { placa = JSON.parse(raw.trim()); } catch {
+        const a = raw.indexOf("{"), b = raw.lastIndexOf("}");
+        if (a !== -1 && b > a) { try { placa = JSON.parse(raw.slice(a, b + 1)); } catch { placa = null; } }
+      }
+      const limpio = {};
+      ["marca", "modelo", "serie", "voltaje", "capacidad", "refrigerante"].forEach(k => { const v = placa && placa[k]; limpio[k] = v && String(v) !== "null" ? String(v).trim().slice(0, 80) : ""; });
+      if (!Object.values(limpio).some(Boolean)) { res.status(200).json({ ok: false, message: "No se logró leer la placa con seguridad. Escribe los datos a mano." }); return; }
+      res.status(200).json({ ok: true, placa: limpio });
+      return;
+    }
 
     let lectura = null;
     try {

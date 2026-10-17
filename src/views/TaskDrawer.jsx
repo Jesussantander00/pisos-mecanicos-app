@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CheckCircle2, Download, X } from "lucide-react";
 import { uploadPhoto } from "../lib/storage";
-import { C, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, plantillaEquipo, requestDiagnostico, showToast, skillAreaOfTask, suggestChecklist, uid, useBackCloseModal, useTechSkills } from "../shared/core";
+import { C, GAS_TIPOS, TASK_PRIORITIES, TASK_STATES, TASK_STATE_COLORS, badgeToneFor, cargoForUsername, cierreFrases, elapsed, fmtDT, fmtHours, hatRoleFor, hoursBetween, isTaskSnoozed, lecturaFueraDeRango, localDateIso, looksLikeGhostAccount, normalizeTaskState, nowIso, plantillaEquipo, requestDiagnostico, showToast, skillAreaOfTask, suggestChecklist, uid, useBackCloseModal, useTechSkills } from "../shared/core";
 import { Avatar, Badge, Button, EquipoHistorySuggestions, HardHatAvatar, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, TaskTimer, VoiceInputButton, VoiceTextarea } from "../shared/components";
 
 
@@ -94,6 +94,8 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
   const [closeSaving, setCloseSaving] = useState(false);
   const [closeMsg, setCloseMsg] = useState(null);
   const [closeParts, setCloseParts] = useState([]);
+  const [gasTipo, setGasTipo] = useState("R-410A");
+  const [gasKg, setGasKg] = useState("");
   const [showWaitForm, setShowWaitForm] = useState(false);
   const [waitText, setWaitText] = useState("");
   const [commentPhotos, setCommentPhotos] = useState([]);
@@ -134,7 +136,10 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
       const lecturaTxt = (task.lecturas || []).filter(l => String(l.value || "").trim()).map(l => `${l.name}: ${String(l.value).trim()}${l.unit ? " " + l.unit : ""}${lecturaFueraDeRango(l) ? " ⚠ fuera de rango" : ""}`).join("; ");
       const capsTxt = [...closeBefore.map((f, i) => [`Antes ${i + 1}`, photoCaps.get(f)]), ...closePhotos.map((f, i) => [`Después ${i + 1}`, photoCaps.get(f)])]
         .filter(([, v]) => v && v.trim()).map(([k, v]) => `${k}: ${v.trim()}`).join("; ");
-      const notaFinal = [closeNote.trim(), lecturaTxt ? `Lecturas: ${lecturaTxt}` : "", capsTxt ? `Fotos — ${capsTxt}` : ""].filter(Boolean).join(". ");
+      const kgGas = parseFloat(String(gasKg).replace(",", "."));
+      const gasTxt = Number.isFinite(kgGas) && kgGas > 0 ? `Refrigerante agregado: ${gasTipo} ${kgGas} kg` : "";
+      const notaFinal = [closeNote.trim(), gasTxt, lecturaTxt ? `Lecturas: ${lecturaTxt}` : "", capsTxt ? `Fotos — ${capsTxt}` : ""].filter(Boolean).join(". ");
+      if (gasTxt) { try { await onUpdateTask(task.id, { refrigerante: { gas: gasTipo, kg: kgGas, at: nowIso() } }); } catch { /* el dato también queda en la nota de cierre */ } }
       await onCloseTask(task, [...closeBefore, ...closePhotos], notaFinal, closeParts, !!canCloseDirect, closeBefore.length);
       onClose();
     } catch (e) {
@@ -666,6 +671,19 @@ export function TaskDrawer({ task, accounts, employees, canAct, equipos, mttoLog
                     </button>
                   ))}
                 </div>
+                {(plantillaEq || /aire|fan ?coil|vrf|split|chiller|nevera|refriger|fr[ií]o/i.test(`${task.titulo || ""} ${eqDeTarea?.nombre || ""}`)) && (
+                  <div className="mt-2 rounded-lg border p-2" style={{ borderColor: C.line, background: C.panel }}>
+                    <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>¿Agregaste refrigerante? (opcional)</div>
+                    <div className="flex gap-2 items-center">
+                      <select value={gasTipo} onChange={e => setGasTipo(e.target.value)} className="text-sm border rounded-md px-2 py-1.5" style={{ borderColor: C.line, background: C.bg, color: C.ink, minHeight: 40 }}>
+                        {GAS_TIPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                      <input type="number" inputMode="decimal" min="0" step="0.1" value={gasKg} onChange={e => setGasKg(e.target.value)} placeholder="Kilos"
+                        className="text-sm border rounded-md px-2 py-1.5 w-24" style={{ borderColor: C.line, background: C.bg, color: C.ink, minHeight: 40 }} />
+                      <span className="text-xs" style={{ color: C.gray }}>kg</span>
+                    </div>
+                  </div>
+                )}
                 {invItems && invItems.length > 0 && (
                   <div className="mt-2">
                     <div className="text-xs font-medium mb-1" style={{ color: C.inkSoft }}>Repuestos usados (opcional) — se descuentan solos del inventario</div>

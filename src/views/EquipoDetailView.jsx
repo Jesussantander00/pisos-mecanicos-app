@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { saveRecordWithPhotos, uploadPhoto, uploadVideo } from "../lib/storage";
 import { AlertTriangle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Download, Upload, Video, Wrench } from "lucide-react";
-import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, normalizeTaskState, showToast, tendenciasLecturas } from "../shared/core";
+import { C, MTTO_ESTADOS, MTTO_TIPOS, computeEquipoStats, computePreventiveStatus, currentEquipoStatus, detectPartsChanged, equipoUrl, fmtDT, generateHojaVidaPdf, normalizeTaskState, recargasRefrigerante, showToast, tendenciasLecturas } from "../shared/core";
 import { Avatar, Button, EquipoHistorySuggestions, MaintenanceTextSuggestions, PartsPicker, PhotoPicker, PhotoSourceButtons, Pill, VoiceInputButton } from "../shared/components";
+import { EquipoFichaCard } from "./EquipoFichaCard";
 
 
 
@@ -214,6 +215,19 @@ export function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onL
                 {notas.map(t => <div key={t.id} className="text-xs py-0.5" style={{ color: C.ink }}><span style={{ color: C.gray }}>{fmtDT(t.finishedAt)} · </span>{String(t.notaCierre).slice(0, 140)}</div>)}
               </div>
             )}
+          </div>
+        );
+      })()}
+      {(() => {
+        const rec = recargasRefrigerante(tasks, { equipoId: equipo.id });
+        if (!rec.length) return null;
+        const total = rec.reduce((a, r) => a + r.kg, 0);
+        return (
+          <div className="rounded-xl border p-3 mt-3" style={{ borderColor: rec.length >= 2 ? C.amber : C.line, background: C.panel }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: C.gray }}>Refrigerante agregado · últimos 12 meses</div>
+            <div className="text-sm font-bold mb-1" style={{ color: C.ink }}>{rec.length} {rec.length === 1 ? "recarga" : "recargas"} · {Math.round(total * 10) / 10} kg</div>
+            {rec.slice(0, 4).map(r => <div key={r.taskId} className="text-xs py-0.5" style={{ color: C.ink }}><span style={{ color: C.gray }}>{fmtDT(r.at)} · </span>{r.gas} · {r.kg} kg</div>)}
+            {rec.length >= 2 && <div className="text-xs rounded-lg px-2.5 py-2 mt-1.5" style={{ background: C.amberSoft, color: C.amber }}>Más de una recarga en el año suele indicar una fuga lenta. Conviene buscarla antes de volver a cargar gas.</div>}
           </div>
         );
       })()}
@@ -518,6 +532,7 @@ export function EquipoDetailView({ equipo, records, tasks, invItems, onBack, onL
         )}
       </div>
 
+      <EquipoFichaCard equipo={equipo} isAdmin={isAdmin} onUpdateEquipoInfo={onUpdateEquipoInfo} />
       <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Manual del fabricante</div>
         {editingManual ? (

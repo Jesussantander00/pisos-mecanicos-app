@@ -83,8 +83,8 @@ function syncCssVars() {
 /** ¿Es de noche ahora mismo? 6:00 p.m. a 6:00 a.m. — el disparador de modo oscuro automático. */
 // Coordenadas de Cartagena de Indias — para calcular la hora real de amanecer/atardecer en vez
 // de usar una franja fija (6pm-6am), que en la práctica sí varía un poco durante el año.
-const CARTAGENA_LAT = 10.39;
-const CARTAGENA_LON = -75.51;
+export const CARTAGENA_LAT = 10.39;
+export const CARTAGENA_LON = -75.51;
 
 /** Amanecer/atardecer real aproximado (algoritmo estándar del Almanac) para una fecha y coordenadas
  * dadas. Devuelve horas decimales en el huso horario de Colombia (UTC-5, sin horario de verano). */
@@ -628,6 +628,17 @@ export async function readMeterFromPhoto(file, previousReading, meterName) {
     method: "POST",
     headers: aiRequestHeaders(),
     body: JSON.stringify({ imageBase64, mediaType: "image/jpeg", previousReading, meterName }),
+  });
+  return resp.json();
+}
+
+/** Lee la placa de datos de un equipo desde una foto (marca, modelo, serie, voltaje, capacidad). */
+export async function readPlacaFromPhoto(file) {
+  const imageBase64 = await imageFileToBase64ForReading(file, 1400, 0.8);
+  const resp = await fetch("/api/read-meter", {
+    method: "POST",
+    headers: aiRequestHeaders(),
+    body: JSON.stringify({ imageBase64, mediaType: "image/jpeg", modo: "placa" }),
   });
   return resp.json();
 }
@@ -2193,6 +2204,15 @@ export function tendenciasLecturas(equipoId, tasks) {
     return { name, unit, vals, sube };
   }).filter(x => x.vals.length >= 2);
 }
+export const GAS_TIPOS = ["R-410A", "R-22", "R-134a", "R-407C", "R-404A", "Otro"];
+/** Recargas de refrigerante registradas al cerrar tareas (task.refrigerante = {gas, kg, at}). */
+export function recargasRefrigerante(tasks, { equipoId = null, dias = 365 } = {}) {
+  const desde = Date.now() - dias * 86400000;
+  return (tasks || []).filter(t => t.refrigerante && Number(t.refrigerante.kg) > 0 && (!equipoId || t.equipoId === equipoId))
+    .map(t => ({ taskId: t.id, equipoId: t.equipoId || null, gas: t.refrigerante.gas || "—", kg: Number(t.refrigerante.kg), at: t.refrigerante.at || t.completedAt || t.finishedAt || t.createdAt, titulo: t.titulo }))
+    .filter(r => new Date(r.at || 0).getTime() >= desde)
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+}
 /** Pide al asistente causas probables, apoyándose en el historial real del equipo. */
 export async function requestDiagnostico(task, equipo, allTasks, mttoLog) {
   const mine = (allTasks || []).filter(t => equipo && t.equipoId === equipo.id && t.id !== task.id);
@@ -2223,6 +2243,9 @@ export const MTTO_ESTADOS = [
   { code: "funcionando", label: "Funcionando" },
   { code: "fuera-de-servicio", label: "Fuera de servicio" },
 ];
+
+/** Cargar equipos de golpe desde un Excel (vista previa fila por fila; nada se guarda hasta confirmar). */
+export const EQUIPOS_XLSX_COLS = ["Sistema", "Nombre", "Ubicación", "Marca", "Modelo", "Serie", "Voltaje", "Capacidad"];
 
 /**
  * Frases sugeridas de "qué se hizo", según la especialidad (sistema) del equipo — para que el

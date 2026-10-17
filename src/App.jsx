@@ -6,7 +6,7 @@ import { exportFullBackup, flushOfflineQueue, flushPhotoRecordQueue, getPendingC
 import { PLANOS } from "./data/planos";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { Avatar, BackupButton, Badge, Button, ConfirmDialog, HardHatAvatar, NavBadge, PcbBackground, PendingItemsAlert, PhotoSourceButtons, Pill, QrCodeBox, Sparkline, VoiceInputButton, VoiceTextarea } from "./shared/components";
-import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, canReviewTasks, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, fmtHours, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, splitCloseUrls, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
+import { ALL_COLD_ROOM_ITEMS, ALL_METERS, AUDIT_ACTION_COLORS, AUDIT_ACTION_LABELS, AUDIT_KIND_COLORS, AUDIT_KIND_LABELS, C, CARTAGENA_LAT, CARTAGENA_LON, COLD_ROOMS, COLD_ROOMS_FLOOR, DEFAULT_CHANGELOG_SEED, FUEL_ITEMS, GERENCIA_ALLOWED_VIEWS, GYM_ALL_ITEMS, GYM_AREA_ITEMS, GYM_CARDIO_ITEMS, GYM_FLOOR, GYM_FUERZA_ITEMS, GYM_STATUS_OPTS, HUBS, HUB_HIDDEN, ICE_MACHINES_AB, LAVANDERIA_FLOOR, LAVANDERIA_ITEMS, LAVANDERIA_STATUS_OPTS, LIMITED_VIEWS, METER_GROUPS, MYBOARD_WIDGETS, ONBOARDING_STEPS, OPERATOR_MENU, OWNER_EMAIL, PLAN_GROUPS, PM_CLOUD_D, SHIFTS, SPECIAL_CODES, TANK_ITEMS, TASK_PRIORITIES, TASK_STATES, TRASH_TYPE_LABELS, WIKI_CATEGORIAS, addDays, aiRequestHeaders, applyTheme, authHeaders, bufferToBase64, buildAiContextSummary, buildColdRoomsWeekGrid, buildHvacAiSummary, buildMeterWeekGrid, buildMetersWeekWorkbook, bumpAiUsage, canReviewTasks, cargoForUsername, categoryOfTask, computeColdOutOfRange, computeCompBalance, computeCriticalStock, computeEquipoStats, computeLowStock, computeMeterAnomalies, computePreventiveStatus, computeRoundCompletionSummary, computeShiftCompletionAlerts, computeStaleIssues, computeUpcomingMaintenance, currentEquipoStatus, daysInMonthIso, elapsed, fmtDT, fmtDayFull, fmtDayShort, fmtEntryShort, fmtHours, generateAllShelvesQrPdf, generateColdRoomsWeekPdf, generateMetersWeekPdf, getDeviceId, getDeviceInfo, getSpecialCodeColors, hatRoleFor, hoursBetween, hoursToShiftEnd, isColdRoomOutOfRange, isNightHour, isPendingReview, isSameCalendarDay, isSundayOrHoliday, isTaskSnoozed, lastTaskActivityMs, localDateIso, matchHotsosAssignee, monthKeyOf, normalizeSearchText, normalizeTaskState, nowIso, periodKeyFor, planGroupOf, readMeterFromPhoto, reportClientError, requestAdminAction, requestAiAssistant, requestCreateProfile, requestProcedure, roomOfTask, scheduleKey, sendColdRoomsWeekEmailAuto, sendMetersWeekExcelEmailAuto, sendPushToSubscriptions, sendTourEmailAuto, shelfUrl, showToast, splitCloseUrls, startOfWeek, subscribeToPush, todayStr, toolUrl, uid, useBackClose, useBackCloseModal, validateRoundEntries, weekTotalHours, weeksInRange } from "./shared/core";
 import { ColdRoomsView } from "./views/ColdRoomsView";
 import { EquipmentRow } from "./views/EquipmentRow";
 import { StockAlertsView } from "./views/StockAlertsView";
@@ -1298,7 +1298,7 @@ function SistemaEquiposView({ sistema, equipos, mttoLog, canManage, onBack, onSe
   );
 }
 
-function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds, viewerLocked, editLog = [] }) {
+function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, onCreateEquipo, onImportCatalog, onImportEquipos, onLogMaintenance, onDeleteEquipo, onSetVideoUrl, onSetFrecuencia, onSetFotoMaestra, onUpdateEquipoInfo, tasks, mttoRequiredFields, onUpdateRequiredFields, initialEquipoId, onConsumedInitialEquipo, pendingMaintenanceEquipoIds, viewerLocked, editLog = [] }) {
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [selectedEquipoId, setSelectedEquipoId] = useState(null);
   const canManage = (isAdmin || isAlmacenista) && !viewerLocked;
@@ -1327,7 +1327,7 @@ function MaintenanceView({ equipos, mttoLog, invItems, isAdmin, isAlmacenista, o
     <>
       {isAdmin && <RequiredFieldsSettings value={mttoRequiredFields} onChange={onUpdateRequiredFields} />}
       <SistemasListView equipos={equipos} mttoLog={mttoLog} canManage={canManage}
-        onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog}
+        onSelectSistema={setSelectedSistema} onSelectEquipo={setSelectedEquipoId} onCreateEquipo={onCreateEquipo} onImportCatalog={onImportCatalog} onImportEquipos={onImportEquipos}
         pendingMaintenanceEquipoIds={pendingMaintenanceEquipoIds} />
     </>
   );
@@ -2668,6 +2668,56 @@ function ActivityLogView({ log, accounts }) {
  * lleva hechas hoy, cuántas tiene pendientes y cuáles están atrasadas (más de 24 h), y un botón
  * que la lleva directo a lo siguiente que le toca. */
 /* ===== Cola de revisión (Inicio): lo que los técnicos completaron y espera visto bueno ===== */
+/** Aviso por clima: si el pronóstico de Cartagena trae calor fuerte o lluvia, propone las revisiones antes de que lleguen. */
+function ClimaCard({ onCreateTask, canCreate }) {
+  const [wx, setWx] = useState(null);
+  const [made, setMade] = useState({});
+  useEffect(() => {
+    let off = false;
+    (async () => {
+      try {
+        const k = "pm-wx-" + todayStr();
+        let cached = null; try { cached = JSON.parse(sessionStorage.getItem(k) || "null"); } catch { /* noop */ }
+        if (cached && Date.now() - cached.t < 3600000) { if (!off) setWx(cached.d); return; }
+        const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${CARTAGENA_LAT}&longitude=${CARTAGENA_LON}&daily=temperature_2m_max,apparent_temperature_max,precipitation_sum,precipitation_probability_max&timezone=America%2FBogota&forecast_days=3`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const d = (j.daily?.time || []).map((day, i) => ({ day, tmax: j.daily.temperature_2m_max?.[i], sens: j.daily.apparent_temperature_max?.[i], mm: j.daily.precipitation_sum?.[i], prob: j.daily.precipitation_probability_max?.[i] }));
+        try { sessionStorage.setItem(k, JSON.stringify({ t: Date.now(), d })); } catch { /* noop */ }
+        if (!off) setWx(d);
+      } catch { /* sin señal: no se muestra nada */ }
+    })();
+    return () => { off = true; };
+  }, []);
+  if (!wx || !wx.length) return null;
+  const calor = wx.filter(x => (x.sens ?? 0) >= 40 || (x.tmax ?? 0) >= 34);
+  const lluvia = wx.filter(x => (x.mm ?? 0) >= 20 || ((x.prob ?? 0) >= 80 && (x.mm ?? 0) >= 10));
+  if (!calor.length && !lluvia.length) return null;
+  const dia = (iso) => { try { return new Date(iso + "T12:00:00").toLocaleDateString("es-CO", { weekday: "long", day: "numeric" }); } catch { return iso; } };
+  const bloques = [];
+  if (calor.length) bloques.push({ id: "calor", titulo: "Calor fuerte", cuando: calor.map(x => `${dia(x.day)} (${Math.round(x.tmax)}°, sensación ${Math.round(x.sens ?? x.tmax)}°)`).join(" · "),
+    pasos: ["Revisar condensadores y limpiar serpentines", "Verificar torres y bombas de agua helada", "Dejar a la mano capacitores y filtros de repuesto"] });
+  if (lluvia.length) bloques.push({ id: "lluvia", titulo: "Lluvia fuerte", cuando: lluvia.map(x => `${dia(x.day)} (${Math.round(x.mm)} mm)`).join(" · "),
+    pasos: ["Limpiar sumideros y canaletas de la cubierta", "Probar bombas de achique del sótano", "Revisar filtraciones en zonas ya conocidas"] });
+  return (
+    <div className="rounded-xl border p-3 mb-3" style={{ borderColor: C.amber, background: C.amberSoft }}>
+      <div className="text-sm font-semibold mb-1" style={{ color: C.ink }}>Pronóstico: prepararse para el clima</div>
+      {bloques.map(b => (
+        <div key={b.id} className="mb-2 last:mb-0">
+          <div className="text-xs font-semibold" style={{ color: C.ink }}>{b.titulo} — <span className="font-normal">{b.cuando}</span></div>
+          <ul className="text-xs list-disc pl-4 my-1" style={{ color: C.ink }}>{b.pasos.map(p => <li key={p}>{p}</li>)}</ul>
+          {canCreate && onCreateTask && (
+            <button type="button" disabled={!!made[b.id]} className="text-xs font-bold underline" style={{ color: C.blue }}
+              onClick={async () => { try { await onCreateTask({ titulo: `Preparación por clima: ${b.titulo.toLowerCase()}`, descripcion: `Según el pronóstico (${b.cuando}). Pasos sugeridos:\n- ${b.pasos.join("\n- ")}`, prioridad: "media", asignadoA: "", recurrencia: "", fotosAntes: [], equipoId: null }); setMade(m => ({ ...m, [b.id]: true })); showToast("✓ Tarea creada.", true); } catch { showToast("✗ No se pudo crear la tarea.", false); } }}>
+              {made[b.id] ? "✓ Tarea creada" : "Crear tarea con estos pasos"}
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="text-[11px] mt-1" style={{ color: C.gray }}>Pronóstico de Open-Meteo para Cartagena. Es una sugerencia: nada se crea solo.</div>
+    </div>
+  );
+}
 function ReviewQueueCard({ tasks, currentUser, accounts, onNavigate }) {
   const mine = accounts?.[currentUser];
   if (!canReviewTasks(mine)) return null;
@@ -5645,6 +5695,20 @@ export default function App() {
     return rec;
   };
 
+  const importMttoEquiposXlsx = async (rows) => {
+    const existentes = new Set(mttoEquipos.filter(e => e.active !== false).map(e => `${String(e.sistema || "").toLowerCase().trim()}|${String(e.nombre || "").toLowerCase().trim()}`));
+    const nuevos = (rows || []).filter(r => r.sistema && r.nombre && !existentes.has(`${r.sistema.toLowerCase().trim()}|${r.nombre.toLowerCase().trim()}`)).map(r => ({
+      id: uid("eq"), sistema: r.sistema.trim(), nombre: r.nombre.trim(), active: true, createdBy: displayName, createdAt: nowIso(),
+      ...(r.ubicacion ? { ubicacion: r.ubicacion } : {}), ...(r.marca ? { marca: r.marca } : {}), ...(r.modelo ? { modelo: r.modelo } : {}),
+      ...(r.serial ? { serial: r.serial } : {}), ...(r.voltaje ? { voltaje: r.voltaje } : {}), ...(r.capacidad ? { capacidad: r.capacidad } : {}),
+    }));
+    if (!nuevos.length) return 0;
+    const next = [...nuevos, ...mttoEquipos];
+    setMttoEquipos(next);
+    await sSet("mtto-equipos", next, true);
+    return nuevos.length;
+  };
+
   const deleteMttoEquipo = async (id) => {
     const item = mttoEquipos.find(e => e.id === id);
     if (item) { const entry = await moveToTrash("mttoEquipo", item, `${item.nombre} (equipo de mantenimiento)`); offerUndo(`Equipo "${item.nombre}" eliminado`, entry.id); }
@@ -8018,6 +8082,7 @@ export default function App() {
                     <StorageAlert key="sa" onNavigate={setView} />,
                     <WarrantyAlert key="wa" equipos={mttoEquipos} onOpenEquipo={goEq} />,
                     <PreventiveGoalCard key="pg" mttoLog={mttoLog} equipos={mttoEquipos} onOpenEquipo={goEq} />,
+                    <ClimaCard key="cl" onCreateTask={createTask} canCreate={!viewerLocked} />,
                   ] : null} />
                 {!viewerLocked && !gerenciaLocked && <ReviewQueueCard tasks={tasks} currentUser={currentUser} accounts={profiles} onNavigate={setView} />}
                 {gerenciaLocked && <GerenciaGlance tasks={tasks} activeIssues={activeIssues} onNavigate={setView} />}
@@ -8125,7 +8190,7 @@ export default function App() {
           )}
           {view === "maintenance" && isAdmin && (
             <MaintenanceView equipos={mttoEquipos} mttoLog={mttoLog} invItems={invItems} isAdmin={isAdmin} isAlmacenista={isAlmacenista}
-              onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
+              onCreateEquipo={createMttoEquipo} onImportCatalog={importMaintenanceFull} onImportEquipos={importMttoEquiposXlsx} onLogMaintenance={logMaintenance} onDeleteEquipo={deleteMttoEquipo}
               onSetVideoUrl={setEquipoVideoUrl}
               onSetFrecuencia={setEquipoFrecuencia}
               onSetFotoMaestra={setEquipoFotoMaestra}

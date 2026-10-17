@@ -1,11 +1,82 @@
 import { useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { PlusCircle, Search } from "lucide-react";
-import { C, currentEquipoStatus, generateAllEquiposQrPdf } from "../shared/core";
+import { C, EQUIPOS_XLSX_COLS, currentEquipoStatus, generateAllEquiposQrPdf } from "../shared/core";
 import { Button, Pill } from "../shared/components";
 
 
+function EquiposExcelImport({ equipos, onImportEquipos }) {
+  const [rows, setRows] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const norm = (x) => String(x ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const bajar = () => {
+    const ws = XLSX.utils.aoa_to_sheet([EQUIPOS_XLSX_COLS]);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Equipos");
+    XLSX.writeFile(wb, "plantilla-equipos.xlsx");
+  };
+  const leer = async (file) => {
+    if (!file) return;
+    setMsg(null);
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+      const existentes = new Set((equipos || []).filter(e => e.active !== false).map(e => norm(e.sistema) + "|" + norm(e.nombre)));
+      const vistos = new Set();
+      const out = raw.map((r, i) => {
+        const g = {}; Object.keys(r).forEach(k => { g[norm(k)] = String(r[k] ?? "").trim(); });
+        const row = { n: i + 2, sistema: g["sistema"] || "", nombre: g["nombre"] || g["equipo"] || "", ubicacion: g["ubicacion"] || "", marca: g["marca"] || "", modelo: g["modelo"] || "", serial: g["serie"] || g["serial"] || "", voltaje: g["voltaje"] || "", capacidad: g["capacidad"] || "" };
+        const key = norm(row.sistema) + "|" + norm(row.nombre);
+        row.estado = !row.sistema || !row.nombre ? "error" : (existentes.has(key) || vistos.has(key)) ? "existe" : "nuevo";
+        if (row.estado === "nuevo") vistos.add(key);
+        return row;
+      }).filter(r => r.sistema || r.nombre || r.marca || r.modelo);
+      if (!out.length) { setMsg({ ok: false, text: "El archivo no tiene filas. Usa la plantilla: columnas Sistema y Nombre son obligatorias." }); setRows(null); return; }
+      setRows(out);
+    } catch { setMsg({ ok: false, text: "No se pudo leer el archivo. Usa un Excel (.xlsx) con la plantilla." }); setRows(null); }
+  };
+  const nuevos = (rows || []).filter(r => r.estado === "nuevo");
+  const color = { nuevo: [C.greenSoft, C.green], existe: [C.amberSoft, C.amber], error: [C.redSoft, C.red] };
+  return (
+    <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
+      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Cargar equipos desde Excel</div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="ghost" onClick={bajar}>Descargar plantilla</Button>
+        <label className="text-xs font-semibold rounded-md border px-3 flex items-center cursor-pointer" style={{ minHeight: 36, borderColor: C.line, background: C.bg, color: C.ink }}>
+          Elegir archivo Excel
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => { leer(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+      </div>
+      {msg && <div className="text-xs mt-2" style={{ color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+      {rows && (
+        <div className="mt-2">
+          <div className="text-xs mb-1" style={{ color: C.inkSoft }}>{nuevos.length} nuevos · {rows.filter(r => r.estado === "existe").length} ya existen · {rows.filter(r => r.estado === "error").length} con error</div>
+          <div className="overflow-auto rounded-md border" style={{ borderColor: C.line, maxHeight: 260 }}>
+            <table className="text-xs w-full" style={{ borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: C.bg }}><th className="text-left px-2 py-1">Fila</th><th className="text-left px-2 py-1">Sistema</th><th className="text-left px-2 py-1">Nombre</th><th className="text-left px-2 py-1">Estado</th></tr></thead>
+              <tbody>{rows.slice(0, 300).map(r => (
+                <tr key={r.n} style={{ borderTop: `1px solid ${C.line}` }}><td className="px-2 py-1">{r.n}</td><td className="px-2 py-1">{r.sistema || "—"}</td><td className="px-2 py-1">{r.nombre || "—"}</td>
+                  <td className="px-2 py-1"><span className="font-semibold rounded-full px-2" style={{ background: color[r.estado][0], color: color[r.estado][1] }}>{r.estado === "nuevo" ? "Nuevo" : r.estado === "existe" ? "Ya existe" : "Falta sistema o nombre"}</span></td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <Button size="sm" disabled={busy || nuevos.length === 0} onClick={async () => {
+              setBusy(true);
+              try { const n = await onImportEquipos(nuevos); setMsg({ ok: true, text: `Listo: ${n} equipo(s) nuevo(s) cargados.` }); setRows(null); }
+              catch { setMsg({ ok: false, text: "No se pudo guardar. Revisa tu conexión e intenta de nuevo." }); }
+              setBusy(false);
+            }}>{busy ? "Cargando…" : `Cargar ${nuevos.length} equipo(s) nuevo(s)`}</Button>
+            <button onClick={() => setRows(null)} className="text-xs font-semibold" style={{ color: C.gray }}>Cancelar</button>
+          </div>
+          <div className="text-[11px] mt-1" style={{ color: C.gray }}>Los que "ya existen" o tienen error no se tocan.</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-export function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSelectEquipo, onCreateEquipo, onImportCatalog }) {
+export function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema, onSelectEquipo, onCreateEquipo, onImportCatalog, onImportEquipos }) {
   const [sistema, setSistema] = useState("");
   const [nombre, setNombre] = useState("");
   const [search, setSearch] = useState("");
@@ -76,6 +147,7 @@ export function SistemasListView({ equipos, mttoLog, canManage, onSelectSistema,
       )}
       {importMsg && <div className="text-xs mb-3" style={{ color: importMsg.ok ? C.green : C.red }}>{importMsg.text}</div>}
 
+      {canManage && onImportEquipos && <EquiposExcelImport equipos={equipos} onImportEquipos={onImportEquipos} />}
       {canManage && (
         <div className="rounded-lg border p-3 mb-4" style={{ borderColor: C.line, background: C.panel, color: C.ink }}>
           <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.inkSoft }}>Agregar equipo nuevo</div>

@@ -71,8 +71,47 @@ export function RoomHistoryView({ tasks, mttoLog, equipos, accounts }) {
     <div className="pm-tab-in">
       <h2 className="text-lg font-semibold mb-1" style={{ color: C.ink }}>Historial por habitación</h2>
       <p className="text-sm mb-3" style={{ color: C.inkSoft }}>Todo lo que ha pasado en un cuarto, y qué se repite más.</p>
-      <div className="flex gap-1.5 mb-4 flex-wrap">{tab1("room", "Por habitación")}{tab1("repeat", "Fallas repetidas")}{tab1("heat", "Mapa de calor")}</div>
+      <div className="flex gap-1.5 mb-4 flex-wrap">{tab1("room", "Por habitación")}{tab1("repeat", "Fallas repetidas")}{tab1("heat", "Mapa de calor")}{tab1("floors", "Por piso")}</div>
 
+      {tab === "floors" && (() => {
+        const eqById = new Map((equipos || []).map(e => [e.id, e]));
+        const floorOf = (t) => {
+          const r = roomOfTask(t);
+          if (r && r.length <= 4) return Math.floor(Number(r) / 100);
+          const m = /piso\s*#?\s*(\d{1,2})\b/i.exec(`${t.titulo || ""} ${t.descripcion || ""} ${eqById.get(t.equipoId)?.nombre || ""}`);
+          return m ? Number(m[1]) : null;
+        };
+        const since = Date.now() - 30 * 86400000;
+        const by = {};
+        (tasks || []).forEach(t => {
+          const f = floorOf(t); if (!f) return;
+          const abierta = normalizeTaskState(t.estado) !== "finalizada";
+          if (!abierta && new Date(t.finishedAt || t.createdAt || 0).getTime() < since) return;
+          const o = (by[f] ||= { f, abiertas: [], cerradas: 0 });
+          if (abierta) o.abiertas.push(t); else o.cerradas++;
+        });
+        const rows = Object.values(by).sort((a, b) => b.abiertas.length - a.abiertas.length || b.cerradas - a.cerradas);
+        const max = Math.max(1, ...rows.map(r => r.abiertas.length));
+        return (
+          <div>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>Tareas abiertas por piso (barra) y cerradas en los últimos 30 días. Toca un piso para ver sus tareas abiertas.</div>
+            {rows.length === 0 && <div className="text-sm" style={{ color: C.gray }}>Todavía no hay tareas con un piso identificable (habitación o "piso N" en el título).</div>}
+            {rows.map(r => (
+              <details key={r.f} className="rounded-lg border mb-1.5" style={{ borderColor: C.line, background: C.panel }}>
+                <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer" style={{ minHeight: 44 }}>
+                  <span className="w-12 text-sm font-bold" style={{ color: C.ink }}>P{r.f}</span>
+                  <div className="flex-1 rounded-full overflow-hidden" style={{ height: 10, background: C.line }}><div style={{ width: `${(r.abiertas.length / max) * 100}%`, height: "100%", background: r.abiertas.length >= 4 ? C.red : r.abiertas.length >= 2 ? C.amber : C.steel }} /></div>
+                  <span className="text-xs tabular-nums w-28 text-right" style={{ color: C.inkSoft }}><b style={{ color: C.ink }}>{r.abiertas.length}</b> abiertas · {r.cerradas} cerradas</span>
+                </summary>
+                <div className="px-3 pb-2">
+                  {r.abiertas.length === 0 && <div className="text-xs" style={{ color: C.gray }}>Sin tareas abiertas.</div>}
+                  {r.abiertas.map(t => <div key={t.id} className="text-xs py-0.5" style={{ color: C.ink }}>• {t.titulo} <span style={{ color: C.gray }}>({normalizeTaskState(t.estado)})</span></div>)}
+                </div>
+              </details>
+            ))}
+          </div>
+        );
+      })()}
       {tab === "heat" && (() => {
         const meses = [];
         for (let i = 5; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); d.setMonth(d.getMonth() - i); meses.push(d); }

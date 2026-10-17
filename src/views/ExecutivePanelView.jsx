@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, ClipboardCheck, Clock, Download, X } from "lucide-react";
-import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateDirectorWeeklyPdf, generateExecutivePdf, generateMonthlyMaintenancePdf, hoursBetween, localDateIso, normalizeSearchText, normalizeTaskState, todayStr } from "../shared/core";
+import { C, SHIFTS, computeComplianceForMonth, computeEquipmentStats, computeMaintenanceCost, computeSystemCoverage, computeUptimeBySystem, fmtHours, generateDirectorWeeklyPdf, generateExecutivePdf, generateMonthlyMaintenancePdf, hoursBetween, localDateIso, normalizeSearchText, normalizeTaskState, recargasRefrigerante, todayStr } from "../shared/core";
 import { Button, HorizontalBarChart, MiniDonut, MiniGauge, StatCard } from "../shared/components";
 import { SystemCoverageGrid } from "./SystemCoverageGrid";
 
@@ -298,6 +298,7 @@ export function ExecutivePanelView({ equipos, mttoLog, roundsIndex, coldRoundsIn
 
       <WeeklyTrendCard tasks={tasks} />
       <ReviewQualityCard tasks={tasks} equipos={equipos} />
+      <RefrigeranteCard tasks={tasks} equipos={equipos} />
       {/* Pulso del mes: lo esencial en 4 números, calculado con las tareas reales */}
       {(() => {
         const all = tasks || [];
@@ -598,6 +599,30 @@ function Spark({ vals, color = "#0e2d4a", w = 84, h = 26 }) {
 
 // ===== Tendencia semanal (se muestra en el Panel Ejecutivo) =====
 /** Calidad del flujo de revisión: cuánto tarda la revisión, cuántas se devuelven y por qué, y qué equipos se repiten. */
+/** Refrigerante agregado en el año, por equipo: sirve para detectar fugas lentas y para reportes ambientales. */
+function RefrigeranteCard({ tasks, equipos }) {
+  const data = useMemo(() => {
+    const rec = recargasRefrigerante(tasks, { dias: 365 });
+    const por = {};
+    rec.forEach(r => { const k = r.equipoId || "sin"; const o = (por[k] ||= { id: k, n: 0, kg: 0, gases: new Set() }); o.n++; o.kg += r.kg; o.gases.add(r.gas); });
+    const filas = Object.values(por).map(o => ({ ...o, nombre: o.id === "sin" ? "Sin equipo vinculado" : ((equipos || []).find(e => e.id === o.id)?.nombre || "Equipo"), gases: [...o.gases].join(", ") })).sort((a, b) => b.kg - a.kg).slice(0, 6);
+    return { total: rec.reduce((a, r) => a + r.kg, 0), n: rec.length, filas };
+  }, [tasks, equipos]);
+  if (!data.n) return null;
+  return (
+    <div className="rounded-xl border p-3 mb-4" style={{ borderColor: C.line, background: C.panel }}>
+      <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>Refrigerante agregado <span className="text-xs font-normal" style={{ color: C.gray }}>— últimos 12 meses</span></div>
+      <div className="text-xs mb-2" style={{ color: C.inkSoft }}>{data.n} recargas · <b>{Math.round(data.total * 10) / 10} kg</b> en total</div>
+      {data.filas.map(f => (
+        <div key={f.id} className="flex items-center justify-between gap-2 text-xs py-0.5">
+          <span style={{ color: C.ink }}>{f.nombre} <span style={{ color: C.gray }}>· {f.gases}</span></span>
+          <span className="font-semibold tabular-nums" style={{ color: f.n >= 2 ? C.amber : C.ink }}>{f.n} {f.n === 1 ? "vez" : "veces"} · {Math.round(f.kg * 10) / 10} kg</span>
+        </div>
+      ))}
+      <div className="text-[11px] mt-1.5" style={{ color: C.gray }}>En amarillo: equipos con más de una recarga, posible fuga lenta.</div>
+    </div>
+  );
+}
 function ReviewQualityCard({ tasks, equipos }) {
   const data = useMemo(() => {
     const all = tasks || [];

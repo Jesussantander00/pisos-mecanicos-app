@@ -5049,7 +5049,7 @@ export default function App() {
       // sin destinatario solo porque nadie entró al Panel de administrador desde el día uno.
       // Ojo: si el registro SÍ existe pero un admin lo dejó vacío a propósito (para apagar el
       // envío automático), eso se respeta tal cual — no se le vuelve a poner el correo por defecto.
-      setReportEmail(email ? (email.value || "") : "pisosmecanicosapp@gmail.com");
+      setReportEmail(email ? (email.value || "") : "");
       setReportWhatsapp(wa?.value || "");
       setSentReports(sr || []);
       setLastTour(lt || null);
@@ -6049,7 +6049,7 @@ export default function App() {
       if (!existingByName[key]) {
         const rec = {
           id: uid("emp"), name, cargo: JULY2026_IMPORT_CARGOS[name] || "",
-          fixedRestDay: name === "Quintana Jesus Daniel" ? 6 : null,
+          fixedRestDay: null,
           active: true, createdBy: displayName, createdAt: nowIso(),
         };
         newEmployees.push(rec);
@@ -6093,7 +6093,7 @@ export default function App() {
       if (!existingByName[key]) {
         const rec = {
           id: uid("emp"), name, cargo: AUGUST2026_IMPORT_CARGOS[name] || "",
-          fixedRestDay: name === "Quintana Jesus Daniel" ? 6 : null,
+          fixedRestDay: null,
           active: true, createdBy: displayName, createdAt: nowIso(),
         };
         newEmployees.push(rec);

@@ -219,7 +219,7 @@ export const FUEL_ITEMS = ALL_ITEMS.filter(it => it.fuel);
 
 /* ============================================================
    DATOS: CUARTOS FRÍOS Y MÁQUINAS DE HIELO
-   (según "Temperatura_Cuartos_Frios_Actualizada.xlsx", Sheet1)
+   (plantilla de ejemplo)
    ============================================================ */
 // Objeto "piso" sintético para poder reutilizar el mismo sistema de
 // fuera-de-servicio (activeIssues/issueHistory) que ya usan los pisos mecánicos.
@@ -248,7 +248,7 @@ export const COLD_ROOMS = [
   { c: "CE20", n: "MT Refrigerada — Piso 11", setpoint: "1 °C a 4 °C" },
   { c: "CE21", n: "MT Flores — Piso 0", setpoint: "13 °C a 19 °C" },
   { c: "CE22", n: "MT Basuras — Piso 0", setpoint: "1 °C a 4 °C" },
-  { c: "CE23", n: "MT Ritual — Piso 12", setpoint: "1 °C a 4 °C" },
+  { c: "CE23", n: "MT Restaurante — Piso 12", setpoint: "1 °C a 4 °C" },
 ].map(x => ({ ...x, id: `cf-${x.c}`, k: "numeric", u: "°C" }));
 
 export const ICE_STATUS_OPTS = ["ON", "OFF", "Fuera de servicio"];
@@ -257,13 +257,13 @@ export const ICE_MACHINES_AB = [
   { c: "3A", n: "Frappé — Panadería" },
   { c: "", n: "Cubo — Panadería" },
   { c: "10", n: "Cubo — Eventos" },
-  { c: "11", n: "Frappé — Cocina Kokau" },
-  { c: "", n: "Cubo — Cocina Kokau" },
-  { c: "", n: "Cubo — Bar Signature" },
-  { c: "12", n: "Cubo — Amacagua" },
-  { c: "", n: "Cubo — Ritual 12" },
+  { c: "11", n: "Frappé — Cocina principal" },
+  { c: "", n: "Cubo — Cocina principal" },
+  { c: "", n: "Cubo — Bar principal" },
+  { c: "12", n: "Cubo — Restaurante" },
+  { c: "", n: "Cubo — Restaurante piso 12" },
   { c: "", n: "Cubo — Pool Bar" },
-  { c: "14", n: "Cubo — Chiringuito" },
+  { c: "14", n: "Cubo — Bar de playa" },
 ].map((x, i) => ({ ...x, id: `im-ab-${i + 1}`, k: "status" }));
 
 export const ICE_MACHINES_LINOS = [17, 18, 20, 22, 24, 26, 28, 29, 30, 31, 34, 36, 38]
@@ -1014,7 +1014,7 @@ export function classifyHotsosProblem(problema) {
   return found ? found.label : "General";
 }
 
-/** Cruza el nombre tal como viene escrito en HotSOS ("Jesus Daniel Quintana") contra los nombres
+/** Cruza el nombre tal como viene escrito en HotSOS ("Nombre Apellido") contra los nombres
  *  de las cuentas ya creadas en la app. No exige que el nombre completo sea idéntico — HotSOS y
  *  la app casi nunca tienen el nombre escrito exactamente igual (segundo nombre, apellidos en
  *  otro orden, etc.) — en vez de eso cuenta cuántas palabras del nombre coinciden, y solo asigna
@@ -1381,30 +1381,30 @@ export const LAVANDERIA_ITEMS = [
 export const LAVANDERIA_STATUS_OPTS = ["OK", "Fallo"];
 
 export const GYM_CARDIO_ITEMS = [
-  { id: "gy1", c: 1, n: "Trotador Precor TRM600 #1", sku: "AF37G1724D001", k: "status" },
-  { id: "gy2", c: 2, n: "Trotador Precor TRM600 #2", sku: "AF37G1824D021", k: "status" },
-  { id: "gy3", c: 3, n: "Trotador Precor TRM600 #3", sku: "AF37G1824D028", k: "status" },
-  { id: "gy4", c: 4, n: "Trotador Precor TRM600 #4", sku: "AF37G1824D020", k: "status" },
-  { id: "gy5", c: 5, n: "Trotador Precor TRM600 #5", sku: "AF37G1824D029", k: "status" },
-  { id: "gy6", c: 6, n: "Elíptico Precor EFX600 #1", sku: "A485F14240075", k: "status" },
-  { id: "gy7", c: 7, n: "Elíptico Precor EFX600 #2", sku: "A485F27240035", k: "status" },
-  { id: "gy8", c: 8, n: "Elíptico Precor EFX600 #3", sku: "A485F27240032", k: "status" },
-  { id: "gy9", c: 9, n: "Remo ARW865", sku: "F2104BL0680", k: "status" },
-  { id: "gy10", c: 10, n: "Air Bike ABK865 #1", sku: "F2212BJ0303", k: "status" },
-  { id: "gy11", c: 11, n: "Air Bike ABK865 #2", sku: "E2212BJ0324", k: "status" },
+  { id: "gy1", c: 1, n: "Trotador Precor TRM600 #1", k: "status" },
+  { id: "gy2", c: 2, n: "Trotador Precor TRM600 #2", k: "status" },
+  { id: "gy3", c: 3, n: "Trotador Precor TRM600 #3", k: "status" },
+  { id: "gy4", c: 4, n: "Trotador Precor TRM600 #4", k: "status" },
+  { id: "gy5", c: 5, n: "Trotador Precor TRM600 #5", k: "status" },
+  { id: "gy6", c: 6, n: "Elíptico Precor EFX600 #1", k: "status" },
+  { id: "gy7", c: 7, n: "Elíptico Precor EFX600 #2", k: "status" },
+  { id: "gy8", c: 8, n: "Elíptico Precor EFX600 #3", k: "status" },
+  { id: "gy9", c: 9, n: "Remo ARW865", k: "status" },
+  { id: "gy10", c: 10, n: "Air Bike ABK865 #1", k: "status" },
+  { id: "gy11", c: 11, n: "Air Bike ABK865 #2", k: "status" },
 ];
 export const GYM_FUERZA_ITEMS = [
-  { id: "gy12", c: 12, n: "Pull Down", sku: "BDSC09160006", k: "status" },
-  { id: "gy13", c: 13, n: "Multi Press", sku: "BDS1A27160014", k: "status" },
-  { id: "gy14", c: 14, n: "Chest Press", sku: "BDS6H07150010", k: "status" },
-  { id: "gy15", c: 15, n: "Prone Leg Curl", sku: "BA74D03160001", k: "status" },
-  { id: "gy16", c: 16, n: "Vertical", sku: "BBMF26150023", k: "status" },
-  { id: "gy17", c: 17, n: "Leg Press", sku: "BDS1A41360008", k: "status" },
-  { id: "gy18", c: 18, n: "Angled Leg Press", sku: "B136I16220025", k: "status" },
-  { id: "gy19", c: 19, n: "FTS Glide", sku: "ANCDA29160030", k: "status" },
+  { id: "gy12", c: 12, n: "Pull Down", k: "status" },
+  { id: "gy13", c: 13, n: "Multi Press", k: "status" },
+  { id: "gy14", c: 14, n: "Chest Press", k: "status" },
+  { id: "gy15", c: 15, n: "Prone Leg Curl", k: "status" },
+  { id: "gy16", c: 16, n: "Vertical", k: "status" },
+  { id: "gy17", c: 17, n: "Leg Press", k: "status" },
+  { id: "gy18", c: 18, n: "Angled Leg Press", k: "status" },
+  { id: "gy19", c: 19, n: "FTS Glide", k: "status" },
   { id: "gy20", c: 20, n: "Smith Machine", k: "status" },
-  { id: "gy21", c: 21, n: "Banco VBR 6117 #1", sku: "B12ML30227064", k: "status" },
-  { id: "gy22", c: 22, n: "Banco VBR 6117 #2", sku: "B12ML30227060", k: "status" },
+  { id: "gy21", c: 21, n: "Banco VBR 6117 #1", k: "status" },
+  { id: "gy22", c: 22, n: "Banco VBR 6117 #2", k: "status" },
   { id: "gy23", c: 23, n: "Banco Lumbar", k: "status" },
   { id: "gy24", c: 24, n: "Spinning Studio Cycle II #1", k: "status" },
   { id: "gy25", c: 25, n: "Spinning Studio Cycle II #2", k: "status" },
@@ -1493,30 +1493,30 @@ export function periodKeyFor(date, recurrence) {
 
 /* ============================================================
    DATOS: LECTURAS DE MEDIDORES
-   (según "consumo_de_servicios_publicos_hyatt_2026.xlsx": hojas
+   (plantilla de ejemplo: hojas
    SP [mes], Resc [mes] y Agua torres [mes] — mismos medidores cada mes)
    ============================================================ */
 export const METER_GROUPS = [
   {
     id: "sp", title: "Servicios Públicos Generales",
     meters: [
-      { c: "m01", n: "Energía Piso 16 — Medidor Principal (NIC 7784481)", subs: ["ALTA", "BAJA"], u: "kWh" },
-      { c: "m02", n: "Energía Piso 16 — Medidor Respaldo (NIC 7784482)", subs: ["ALTA", "BAJA"], u: "kWh" },
-      { c: "m03", n: "Agua Hotel — Póliza 256023 (Medidor 596202)", subs: null, u: "m³" },
-      { c: "m04", n: "Gas Hotel (Medidor 4404155)", subs: null, u: "m³" },
-      { c: "m05", n: "Gas Residencias (Medidor 16730521218 / 4673538)", subs: null, u: "m³" },
-      { c: "m06", n: "Energía Piso 33 — Hyatt 150KVA Electricaribe (NIC 7942254)", subs: ["Activa Pi", "Activa FP", "Reactiva"], u: "kWh" },
+      { c: "m01", n: "Energía Piso 16 — Medidor Principal", subs: ["ALTA", "BAJA"], u: "kWh" },
+      { c: "m02", n: "Energía Piso 16 — Medidor Respaldo", subs: ["ALTA", "BAJA"], u: "kWh" },
+      { c: "m03", n: "Agua Hotel", subs: null, u: "m³" },
+      { c: "m04", n: "Gas Hotel", subs: null, u: "m³" },
+      { c: "m05", n: "Gas Residencias", subs: null, u: "m³" },
+      { c: "m06", n: "Energía Piso 33 — Torre B 150 kVA", subs: ["Activa Pi", "Activa FP", "Reactiva"], u: "kWh" },
       { c: "m07", n: "Energía Piso 43 (C P C)", subs: ["ALTA", "BAJA"], u: "kWh" },
       { c: "m08", n: "Lectura Medidor Piso Cero", subs: null, u: "" },
       { c: "m09", n: "Agua Piso 43 Residencias", subs: null, u: "m³" },
       { c: "m10", n: "Energía Piso 43 — Ascensor 21", subs: null, u: "kWh" },
       { c: "m11", n: "Energía Piso 43 — Ascensor 22", subs: null, u: "kWh" },
       { c: "m12", n: "Energía Piso 43 — Ascensor 23", subs: null, u: "kWh" },
-      { c: "m13", n: "QMC — Telefónica 132220070 (Piso 44)", subs: null, u: "" },
-      { c: "m14", n: "QMC — Telefónica AS1440 (Piso 44)", subs: null, u: "" },
-      { c: "m15", n: "QMC — Claro 24728084 (Piso 44)", subs: null, u: "" },
-      { c: "m16", n: "QMC — Claro 24728083 (Piso 9)", subs: null, u: "" },
-      { c: "m17", n: "QMC — Telefónica 888190 (Piso 9)", subs: null, u: "" },
+      { c: "m13", n: "Línea telefónica 1 (Piso 44)", subs: null, u: "" },
+      { c: "m14", n: "Línea telefónica 2 (Piso 44)", subs: null, u: "" },
+      { c: "m15", n: "Línea de datos 1 (Piso 44)", subs: null, u: "" },
+      { c: "m16", n: "Línea de datos 2 (Piso 9)", subs: null, u: "" },
+      { c: "m17", n: "Línea telefónica 3 (Piso 9)", subs: null, u: "" },
     ],
   },
   {
@@ -1528,7 +1528,7 @@ export const METER_GROUPS = [
       { c: "r04", n: "Medidor Zonas Comunes Piso 37-38", subs: null, u: "" },
       { c: "r05", n: "Medidor Sistema Hidrosanitario Piso 43", subs: null, u: "" },
       { c: "r06", n: "Medidor Torres de Enfriamiento Piso 43", subs: null, u: "" },
-      { c: "r07", n: "Energía Piso 33 — Residencias (NIC 7942250)", subs: ["Activa AT", "Activa FA", "Reactiva"], u: "kWh" },
+      { c: "r07", n: "Energía Piso 33 — Residencias", subs: ["Activa AT", "Activa FA", "Reactiva"], u: "kWh" },
     ],
   },
   {
@@ -1540,19 +1540,19 @@ export const METER_GROUPS = [
     ],
   },
   {
-    // Contadores de energía por apartamento — "Contadores_Energia_Residencias_2026.xlsx"
+    // Contadores de energía por apartamento (ejemplo)
     id: "hab", title: "Contadores de Energía — Habitaciones / Residencias",
     meters: [
-      ["3901", "7943031"], ["3902", "7943051"], ["3903", "7943057"], ["3904", "7943098"],
-      ["3905", "7943104"], ["3906", "7943106"], ["3907", "7943108"], ["3908", "7943111"],
-      ["4001", "7943113"], ["4002", "7943114"], ["4003", "7943115"], ["4004", "7943116"],
-      ["4005", "7943120"], ["4006", "7943122"], ["4007", "7943125"], ["4008", "7943127"],
-      ["4101", "7943131"], ["4102", "7943135"], ["4103", "7943138"], ["4104", "7943161"],
-      ["4105", "7943166"], ["4106", "7943171"], ["4107", "7943185"], ["4108", "7943221"],
-      ["4109", "7943224"], ["4201", "7943226"], ["4202", "7943227"], ["4203", "7943228"],
-      ["4204", "7943229"], ["4205", "7943231"], ["4206", "7943232"], ["4208", "7943236"],
-      ["4209", "7943240"],
-    ].map(([apto, serial]) => ({ c: apto, n: `Apartamento ${apto} (Medidor ${serial})`, subs: null, u: "kWh" })),
+      ["3901", ""], ["3902", ""], ["3903", ""], ["3904", ""],
+      ["3905", ""], ["3906", ""], ["3907", ""], ["3908", ""],
+      ["4001", ""], ["4002", ""], ["4003", ""], ["4004", ""],
+      ["4005", ""], ["4006", ""], ["4007", ""], ["4008", ""],
+      ["4101", ""], ["4102", ""], ["4103", ""], ["4104", ""],
+      ["4105", ""], ["4106", ""], ["4107", ""], ["4108", ""],
+      ["4109", ""], ["4201", ""], ["4202", ""], ["4203", ""],
+      ["4204", ""], ["4205", ""], ["4206", ""], ["4208", ""],
+      ["4209", ""],
+    ].map(([apto, serial]) => ({ c: apto, n: `Apartamento ${apto}`, subs: null, u: "kWh" })),
   },
 ];
 METER_GROUPS.forEach(g => g.meters.forEach(m => { m.id = `mt-${g.id}-${m.c}`; }));
@@ -1745,10 +1745,8 @@ export const WEEKLY_HOURS_TARGET = 42; // igual al que ya usa tu Excel en las co
  * (ver standingRules en SchedulesView), esto es solo lo que se precarga la primera vez, con todo
  * lo que ya se había acordado en conversaciones anteriores, para no perderlo.
  */
-export const DEFAULT_STANDING_RULES = `- Quintana Jesus Daniel: descansa todos los sábados (ya tiene su día de descanso fijo puesto en el sistema — nunca se le pone turno un sábado, ni siquiera si otras reglas hablan de cubrir sábados con normalidad). Si por su rotación le tocaría turno de noche un sábado, ese turno de noche se pasa al domingo siguiente en su lugar.
-- Turnistas en general: máximo 1 domingo trabajado al mes cada uno, y se alternan entre sí — un domingo trabaja uno, el siguiente domingo trabaja otro (no el mismo dos domingos seguidos).
-- Cada domingo debe quedar cubierto por UN SOLO turnista (no varios al tiempo), más un turno de apoyo intermedio aparte de 9:00 a.m. a 5:30 p.m. ese mismo día.
-- Esalas Felix Jose y Durant Zarith Elias: no pueden coincidir trabajando el mismo domingo — se alternan entre ellos (mientras uno trabaja un domingo, el otro descansa ese domingo, y al siguiente domingo se cambian).`;
+export const DEFAULT_STANDING_RULES = `- Turnistas en general: máximo 1 domingo trabajado al mes cada uno, y se alternan entre sí — un domingo trabaja uno, el siguiente domingo trabaja otro (no el mismo dos domingos seguidos).
+- Cada domingo debe quedar cubierto por UN SOLO turnista (no varios al tiempo), más un turno de apoyo intermedio aparte de 9:00 a.m. a 5:30 p.m. ese mismo día.`;
 
 export const DEFAULT_CHANGELOG_SEED = [
   { id: "cl-seed-13", title: "Sugerencias de texto al registrar mantenimiento", description: "Al escribir qué se hizo en un mantenimiento, ahora aparecen frases sugeridas según la especialidad del equipo (eléctrico, HVAC, hidráulico, etc.) — tócalas para usarlas y agrega lo que hiciste de más.", at: "2026-08-31T20:00:00.000Z", by: "Sistema" },
@@ -2066,7 +2064,7 @@ const CHECKLIST_TEMPLATES = [
 ];
 /** Plantillas por equipo del hotel (con la redacción real de los reportes de mantenimiento). `{n}` = nombre del equipo. */
 const EQUIPO_PLANTILLAS = [
-  { label: "Sistema VRF", re: /\bvrf\b|kokau/,
+  { label: "Sistema VRF", re: /\bvrf\b/,
     safety: ["Cortar energía y bloquear el breaker de las unidades", "Confirmar ausencia de tensión con multímetro"],
     steps: ["Lavar y limpiar filtros de aire de las unidades interiores", "Lavar y desincrustar serpentines con desengrasante", "Limpiar bandeja y verificar drenaje", "Verificar parámetros de funcionamiento y dejar operativo"],
     readings: [{ name: "Temperatura de retorno", unit: "°C", ref: "22 a 25", min: 22, max: 25 }, { name: "Temperatura de salida", unit: "°C", ref: "8 a 12 menos que el retorno" }],

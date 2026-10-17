@@ -105,7 +105,7 @@ export function SchedulesView({ employees, scheduleEntries, scheduleEditLog, isA
   const [showAiPanel, setShowAiPanel] = useState(false);
   // Reglas GENERALES del equipo: se guardan en la base de datos y se usan SIEMPRE, en todos los
   // meses, sin que haga falta volver a escribirlas cada vez (antes esto se perdía cada vez que se
-  // generaba un mes nuevo, por eso reglas que ya se habían dado — como lo de Quintana los sábados,
+  // generaba un mes nuevo, por eso reglas que ya se habían dado — como el descanso fijo de alguien los sábados,
   // o lo de Félix y Zarith los domingos — no se estaban aplicando si no se volvían a escribir).
   const [standingRules, setStandingRules] = useState("");
   const [standingRulesLog, setStandingRulesLog] = useState([]);

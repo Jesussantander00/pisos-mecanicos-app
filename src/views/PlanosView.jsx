@@ -23,7 +23,7 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
   };
 
   const planKey = useMemo(() => Object.keys(PLANOS).find(k => PLANOS[k].floors.includes(floor)) || "41", [floor]);
-  const plan = PLANOS[planKey];
+  const plan = PLANOS[planKey] || { floors: [floor], rooms: [], img: "" };
   const roomsOfPlan = useMemo(
     () => plan.rooms.map(r => ({ number: r.n || String(floor * 100 + Number(r.s)), rect: r.r })),
     [plan, floor]
@@ -127,7 +127,7 @@ export function PlanosView({ tasks, mttoLog, equipos, accounts, onNavigate }) {
 
       <div className="rounded-xl border overflow-auto" style={{ borderColor: C.line, background: "#fff", maxHeight: "68vh", WebkitOverflowScrolling: "touch" }}>
         <div style={{ position: "relative", width: `${zoom * 100}%`, minWidth: "100%" }}>
-          <img src={plan.img} alt={`Plano de los pisos ${plan.floors[0]} al ${plan.floors[plan.floors.length - 1]}`} style={{ display: "block", width: "100%", height: "auto" }} draggable={false} />
+          {plan.img ? <img src={plan.img} alt={`Plano de los pisos ${plan.floors[0]} al ${plan.floors[plan.floors.length - 1]}`} style={{ display: "block", width: "100%", height: "auto" }} draggable={false} /> : <div style={{ padding: 24, textAlign: "center", color: C.inkSoft }}>Aún no hay planos cargados.</div>}
           {roomsOfPlan.map(r => {
             const st = statsOf(r.number);
             const n = st.shown.length;
